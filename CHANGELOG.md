@@ -1,5 +1,123 @@
 # seamless-cli
 
+## 0.13.0
+
+### Minor Changes
+
+- 63ff4ff: Add `seamless check --strict`, which exits non-zero when a check fails.
+
+  `check` is what you would reach for in a health-check script or a CI gate, and it always
+  exited 0: an empty directory, a stack that is down, and a fully healthy project were
+  indistinguishable to anything reading the exit status.
+
+  `--strict` exits 1 if any check failed, reporting how many. Without it the exit status is
+  unchanged, because this output has been parsed by scripts since before the flag existed.
+
+  Every check still runs either way. A gate that stops at the first problem hides the rest,
+  and the whole picture is the reason to run `check` at all.
+
+### Patch Changes
+
+- 79aa298: Clean `dist` before building, so a stale artifact cannot be packed.
+
+  `build` was a bare `tsc`, which overwrites but never removes. A file deleted or renamed
+  in `src` left its old output behind, and `prepublishOnly` runs the same script, so a local
+  publish could ship something no longer in the source tree. The `clean` script already
+  existed and is now wired in.
+
+- d039e18: Add `--json` to `seamless whoami` and `seamless sessions list`.
+
+  `config get/roles`, `users list/credentials`, and `org list/get/members list` all had it;
+  these two, both natural scripting targets, did not, so reading an identity or a session id
+  from a script meant parsing formatted output.
+
+  Both print machine-readable output and nothing else: an empty session list is `[]` rather
+  than "No active sessions.", and `whoami --json` reports a missing `sub` or `email` as
+  `null` instead of the `(unknown)` the table shows.
+
+- 723d581: Point a managed scaffold at the instance URL the portal computes.
+
+  `init` composed the scaffolded backend's `AUTH_SERVER_URL` from `application.domain`, a
+  stored column the portal superseded. It goes stale when a trial is upgraded and its tenant
+  moves zones, and mvp and business instances are served at `domain/<infraId>` rather than at
+  `domain`. Either way the scaffold pointed at a URL that does not answer, and the failure
+  surfaced as an SDK error in the developer's app rather than as anything the CLI said.
+
+  `resolveAppInstanceUrl` already existed for exactly this, and `apps` and the application
+  picker already used it; the two scaffold paths did not. They do now.
+
+  The connectable-application filter asked for `domain` too, so an application the portal
+  computed an `instanceUrl` for but whose `domain` column was never populated was filtered
+  out and never offered. It now asks the same question the scaffold does.
+
+- e1d3687: Write the signing key id a managed instance actually publishes.
+
+  A managed scaffold hardcoded `JWKS_KID=dev-main`. Managed instances pin their kid per tier
+  (`trialkey1` for trials, `paidkey1` for paid), so the value was never the instance's own.
+  Nothing verifies against it, adapters resolve the key from the token header through the
+  remote JWKS, but they do warn on boot while it is the dev default, so every managed
+  scaffold produced an app that reported itself misconfigured.
+
+  `init` now reads the kid from the instance's `/.well-known/jwks.json`. If the instance
+  cannot be reached it keeps the old default, says so, and explains that nothing breaks
+  except the warning.
+
+- 976081b: Say what could not be reached when a scaffold's network read fails.
+
+  `seamless init` makes three remote reads: the template registry, the templates archive, and
+  the auth server's `.env.example`. Each of them handles a non-ok HTTP response with a message
+  naming the status and the URL, but a connection-level failure (offline, DNS, TLS, no route)
+  rejects with a bare `TypeError: fetch failed` that propagated untouched to the top-level
+  handler. The whole output was "Error: fetch failed", which named neither the host nor which
+  of the three reads had failed.
+
+  The three call sites now go through a shared helper that turns that rejection into a message
+  naming the URL, what the CLI wanted from it, and the network as the likely cause, in the
+  style `login` already uses for an unreachable instance. Non-ok responses keep the messages
+  they had, and the original error is preserved as the thrown error's `cause`.
+
+- 4418970: Recognize the addresses a local dev instance actually answers on.
+
+  `isLocalInstanceUrl` accepted only `localhost`, `127.0.0.1`, `::1` and `.localhost`
+  subdomains. It gates two things: whether plaintext `http` is allowed for an instance URL,
+  and whether `--local` OTP delivery is permitted. A dev instance is commonly reached at
+  none of those, a container bound to `0.0.0.0`, a LAN address from a phone on the same
+  network, or an mDNS `.local` name, and each was rejected as if it were production, forcing
+  `https` onto a box with no certificate.
+
+  Now also treated as local: the whole `127.0.0.0/8` loopback range, `0.0.0.0` and `::`, the
+  private IPv4 ranges (`10/8`, `172.16/12`, `192.168/16`), link-local (`169.254/16` and
+  `fe80::/10`), IPv6 unique-local (`fc00::/7`), and `.local` names. Ranges are matched by
+  octet rather than by prefix, so `172.15`, `172.32` and `1.10.0.1` stay public.
+
+- 8e5c0f7: Remove code nothing calls.
+
+  - `src/utils/writeEnv.ts`, an unused duplicate of `core/env.ts`'s `writeEnv` that still
+    emitted unquoted values, the bug fixed in the real one.
+  - `buildJWKSConfig` in the docker generator, which had no callers and was the only user of
+    `core/jwks.ts`, so that module went with it.
+  - `generateKid` in `core/secrets.ts`. `generateSecret` beside it stays; it is widely used.
+  - `setupDockerAuth` in the auth generator, unreachable because `generateAuthServer` is only
+    ever called with `"local"`. It also wrote a compose file mounting `pgdata` at
+    `/var/lib/postgresql/data`, which the pinned `postgres:18` ignores, so it had gone stale
+    as well as unreachable.
+
+  With the unreachable branch gone, `generateAuthServer` no longer needs a mode, and its
+  `context: any` and `mode: "local" | "docker" | Symbol` parameters become a plain `root:
+string`.
+
+- 74ae06c: Stop printing `Error: undefined` when something other than an `Error` is thrown.
+
+  The top-level handler in `index.ts` and the catch blocks in `whoami` and `sessions` all
+  read `.message` off the thrown value, which `throw` does not guarantee exists. A rejected
+  promise carrying a string, a parsed response body, or `undefined` printed nothing useful,
+  naming neither the failure nor the fact that something unexpected came back.
+
+  A new `errorMessage` renders any thrown value: an `Error`'s message (or its name when the
+  message is empty), a thrown string as it is, a `message` field off a thrown object, and
+  otherwise the object's shape or a labelled primitive. A thrown object is scrubbed first,
+  since it arrives from a rejected request as often as from our own code.
+
 ## 0.12.2
 
 ### Patch Changes

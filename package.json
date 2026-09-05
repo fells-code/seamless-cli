@@ -1,6 +1,6 @@
 {
   "name": "seamless-cli",
-  "version": "0.12.2",
+  "version": "0.13.0",
   "description": "The Seamless Auth command-line interface",
   "homepage": "https://github.com/fells-code/seamless-cli#readme",
   "bugs": {
