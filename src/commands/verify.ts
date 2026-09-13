@@ -178,13 +178,31 @@ function cleanVendor(): void {
   }
 }
 
-// Build + pack the local @seamless-auth/react into ./react-vendor so the react
-// service installs it over the published version (--local browser runs).
+// The client SDK repo became an npm workspace publishing @seamless-auth/client
+// alongside @seamless-auth/react. The react tarball depends on the client one,
+// so both are packed into the vendor dir and the image installs them together.
+// A checkout that predates the workspace still packs its single root package.
+function reactSdkWorkspaces(sdkDir: string): string[] {
+  const workspaces = readJson(path.join(sdkDir, "package.json"))?.workspaces;
+  return Array.isArray(workspaces) && workspaces.length > 0
+    ? ["@seamless-auth/client", "@seamless-auth/react"]
+    : [];
+}
+
+// Build + pack the local @seamless-auth/react (and its client core when the
+// checkout is a workspace) into ./react-vendor so the react service installs it
+// over the published version (--local browser runs).
 async function packLocalReactSdk(env: NodeJS.ProcessEnv): Promise<void> {
   const sdkDir = resolveReactSdkDir();
   console.log(kleur.cyan("→ Building & packing local @seamless-auth/react…"));
   await runCommand("npm", ["run", "build"], sdkDir, env);
-  await runCommand("npm", ["pack", "--pack-destination", REACT_VENDOR_DIR], sdkDir, env);
+  const workspaceArgs = reactSdkWorkspaces(sdkDir).flatMap((pkg) => ["-w", pkg]);
+  await runCommand(
+    "npm",
+    ["pack", ...workspaceArgs, "--pack-destination", REACT_VENDOR_DIR],
+    sdkDir,
+    env,
+  );
 }
 
 // Each adapter image installs core plus its own framework package, so the
@@ -299,7 +317,12 @@ function collectPackageVersions(
     }
     if (opts.react) {
       try {
-        push("@seamless-auth/react", readPkgVersion(path.join(resolveReactSdkDir(), "package.json")));
+        const sdkDir = resolveReactSdkDir();
+        const reactPkg =
+          reactSdkWorkspaces(sdkDir).length > 0
+            ? path.join(sdkDir, "packages", "react", "package.json")
+            : path.join(sdkDir, "package.json");
+        push("@seamless-auth/react", readPkgVersion(reactPkg));
       } catch {
         // React SDK checkout unavailable.
       }
