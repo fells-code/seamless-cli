@@ -174,6 +174,15 @@ function registry() {
         status: "coming-soon",
         path: "api-soon",
       },
+      {
+        id: "expo",
+        kind: "mobile",
+        framework: "expo",
+        label: "Expo",
+        alias: "mobile",
+        status: "beta",
+        path: "mobile/expo",
+      },
     ],
   };
 }
@@ -188,7 +197,7 @@ function makeSource(manifests: Record<string, any> = {}) {
       if (manifests[entry.id]) return manifests[entry.id];
       return {
         id: entry.id,
-        targetDir: entry.kind === "web" ? "web" : "api",
+        targetDir: entry.kind,
       };
     }),
     copyInto: vi.fn(async () => {}),
@@ -496,6 +505,37 @@ describe("scaffoldLocal", () => {
     expect(printSuccessOutput).toHaveBeenCalled();
   });
 
+  it("places the mobile starter and records it when one is chosen", async () => {
+    vi.mocked(runProjectSetupPrompts).mockResolvedValue({
+      webTemplateId: "web-basic",
+      apiTemplateId: "api-express",
+      mobileTemplateId: "expo",
+      authMode: "docker",
+      adminMode: "api",
+      ownerEmail: "dev@example.com",
+    } as never);
+    vi.mocked(generateDockerCompose).mockResolvedValue({
+      apiToken: "docker-token",
+      kid: "docker-kid",
+    } as never);
+
+    await runCLI(undefined, []);
+
+    expect(applyTemplateEnv).toHaveBeenCalledTimes(3);
+    expect(applyTemplateEnv).toHaveBeenLastCalledWith(
+      "/work/mobile",
+      expect.anything(),
+      expect.objectContaining({ apiUrl: expect.stringContaining("http://localhost:3000") }),
+    );
+    expect(generateSeamlessConfig).toHaveBeenCalledWith(
+      "/work",
+      expect.objectContaining({ mobileFramework: "expo" }),
+    );
+    expect(printSuccessOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ mobileFramework: "expo" }),
+    );
+  });
+
   // The compose file is written in both auth modes, so a local auth server's
   // own token and kid have to survive the compose call that follows it.
   it("keeps the local auth server's shared config when auth runs from source", async () => {
@@ -724,6 +764,51 @@ describe("template alias resolution", () => {
     );
   });
 
+  it("preselects a mobile template from its alias, and from --mobile=", async () => {
+    await runCLI(undefined, ["mobile"]);
+    expect(runProjectSetupPrompts).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ mobileTemplateId: "expo" }),
+      undefined,
+      undefined,
+    );
+
+    await runCLI(undefined, [], { mobile: "expo" });
+    expect(runProjectSetupPrompts).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ mobileTemplateId: "expo" }),
+      undefined,
+      undefined,
+    );
+  });
+
+  it("rejects --mobile naming a template of another kind", async () => {
+    await expect(runCLI(undefined, [], { mobile: "express" })).rejects.toThrow(
+      /--mobile expects a mobile template/,
+    );
+  });
+
+  it("rejects conflicting mobile flags", async () => {
+    const src = makeSource();
+    src.registry.templates.push({
+      id: "bare-rn",
+      kind: "mobile",
+      framework: "react-native",
+      label: "Bare RN",
+      alias: "bare",
+      status: "stable",
+      path: "mobile/bare",
+    } as never);
+    vi.mocked(openTemplateSource).mockResolvedValue(src as never);
+
+    await expect(runCLI(undefined, ["mobile", "bare"])).rejects.toThrow(
+      /Conflicting mobile template flags/,
+    );
+    await expect(runCLI(undefined, ["mobile"], { mobile: "bare" })).rejects.toThrow(
+      /Conflicting mobile template flags: --mobile=bare cannot combine with --expo/,
+    );
+  });
+
   it("rejects conflicting api alias flags", async () => {
     const src = makeSource();
     // Make the coming-soon go template stable so it becomes a usable api alias.
@@ -805,6 +890,34 @@ describe("scaffoldManaged", () => {
     expect(printManagedSuccessOutput).toHaveBeenCalled();
     // No confirm needed when the app has no existing token.
     expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("places the mobile starter in a managed scaffold when one is chosen", async () => {
+    loggedIn();
+    vi.mocked(runManagedTemplatePrompts).mockResolvedValue({
+      webTemplateId: "web-basic",
+      apiTemplateId: "api-express",
+      mobileTemplateId: "expo",
+    } as never);
+    vi.mocked(listApplications).mockResolvedValue([app()] as never);
+    vi.mocked(selectApplication).mockResolvedValue(app() as never);
+    vi.mocked(rotateServiceToken).mockResolvedValue("svc-token");
+
+    await runCLI(undefined, [], { appId: "app-1" });
+
+    expect(applyTemplateEnv).toHaveBeenCalledTimes(3);
+    expect(applyTemplateEnv).toHaveBeenLastCalledWith(
+      "/work/mobile",
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(generateSeamlessConfig).toHaveBeenCalledWith(
+      "/work",
+      expect.objectContaining({ mobileFramework: "expo" }),
+    );
+    expect(printManagedSuccessOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ mobileFramework: "expo" }),
+    );
   });
 
   it("confirms before rotating when the app already has a service token", async () => {

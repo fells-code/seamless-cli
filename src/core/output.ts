@@ -5,6 +5,7 @@ export function printSuccessOutput(config: {
   root: string;
   webFramework: string | null;
   apiFramework: string | null;
+  mobileFramework?: string | null;
   authMode: "local" | "docker";
   adminMode: "api" | "image" | "source" | "none";
   ownerEmail: string;
@@ -13,6 +14,7 @@ export function printSuccessOutput(config: {
     projectName,
     webFramework,
     apiFramework,
+    mobileFramework = null,
     authMode,
     adminMode,
     ownerEmail,
@@ -57,6 +59,14 @@ export function printSuccessOutput(config: {
       "  • " +
         kleur.white("API server") +
         kleur.dim(` (${formatFramework(apiFramework)})`),
+    );
+  }
+
+  if (mobileFramework) {
+    console.log(
+      "  • " +
+        kleur.white("Mobile app") +
+        kleur.dim(` (${formatFramework(mobileFramework)})`),
     );
   }
 
@@ -106,6 +116,21 @@ export function printSuccessOutput(config: {
 
   console.log("");
 
+  if (mobileFramework) {
+    console.log(kleur.bold("Mobile app:\n"));
+    console.log("  " + kleur.cyan("cd mobile && npm install && npx expo start"));
+    console.log(
+      kleur.dim(
+        "  An Android emulator reaches the API at http://10.0.2.2:3000; set EXPO_PUBLIC_API_URL in mobile/.env.",
+      ),
+    );
+    console.log(
+      kleur.dim(
+        "  Email codes and sign-in links work now. Passkeys need an associated domain; see mobile/README.md.\n",
+      ),
+    );
+  }
+
   console.log(kleur.bold("Notes:\n"));
 
   console.log(kleur.dim("  • Web connects to API automatically"));
@@ -152,6 +177,7 @@ export function printManagedSuccessOutput(config: {
   projectName?: string;
   webFramework: string | null;
   apiFramework: string | null;
+  mobileFramework?: string | null;
   authServerUrl: string;
   appName: string;
   databaseUrl?: string;
@@ -160,6 +186,7 @@ export function printManagedSuccessOutput(config: {
     projectName,
     webFramework,
     apiFramework,
+    mobileFramework = null,
     authServerUrl,
     appName,
     databaseUrl,
@@ -199,6 +226,13 @@ export function printManagedSuccessOutput(config: {
         kleur.dim(` (${formatFramework(apiFramework)})`),
     );
   }
+  if (mobileFramework) {
+    console.log(
+      "  • " +
+        kleur.white("Mobile app") +
+        kleur.dim(` (${formatFramework(mobileFramework)})`),
+    );
+  }
   console.log(
     "  • " + kleur.white("Auth server") + kleur.dim(" (managed instance)"),
   );
@@ -228,6 +262,15 @@ export function printManagedSuccessOutput(config: {
   if (webFramework) {
     console.log(kleur.dim("  # Web app"));
     console.log("  cd web && npm install && npm run dev\n");
+  }
+  if (mobileFramework) {
+    console.log(kleur.dim("  # Mobile app"));
+    console.log("  cd mobile && npm install && npx expo start\n");
+    console.log(
+      kleur.dim(
+        "  Email codes and sign-in links work now. Passkeys need an associated domain; see mobile/README.md.\n",
+      ),
+    );
   }
   console.log("  Sign in from the web app to confirm the session resolves.\n");
 
@@ -269,6 +312,7 @@ function formatFramework(name: string) {
     fastapi: "FastAPI",
     fastify: "Fastify",
     vue: "Vue",
+    expo: "Expo",
   };
 
   return map[name] || name;

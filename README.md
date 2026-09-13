@@ -132,10 +132,11 @@ seamless templates list
 
 ```text
 ID           KIND  FRAMEWORK  FLAGS                   STATUS
-react-vite   web   react      --basic, --react-vite   stable
-react-oauth  web   react      --oauth, --react-oauth  stable
-express      api   express    --express               stable
-fastify      api   fastify    --fastify               beta
+react-vite   web     react      --basic, --react-vite   stable
+react-oauth  web     react      --oauth, --react-oauth  stable
+express      api     express    --express               stable
+fastify      api     fastify    --fastify               beta
+expo         mobile  expo       --mobile, --expo        beta
 ```
 
 Every template answers to `--<id>`; some also declare a shorter `--<alias>`, and the two are
@@ -144,6 +145,11 @@ interchangeable. Passing a flag skips that layer's prompt:
 ```bash
 seamless init my-app --react-oauth --express
 ```
+
+A web and an api starter are always placed. A mobile starter is optional: the prompt defaults to
+none, and `--mobile` (or `--expo`) includes it at `mobile/`. Its email codes and sign-in links work
+against the local stack as soon as `init` finishes; passkeys need an associated domain, which the
+starter's README walks through.
 
 `--json` emits the registry entries for scripting. The command needs no login and reads the same
 registry `init` does, so `SEAMLESS_TEMPLATES_DIR` and `SEAMLESS_TEMPLATES_REF` apply.
@@ -165,6 +171,7 @@ Each question also has its own flag, honored with or without `--yes`:
 | --- | --- | --- |
 | `--web=<id\|alias>` | Web example | first selectable web template |
 | `--api=<id\|alias>` | Backend framework | first selectable api template |
+| `--mobile=<id\|alias>` | Mobile app | none |
 | `--email=<address>` | Owner email (becomes the admin) | required |
 | `--auth=<docker\|local>` | How the auth server runs | `docker` |
 | `--admin=<api\|image\|source\|none>` | Where the admin console is hosted | `api` |
@@ -202,8 +209,9 @@ Depending on your selections, the CLI generates a project like this:
 ```text
 my-app/
 ├─ auth/                  # Seamless Auth server (local auth mode only)
-├─ web/                   # React web application (optional)
-├─ api/                   # Express or Fastify API server (optional)
+├─ web/                   # React web application
+├─ api/                   # Express or Fastify API server
+├─ mobile/                # Expo mobile app (--mobile only)
 ├─ admin/                 # Admin console source (--admin=source only)
 ├─ docker-compose.yml     # not written for a managed project
 └─ seamless.config.json
@@ -326,7 +334,8 @@ seamless verify --keep-up          # leave the stack running afterwards
 `--local` is the pre-publish check: it builds and packs the local SDK source rather than
 installing from npm, so an SDK regression surfaces before a release rather than after.
 The browser layer runs once per web template in the registry, each scoped to the flows
-its `template.json` declares.
+its `template.json` declares. Mobile templates are announced and skipped: the harness has no
+simulator to drive, so a native app is checked by running it against a `--keep-up` stack.
 
 Sibling repositories are resolved next to this one and can be pointed elsewhere with
 `SEAMLESS_API_DIR`, `SEAMLESS_SERVER_DIR`, `SEAMLESS_REACT_SDK_DIR`, and
@@ -574,9 +583,9 @@ Seamless CLI scaffolds from, and conformance-tests against, these repositories:
 | Repository | What it provides | How the CLI uses it |
 | --- | --- | --- |
 | [seamless-auth-api](https://github.com/fells-code/seamless-auth-api) | The auth server | Run as a pinned image (`--auth=docker`) or cloned into `auth/` (`--auth=local`) |
-| [seamless-templates](https://github.com/fells-code/seamless-templates) | The web and API starters | Scaffolded from its registry at a pinned ref |
+| [seamless-templates](https://github.com/fells-code/seamless-templates) | The web, API, and mobile starters | Scaffolded from its registry at a pinned ref |
 | [seamless-auth-server](https://github.com/fells-code/seamless-auth-server) | `@seamless-auth/core`, `/express`, `/fastify` | The adapters the scaffolded `api/` runs on |
-| [seamless-auth-react](https://github.com/fells-code/seamless-auth-react) | `@seamless-auth/react` | The client SDK the scaffolded `web/` runs on |
+| [seamless-auth-react](https://github.com/fells-code/seamless-auth-react) | `@seamless-auth/client`, `/react`, `/react-native` | The client SDKs the scaffolded `web/` and `mobile/` run on |
 
 The starters live in the templates monorepo and are listed in its registry, so the set of
 frameworks the CLI offers grows there. Each project can be used independently, but the CLI connects

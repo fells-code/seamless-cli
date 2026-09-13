@@ -9,7 +9,7 @@ import { fetchRemote } from "./fetch.js";
 import { generateSecret } from "./secrets.js";
 import { SEAMLESS_TEMPLATES_REF, SEAMLESS_TEMPLATES_REPO } from "./images.js";
 
-export type TemplateKind = "web" | "api";
+export type TemplateKind = "web" | "api" | "mobile";
 export type TemplateStatus = "stable" | "beta" | "coming-soon";
 
 export interface RegistryEntry {
@@ -89,6 +89,10 @@ const IGNORED_NAMES = new Set([
   ".DS_Store",
   ".env",
   ".env.local",
+  // Expo: the Metro cache and the generated native projects.
+  ".expo",
+  "ios",
+  "android",
 ]);
 
 // A resolved place to read templates from: either a local checkout (for development,

@@ -31,6 +31,7 @@ const REGISTRY_JSON = JSON.stringify({
     { id: "web-basic", kind: "web", status: "stable", path: "templates/web-basic" },
     { id: "coming", kind: "web", status: "coming-soon", path: "templates/coming" },
     { id: "an-api", kind: "api", status: "stable", path: "templates/an-api" },
+    { id: "expo", kind: "mobile", status: "beta", path: "templates/mobile/expo" },
   ],
 });
 
@@ -133,6 +134,17 @@ describe("runVerify — published (default) mode", () => {
 
     // A successful run does not exit non-zero.
     expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it("announces the mobile template it cannot drive instead of filtering it silently", async () => {
+    await runVerify([]);
+
+    const out = logSpy.mock.calls.flat().join("\n");
+    expect(out).toContain('Skipping mobile template "expo"');
+    expect(out).toContain("simulator");
+    // And nothing tried to build or test it as a web layer.
+    const composeArgs = dockerTails().flat();
+    expect(composeArgs.join(" ")).not.toContain("expo");
   });
 
   it("installs harness deps and the browser when node_modules is missing", async () => {

@@ -112,11 +112,21 @@ function resolveWebTemplates(): WebTemplate[] {
   }
 
   const registry = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as Registry;
-  const webTemplates = (registry.templates ?? []).filter(
-    (t) => t.kind === "web" && t.status !== "coming-soon",
-  );
+  const runnable = (registry.templates ?? []).filter((t) => t.status !== "coming-soon");
+  const webTemplates = runnable.filter((t) => t.kind === "web");
   if (webTemplates.length === 0) {
     throw new Error("The templates registry has no runnable web templates.");
+  }
+
+  // Driving a mobile template needs a simulator or an emulator, which this
+  // harness does not run. Said out loud rather than filtered out in silence, so
+  // a registry that gains one does not look fully covered when it is not.
+  for (const t of runnable.filter((t) => t.kind === "mobile")) {
+    console.log(
+      kleur.yellow(
+        `→ Skipping mobile template "${t.id}": the browser harness cannot drive a native app. Run it on a simulator against --keep-up.`,
+      ),
+    );
   }
 
   return webTemplates.map((t) => {

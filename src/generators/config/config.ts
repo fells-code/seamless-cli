@@ -18,6 +18,7 @@ export function generateSeamlessConfig(
     projectName?: string;
     webFramework: string;
     apiFramework: string;
+    mobileFramework?: string;
     authMode: "local" | "docker" | "managed";
     adminMode: "api" | "image" | "source" | "none";
     managed?: ManagedConfig;
@@ -71,6 +72,9 @@ export function generateSeamlessConfig(
         framework: options.apiFramework,
         path: "./api",
       },
+      ...(options.mobileFramework
+        ? { mobile: { framework: options.mobileFramework, path: "./mobile" } }
+        : {}),
       auth,
       admin,
       database: {

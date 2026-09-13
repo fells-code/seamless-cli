@@ -21,6 +21,7 @@ vi.mock("@clack/prompts", () => {
 interface SelectArgs {
   message: string;
   options: Array<{ value: string; label: string; disabled?: boolean }>;
+  initialValue?: string;
 }
 
 // Answers select() by matching the prompt message, and records every call's
@@ -159,6 +160,9 @@ describe("runProjectSetupPrompts", () => {
       webTemplateId: "web-a",
       api: true,
       apiTemplateId: "api-a",
+      // The registry has no mobile template, so the question is never asked.
+      mobile: false,
+      mobileTemplateId: undefined,
       authMode: "docker",
       adminMode: "api",
       ownerEmail: "dev@example.com",
@@ -277,6 +281,8 @@ describe("runProjectSetupPrompts with --yes", () => {
       webTemplateId: "web-a",
       api: true,
       apiTemplateId: "api-a",
+      mobile: false,
+      mobileTemplateId: undefined,
       authMode: "docker",
       adminMode: "api",
       ownerEmail: "owner@example.com",
@@ -437,5 +443,84 @@ describe("runProjectSetupPrompts without a terminal", () => {
     );
 
     expect(result.webTemplateId).toBe("web-a");
+  });
+});
+
+describe("the optional mobile layer", () => {
+  const withMobile = () => [
+    ...fullRegistry(),
+    entry({ id: "expo", kind: "mobile", framework: "expo", label: "Expo", status: "beta", path: "mobile/expo" }),
+  ];
+
+  it("offers none first and returns no mobile template when it is chosen", async () => {
+    const calls = mockSelect({
+      "Web example": "web-a",
+      "Backend framework": "api-a",
+      "Mobile app": "none",
+    });
+
+    const result = await runManagedTemplatePrompts(withMobile());
+
+    expect(result).toEqual({
+      webTemplateId: "web-a",
+      apiTemplateId: "api-a",
+      mobileTemplateId: undefined,
+    });
+    const mobilePrompt = calls.find((c) => c.message === "Mobile app")!;
+    expect(mobilePrompt.options[0]).toMatchObject({ value: "none" });
+    expect(mobilePrompt.initialValue).toBe("none");
+    expect(mobilePrompt.options.map((o) => o.value)).toEqual(["none", "expo"]);
+  });
+
+  it("returns the chosen mobile template", async () => {
+    mockSelect({
+      "Web example": "web-a",
+      "Backend framework": "api-a",
+      "Mobile app": "expo",
+      "How would you like to run SeamlessAuth?": "docker",
+      "How would you like to host the admin console?": "api",
+    });
+
+    const result = await runProjectSetupPrompts(withMobile());
+
+    expect(result).toMatchObject({ mobile: true, mobileTemplateId: "expo" });
+  });
+
+  it("echoes a preselected mobile template instead of prompting", async () => {
+    mockSelect({
+      "Web example": "web-a",
+      "Backend framework": "api-a",
+    });
+
+    const result = await runManagedTemplatePrompts(withMobile(), { mobileTemplateId: "expo" });
+
+    expect(result.mobileTemplateId).toBe("expo");
+    expect(out()).toContain("Mobile app: Expo");
+  });
+
+  it("takes none under --yes and says so", async () => {
+    const result = await runManagedTemplatePrompts(
+      withMobile(),
+      { webTemplateId: "web-a", apiTemplateId: "api-a" },
+      true,
+    );
+
+    expect(result.mobileTemplateId).toBeUndefined();
+    expect(select).not.toHaveBeenCalled();
+    expect(out()).toContain("Mobile app: none");
+  });
+
+  it("asks nothing when the registry has no mobile template", async () => {
+    mockSelect({
+      "Web example": "web-a",
+      "Backend framework": "api-a",
+    });
+
+    const result = await runManagedTemplatePrompts(fullRegistry());
+
+    expect(result.mobileTemplateId).toBeUndefined();
+    expect(vi.mocked(select).mock.calls.map(([a]) => (a as { message: string }).message)).not.toContain(
+      "Mobile app",
+    );
   });
 });

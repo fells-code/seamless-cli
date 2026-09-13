@@ -66,6 +66,7 @@ function defaultTemplateId(
 export interface Preselect {
   webTemplateId?: string;
   apiTemplateId?: string;
+  mobileTemplateId?: string;
   ownerEmail?: string;
   authMode?: AuthMode;
   adminMode?: AdminMode;
@@ -101,9 +102,59 @@ async function resolveTemplateId(
   ) as string;
 }
 
-// Managed connect only needs the web and api templates: the auth server is the
-// developer's managed instance, so the auth-mode, Docker, and admin-dashboard
-// questions (all local-stack concerns) do not apply.
+const NO_MOBILE = "none";
+
+// A mobile starter is optional, unlike the web and api layers, which every
+// project gets. A flag answers outright; --yes takes none, since a native app
+// brings its own prerequisites (an associated domain for passkeys) that an
+// unattended run should not opt into; and a registry that predates the kind
+// offers nothing, so there is no question to ask.
+async function resolveOptionalTemplateId(
+  templates: RegistryEntry[],
+  kind: TemplateKind,
+  preselected: string | undefined,
+  message: string,
+  echoLabel: string,
+  assumeYes: boolean,
+): Promise<string | undefined> {
+  if (preselected) {
+    console.log(`${echoLabel}: ${labelFor(templates, preselected)}`);
+    return preselected;
+  }
+
+  const available = templates.filter((t) => t.kind === kind);
+  if (available.length === 0) {
+    return undefined;
+  }
+
+  if (assumeYes) {
+    console.log(`${echoLabel}: none`);
+    return undefined;
+  }
+
+  requireInteractive(
+    message,
+    `Pass --${kind}=<id> to include one (see \`seamless templates list\`), or --yes to scaffold without.`,
+  );
+
+  const chosen = orCancel(
+    await select({
+      message,
+      options: [
+        { value: NO_MOBILE, label: "No mobile app (recommended to start)" },
+        ...toOptions(templates, kind),
+      ],
+      initialValue: NO_MOBILE,
+    }),
+  ) as string;
+
+  return chosen === NO_MOBILE ? undefined : chosen;
+}
+
+// Managed connect only needs the web and api templates (plus the optional
+// mobile one): the auth server is the developer's managed instance, so the
+// auth-mode, Docker, and admin-dashboard questions (all local-stack concerns)
+// do not apply.
 export async function runManagedTemplatePrompts(
   templates: RegistryEntry[],
   preselect: Preselect = {},
@@ -125,8 +176,16 @@ export async function runManagedTemplatePrompts(
     "Backend",
     assumeYes,
   );
+  const mobileTemplateId = await resolveOptionalTemplateId(
+    templates,
+    "mobile",
+    preselect.mobileTemplateId,
+    "Mobile app",
+    "Mobile app",
+    assumeYes,
+  );
 
-  return { webTemplateId, apiTemplateId };
+  return { webTemplateId, apiTemplateId, mobileTemplateId };
 }
 
 export async function runProjectSetupPrompts(
@@ -149,6 +208,14 @@ export async function runProjectSetupPrompts(
     preselect.apiTemplateId,
     "Backend framework",
     "Backend",
+    assumeYes,
+  );
+  const mobileTemplateId = await resolveOptionalTemplateId(
+    templates,
+    "mobile",
+    preselect.mobileTemplateId,
+    "Mobile app",
+    "Mobile app",
     assumeYes,
   );
 
@@ -228,6 +295,9 @@ export async function runProjectSetupPrompts(
 
     api: true,
     apiTemplateId,
+
+    mobile: mobileTemplateId !== undefined,
+    mobileTemplateId,
 
     authMode,
 
