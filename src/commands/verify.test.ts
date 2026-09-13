@@ -281,6 +281,45 @@ describe("runVerify — local mode", () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
+  it("packs the react SDK as a single package when the checkout has no workspaces", async () => {
+    await runVerify(["--local"]);
+
+    const packs = callsFor("npm").filter((a) => a[0] === "pack");
+    expect(packs).toEqual([["pack", "--pack-destination", expect.stringContaining("react-vendor")]]);
+  });
+
+  it("packs the client core alongside react when the checkout is a workspace", async () => {
+    vi.mocked(fs.readFileSync).mockImplementation((p: never) => {
+      const s = String(p);
+      if (s.endsWith("registry.json")) return REGISTRY_JSON as never;
+      if (s.endsWith("template.json"))
+        return JSON.stringify({ verify: { flows: ["oauth"] } }) as never;
+      if (s === "/fake/reactsdk/package.json")
+        return JSON.stringify({ private: true, workspaces: ["packages/*"] }) as never;
+      if (s === "/fake/reactsdk/packages/react/package.json")
+        return JSON.stringify({ version: "0.13.0" }) as never;
+      return PKG_JSON as never;
+    });
+
+    await runVerify(["--local"]);
+
+    const packs = callsFor("npm").filter((a) => a[0] === "pack");
+    expect(packs).toEqual([
+      [
+        "pack",
+        "-w",
+        "@seamless-auth/client",
+        "-w",
+        "@seamless-auth/react",
+        "--pack-destination",
+        expect.stringContaining("react-vendor"),
+      ],
+    ]);
+    // The version line reads the react package's manifest, not the private root.
+    expect(logSpy.mock.calls.flat().join("\n")).toContain("@seamless-auth/react");
+    expect(logSpy.mock.calls.flat().join("\n")).toContain("0.13.0");
+  });
+
   it("falls back to sibling checkouts when the dir env vars are unset", async () => {
     // Exercises the default path.resolve(...) branches for the templates root and
     // the react SDK dir; everything "exists" so resolution succeeds.

@@ -154,8 +154,10 @@ services:
   # Gated behind the `react` profile so the api/adapter-only runs skip the build.
   #
   # The inline Dockerfile mirrors the starter's own Dockerfile, but additionally
-  # installs a locally-built @seamless-auth/react tarball when present (--local
-  # mode packs it into ./react-vendor; that dir is empty otherwise → published SDK).
+  # installs locally-built @seamless-auth/react (and @seamless-auth/client)
+  # tarballs when present (--local mode packs them into ./react-vendor; that dir
+  # is empty otherwise → published SDK). Installed in one command so npm resolves
+  # react's client dependency from the sibling tarball rather than the registry.
   react:
     profiles: ['react']
     build:
@@ -169,8 +171,8 @@ services:
         RUN npm ci
         COPY . .
         COPY --from=sdk . /tmp/sdk/
-        RUN if ls /tmp/sdk/seamless-auth-react-*.tgz >/dev/null 2>&1; then \
-              npm install /tmp/sdk/seamless-auth-react-*.tgz; \
+        RUN if ls /tmp/sdk/*.tgz >/dev/null 2>&1; then \
+              npm install /tmp/sdk/*.tgz; \
             fi
         RUN npm run build
         FROM nginx:alpine
