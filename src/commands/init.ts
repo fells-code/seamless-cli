@@ -25,6 +25,7 @@ import {
   openTemplateSource,
   templateFlags,
   type RegistryEntry,
+  type TemplateKind,
   type ScaffoldContext,
   type TemplateManifest,
   type TemplateSource,
@@ -72,10 +73,12 @@ export interface InitOptions {
   profileFlag?: string;
   appId?: string;
   local?: boolean;
-  // --web / --api, the long form of the template flags. Resolved against the
-  // registry alongside them, and rejected when they name the wrong layer.
+  // --web / --api / --mobile, the long form of the template flags. Resolved
+  // against the registry alongside them, and rejected when they name the wrong
+  // layer. Mobile is optional: absent, no mobile starter is placed.
   web?: string;
   api?: string;
+  mobile?: string;
   email?: string;
   auth?: string;
   admin?: string;
@@ -117,7 +120,7 @@ export async function runCLI(
   // registry is only fetched when a template flag needs resolving, which keeps
   // the integrate-an-existing-project path from paying for one it never reads.
   const answers = resolveAnswerFlags(opts);
-  if (aliases.length > 0 || opts.web || opts.api) {
+  if (aliases.length > 0 || opts.web || opts.api || opts.mobile) {
     const { registry } = await openSource();
     Object.assign(
       answers,
@@ -387,8 +390,7 @@ async function scaffoldManaged(
 
   const selected = await resolveSelectedTemplates(
     source,
-    answers.webTemplateId,
-    answers.apiTemplateId,
+    [answers.webTemplateId, answers.apiTemplateId, answers.mobileTemplateId],
     root,
   );
 
@@ -432,11 +434,15 @@ async function scaffoldManaged(
 
     const webEntry = findEntry(source.registry.templates, answers.webTemplateId);
     const apiEntry = findEntry(source.registry.templates, answers.apiTemplateId);
+    const mobileEntry = answers.mobileTemplateId
+      ? findEntry(source.registry.templates, answers.mobileTemplateId)
+      : undefined;
 
     generateSeamlessConfig(root, {
       projectName,
       webFramework: webEntry.framework,
       apiFramework: apiEntry.framework,
+      mobileFramework: mobileEntry?.framework,
       authMode: "managed",
       adminMode: "image",
       managed: {
@@ -450,6 +456,7 @@ async function scaffoldManaged(
       projectName,
       webFramework: webEntry.framework,
       apiFramework: apiEntry.framework,
+      mobileFramework: mobileEntry?.framework ?? null,
       authServerUrl,
       appName: app.name,
       databaseUrl,
@@ -482,8 +489,7 @@ async function scaffoldLocal(
 
   const selected = await resolveSelectedTemplates(
     source,
-    answers.webTemplateId,
-    answers.apiTemplateId,
+    [answers.webTemplateId, answers.apiTemplateId, answers.mobileTemplateId],
     root,
   );
 
@@ -563,11 +569,15 @@ async function scaffoldLocal(
 
   const webEntry = findEntry(source.registry.templates, answers.webTemplateId);
   const apiEntry = findEntry(source.registry.templates, answers.apiTemplateId);
+  const mobileEntry = answers.mobileTemplateId
+    ? findEntry(source.registry.templates, answers.mobileTemplateId)
+    : undefined;
 
   generateSeamlessConfig(root, {
     projectName,
     webFramework: webEntry.framework,
     apiFramework: apiEntry.framework,
+    mobileFramework: mobileEntry?.framework,
     authMode: answers.authMode,
     adminMode: answers.adminMode,
   });
@@ -577,6 +587,7 @@ async function scaffoldLocal(
     root,
     webFramework: webEntry.framework,
     apiFramework: apiEntry.framework,
+    mobileFramework: mobileEntry?.framework ?? null,
     authMode: answers.authMode,
     adminMode: answers.adminMode,
     ownerEmail: answers.ownerEmail,
@@ -772,15 +783,16 @@ interface SelectedTemplate {
 }
 
 // Resolves the chosen templates (reading their manifests and asserting CLI
-// support) before any files are written, so every prompt finishes first.
+// support) before any files are written, so every prompt finishes first. An
+// undefined id is a layer that was not chosen (mobile is optional).
 async function resolveSelectedTemplates(
   source: TemplateSource,
-  webTemplateId: string,
-  apiTemplateId: string,
+  templateIds: Array<string | undefined>,
   root: string,
 ): Promise<SelectedTemplate[]> {
   const selected: SelectedTemplate[] = [];
-  for (const id of [webTemplateId, apiTemplateId]) {
+  for (const id of templateIds) {
+    if (!id) continue;
     const entry = findEntry(source.registry.templates, id);
     const manifest = await source.readManifest(entry);
     assertCliSupports(manifest, entry.label);
@@ -829,6 +841,7 @@ function printOAuthNextSteps(providers: CollectedOAuthProvider[]) {
 export interface TemplatePreselect {
   webTemplateId?: string;
   apiTemplateId?: string;
+  mobileTemplateId?: string;
 }
 
 // The non-template answers a flag can supply. Validated here so an unusable
@@ -875,37 +888,34 @@ function resolveTemplateSelection(
 ): TemplatePreselect {
   const preselect = resolveTemplateAliases(aliases, templates);
 
-  for (const [flag, kind] of [
-    ["web", "web"],
-    ["api", "api"],
-  ] as const) {
-    const value = opts[flag];
+  for (const kind of ["web", "api", "mobile"] as const) {
+    const value = opts[kind];
     if (!value) continue;
 
     const named = value.replace(/^--+/, "");
-    const { webTemplateId, apiTemplateId } = resolveTemplateAliases(
-      [named],
-      templates,
-    );
-    const id = kind === "web" ? webTemplateId : apiTemplateId;
+    const key = preselectKey(kind);
+    const id = resolveTemplateAliases([named], templates)[key];
     if (!id) {
       throw new Error(
-        `--${flag} expects a ${kind} template, but "${value}" is not one. Run \`seamless templates list\` to see which templates are ${kind}.`,
+        `--${kind} expects a ${kind} template, but "${value}" is not one. Run \`seamless templates list\` to see which templates are ${kind}.`,
       );
     }
 
-    const existing = kind === "web" ? preselect.webTemplateId : preselect.apiTemplateId;
+    const existing = preselect[key];
     if (existing && existing !== id) {
       throw new Error(
-        `Conflicting ${kind} template flags: --${flag}=${value} cannot combine with --${existing}.`,
+        `Conflicting ${kind} template flags: --${kind}=${value} cannot combine with --${existing}.`,
       );
     }
 
-    if (kind === "web") preselect.webTemplateId = id;
-    else preselect.apiTemplateId = id;
+    preselect[key] = id;
   }
 
   return preselect;
+}
+
+function preselectKey(kind: TemplateKind): keyof TemplatePreselect {
+  return `${kind}TemplateId`;
 }
 
 // Resolves `--<alias>` and `--<id>` flags (e.g. --oauth, --react-oauth) to specific
@@ -932,21 +942,13 @@ export function resolveTemplateAliases(
       );
     }
 
-    if (entry.kind === "web") {
-      if (preselect.webTemplateId && preselect.webTemplateId !== entry.id) {
-        throw new Error(
-          `Conflicting web template flags: --${alias} cannot combine with another web example.`,
-        );
-      }
-      preselect.webTemplateId = entry.id;
-    } else if (entry.kind === "api") {
-      if (preselect.apiTemplateId && preselect.apiTemplateId !== entry.id) {
-        throw new Error(
-          `Conflicting api template flags: --${alias} cannot combine with another api example.`,
-        );
-      }
-      preselect.apiTemplateId = entry.id;
+    const key = preselectKey(entry.kind);
+    if (preselect[key] && preselect[key] !== entry.id) {
+      throw new Error(
+        `Conflicting ${entry.kind} template flags: --${alias} cannot combine with another ${entry.kind} example.`,
+      );
     }
+    preselect[key] = entry.id;
   }
 
   return preselect;

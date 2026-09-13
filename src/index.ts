@@ -140,7 +140,7 @@ const INIT_SWITCHES = new Set(["--local", "--yes", "-y", "--force"]);
 export function parseInitArgs(
   args: string[],
 ): [string | undefined, string[], InitOptions] {
-  const valued = ["profile", "app", "web", "api", "email", "auth", "admin"];
+  const valued = ["profile", "app", "web", "api", "mobile", "email", "auth", "admin"];
   const values: Record<string, string | undefined> = {};
 
   let rest = args;
@@ -163,6 +163,7 @@ export function parseInitArgs(
       appId: values.app,
       web: values.web,
       api: values.api,
+      mobile: values.mobile,
       email: values.email,
       auth: values.auth,
       admin: values.admin,

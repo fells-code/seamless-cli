@@ -18,7 +18,7 @@ export const COMMAND_HELP: CommandHelp[] = [
     name: "init",
     usage: [
       "seamless init [project-name] [--<template>]",
-      "seamless init [project-name] --yes [--web=<id>] [--api=<id>] [--email=<address>] [--auth=<mode>] [--admin=<mode>]",
+      "seamless init [project-name] --yes [--web=<id>] [--api=<id>] [--mobile=<id>] [--email=<address>] [--auth=<mode>] [--admin=<mode>]",
     ],
     sections: [
       {
@@ -63,6 +63,12 @@ NON-INTERACTIVE
   • Choose the web and api starters by name
   • Default to the first selectable template of that kind in the registry
 
+--mobile=<id|alias>
+  • Include a mobile starter (Expo), placed at mobile/
+  • Optional: the prompt defaults to none, and --yes scaffolds without one
+  • Email codes and sign-in links work against the local stack; passkeys
+    need an associated domain, which the starter's README walks through
+
 --email=<address>
   • The owner address, which becomes the admin when you register
   • Required under --yes unless a portal session supplies one
@@ -100,7 +106,7 @@ NON-INTERACTIVE
 init uses (so SEAMLESS_TEMPLATES_DIR and SEAMLESS_TEMPLATES_REF apply).
 Needs no login.
 
-  • Columns: id, kind (web or api), framework, the init flags that select
+  • Columns: id, kind (web, api, or mobile), framework, the init flags that select
     it, and status
   • Every template answers to --<id>; some also declare a shorter --<alias>
   • Templates marked coming-soon cannot be selected yet, so they list no flag

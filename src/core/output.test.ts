@@ -227,6 +227,57 @@ describe("printManagedSuccessOutput", () => {
   });
 });
 
+describe("mobile layer in the success output", () => {
+  it("lists the mobile app and how to start it in local mode", () => {
+    printSuccessOutput({
+      projectName: "my-app",
+      root: "/tmp/my-app",
+      webFramework: "react",
+      apiFramework: "express",
+      mobileFramework: "expo",
+      authMode: "docker",
+      adminMode: "api",
+      ownerEmail: "dev@example.com",
+    });
+
+    const out = allLogs();
+    expect(out).toContain("Mobile app");
+    expect(out).toContain("(Expo)");
+    expect(out).toContain("cd mobile && npm install && npx expo start");
+    expect(out).toContain("10.0.2.2");
+    expect(out).toContain("mobile/README.md");
+  });
+
+  it("says nothing about mobile when no mobile starter was chosen", () => {
+    printSuccessOutput({
+      root: "/tmp/my-app",
+      webFramework: "react",
+      apiFramework: "express",
+      authMode: "docker",
+      adminMode: "api",
+      ownerEmail: "dev@example.com",
+    });
+
+    expect(allLogs()).not.toContain("Mobile app");
+  });
+
+  it("lists the mobile app and how to start it in managed mode", () => {
+    printManagedSuccessOutput({
+      projectName: "my-app",
+      webFramework: "react",
+      apiFramework: "express",
+      mobileFramework: "expo",
+      authServerUrl: "https://auth.example.com",
+      appName: "My App",
+    });
+
+    const out = allLogs();
+    expect(out).toContain("Mobile app");
+    expect(out).toContain("(Expo)");
+    expect(out).toContain("cd mobile && npm install && npx expo start");
+  });
+});
+
 describe("maskDatabaseUrl", () => {
   it("masks userinfo in anything printed as a connection string", () => {
     expect(

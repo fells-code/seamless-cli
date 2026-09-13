@@ -114,6 +114,30 @@ describe("generateSeamlessConfig", () => {
     expect(config.docker).toEqual({ composeFile: "docker-compose.yml" });
   });
 
+  it("records a mobile service only when a mobile starter was chosen", () => {
+    generateSeamlessConfig(tmpDir, {
+      projectName: "my-app",
+      webFramework: "react",
+      apiFramework: "express",
+      mobileFramework: "expo",
+      authMode: "docker",
+      adminMode: "api",
+    });
+    expect(readConfig(tmpDir).services.mobile).toEqual({
+      framework: "expo",
+      path: "./mobile",
+    });
+
+    generateSeamlessConfig(tmpDir, {
+      projectName: "my-app",
+      webFramework: "react",
+      apiFramework: "express",
+      authMode: "docker",
+      adminMode: "api",
+    });
+    expect(readConfig(tmpDir).services).not.toHaveProperty("mobile");
+  });
+
   it("writes an api-served console config with the /console url", () => {
     generateSeamlessConfig(tmpDir, {
       projectName: "my-app",

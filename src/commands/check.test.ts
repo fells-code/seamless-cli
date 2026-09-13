@@ -112,6 +112,34 @@ describe("runCheck", () => {
     expect(out).toContain("Check complete.");
   });
 
+  it("checks the mobile project only when the config records one", async () => {
+    const withMobile = {
+      ...CONFIG,
+      services: { ...CONFIG.services, mobile: { framework: "expo", path: "mobile" } },
+    };
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(withMobile));
+    vi.mocked(execSync).mockReturnValue(Buffer.from("api\n") as never);
+    vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
+
+    // Present on disk.
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    await runCheck();
+    expect(output()).toContain("Mobile project detected");
+
+    // Recorded in the config but gone from disk.
+    logs.length = 0;
+    vi.mocked(fs.existsSync).mockImplementation((p: string) => !String(p).endsWith("mobile"));
+    await runCheck();
+    expect(output()).toContain("Mobile project missing");
+
+    // Never chosen: not a finding either way.
+    logs.length = 0;
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(CONFIG));
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    await runCheck();
+    expect(output()).not.toContain("Mobile project");
+  });
+
   it("reports the unhealthy branches when everything is missing or down", async () => {
     // config present so we proceed, but web/api/compose paths missing.
     vi.mocked(fs.existsSync).mockImplementation((p: string) => {

@@ -102,6 +102,17 @@ function checkStructure(root: string, config: any, report: Report) {
   } else {
     report.fail("API project missing");
   }
+
+  // Only projects that chose a mobile starter record one, so its absence from
+  // the config is not a finding; its absence from disk is.
+  const mobilePath = services.mobile?.path;
+  if (mobilePath) {
+    if (fs.existsSync(path.join(root, mobilePath))) {
+      report.ok("Mobile project detected");
+    } else {
+      report.fail("Mobile project missing");
+    }
+  }
 }
 
 function checkDocker(report: Report) {
