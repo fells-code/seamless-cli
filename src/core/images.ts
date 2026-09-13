@@ -25,4 +25,4 @@ export const SEAMLESS_AUTH_ADMIN_DASHBOARD_REF = SEAMLESS_AUTH_ADMIN_DASHBOARD_V
 // SEAMLESS_TEMPLATES_REF, or point at a local checkout with SEAMLESS_TEMPLATES_DIR.
 export const SEAMLESS_TEMPLATES_REPO = "fells-code/seamless-templates";
 
-export const SEAMLESS_TEMPLATES_REF = "v0.14.0";
+export const SEAMLESS_TEMPLATES_REF = "v0.15.0";
