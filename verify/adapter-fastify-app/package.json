@@ -6,7 +6,7 @@
   "description": "Minimal adopter backend for the conformance harness — real @seamless-auth/fastify with a capture transport.",
   "dependencies": {
     "@fastify/cors": "^11.0.1",
-    "@seamless-auth/fastify": "^0.5.0",
+    "@seamless-auth/fastify": "^0.6.0",
     "fastify": "^5.2.0"
   }
 }
