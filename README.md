@@ -563,6 +563,47 @@ the exception: it only exists after the code is sent, so that step genuinely nee
 
 ---
 
+## Migrating users from another system
+
+`seamless migrate csv` imports users from a CSV export (an HR system, a directory export, a
+spreadsheet) into the instance you are signed in to with `seamless profile login`. It needs an admin
+role and an auth server with `POST /admin/users/import`.
+
+```bash
+seamless migrate csv users.csv            # dry run: nothing is written
+seamless migrate csv users.csv --apply    # import
+```
+
+It is a dry run unless you pass `--apply`, and it always writes a report next to the input
+(`users.migrate-plan.csv` and `.json`, or `users.migrate-result.*` after `--apply`) with one line per
+row: created, updated, unchanged, rejected (with the server's reason) or invalid. Exits 1 when any
+row is rejected or invalid.
+
+Columns are found by header: `email` (required), `externalId` (or `id`, `employee id`), `phone`,
+`roles`, and `organizations` (or `department`). Cells holding several values are split on `;`.
+Organizations are slugs or ids and must already exist. When the headers are different, keep a
+mapping file beside the export so the import can be re-run the same way:
+
+```json
+{
+  "source": "hr-export",
+  "columns": { "email": "Work Email", "externalId": "Employee ID", "organizations": "Dept" },
+  "separator": "|",
+  "roles": ["staff"],
+  "organizationRoles": ["member"]
+}
+```
+
+```bash
+seamless migrate csv export.csv --map hr-mapping.json --apply
+```
+
+Re-running is safe. People are matched on `source` plus their external id, then on email, so a
+second run reports them `unchanged`. Imports carry no passwords: each user signs in for the first
+time by registering with the imported email, which proves they control it. Roles and memberships are
+only ever added, an existing account's email is never changed, and admin roles are refused (grant
+admin to individuals afterwards).
+
 ## What is configured for you
 
 Seamless CLI handles the parts that are usually difficult to get right:

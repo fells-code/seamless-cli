@@ -382,6 +382,43 @@ users prepare-device-replacement <id> [--force] [--keep-sessions] [--keep-passke
     ],
   },
   {
+    name: "migrate",
+    usage: [
+      "seamless migrate csv <file> [--map <mapping.json>] [--source <name>] [--apply] [--report <path>] [--json]",
+    ],
+    sections: [
+      {
+        heading: "migrate csv <file>",
+        body: `Import users from a CSV export into the instance (requires an admin role).
+Runs as a dry run unless --apply is passed, and writes a report either way.
+
+Columns are found by header name: email (required), externalId (or id,
+employee id), phone, roles, and organizations (or department). Multi-value
+cells are split on ";". Organizations are slugs or ids, and must exist.
+
+--map <mapping.json>
+  • Name the columns and defaults yourself, for example:
+    { "source": "hr-export",
+      "columns": { "email": "Work Email", "externalId": "Employee ID" },
+      "separator": "|", "roles": ["staff"], "organizationRoles": ["member"] }
+--source <name>
+  • The system the users come from (default csv). Re-runs with the same
+    source match people on their externalId, so keep it stable
+--apply
+  • Write to the instance. Without it nothing is written
+--report <path>
+  • Where to write <path>.csv and <path>.json (default: next to the input)
+--json
+  • Print the report as JSON
+
+Imports carry no passwords. Each user signs in for the first time by
+registering with their email. Roles and memberships are only added, never
+removed, and admin roles are refused. Exits 1 when any row is rejected or
+invalid.`,
+      },
+    ],
+  },
+  {
     name: "org",
     usage: [
       "seamless org <list|create|get|update>",
