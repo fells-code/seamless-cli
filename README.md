@@ -71,7 +71,8 @@ What happens:
   which to connect. Skip the prompt with `--app <id>` (an application id or infra id).
 - It issues the application's service token from the control plane (the real credential, not a
   locally generated secret) and writes it, the managed auth server URL, and the JWKS key id into
-  `api/.env`. The frontend is pointed at the same auth server URL.
+  `api/.env`. The frontend keeps pointing at your backend, which runs the adapter at `/auth`; the
+  browser never talks to the auth server directly.
 - It reads the application's bundled database and writes `DATABASE_URL` into `api/.env` as
   `postgres://USER:PASSWORD@host:port/db?sslmode=require`. **The user and password stay as literal
   placeholders**: the CLI never asks the control plane to reveal them, so no live database credential

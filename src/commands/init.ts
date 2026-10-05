@@ -464,7 +464,7 @@ async function scaffoldManaged(
   } catch (err) {
     console.error(
       kleur.red(
-        "\nScaffolding failed after a new service token was issued. The token below is valid — set it on your backend to recover:",
+        "\nScaffolding failed after a new service token was issued. The token below is valid. Set it on your backend to recover:",
       ),
     );
     printManagedValues(authServerUrl, serviceToken, jwksKid);
@@ -704,11 +704,13 @@ function printManagedValues(
   );
   console.log(
     kleur.dim(
-      "Set AUTH_SERVER_URL and API_SERVICE_TOKEN on your backend, and the auth",
+      "Set AUTH_SERVER_URL, API_SERVICE_TOKEN, and JWKS_KID on your backend. Point",
     ),
   );
   console.log(
-    kleur.dim("server URL on your frontend, then sign in to verify.\n"),
+    kleur.dim(
+      "your frontend at your backend, not the auth server, then sign in to verify.\n",
+    ),
   );
 }
 
