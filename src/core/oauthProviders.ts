@@ -55,6 +55,16 @@ export const OAUTH_PROVIDER_CATALOG: OAuthProviderCatalogEntry[] = [
     scopes: ["openid", "email", "profile"],
     pkce: true,
     tenanted: true,
+    // The profile comes from the verified ID token. `xms_edov` is the optional claim
+    // saying the tenant verified the email's domain; add it to the app registration's
+    // token configuration. Users imported with source `entra-id` are matched on `oid`.
+    extra: {
+      issuer: "https://login.microsoftonline.com/{tenant}/v2.0",
+      jwksUri: "https://login.microsoftonline.com/{tenant}/discovery/v2.0/keys",
+      emailVerifiedJsonPath: "xms_edov",
+      externalIdSource: "entra-id",
+      externalIdJsonPath: "oid",
+    },
   },
   {
     id: "gitlab",
@@ -72,13 +82,12 @@ export interface CollectedOAuthProvider {
   catalog: OAuthProviderCatalogEntry;
   clientId: string;
   clientSecret: string;
-  /** For a tenanted provider: the directory (tenant) id or a verified domain. */
+  /** For a tenanted provider: the directory (tenant) id. */
   tenant?: string;
 }
 
 const MULTI_TENANT = new Set(["common", "organizations", "consumers"]);
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DOMAIN = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 
 /** Why a tenant value cannot be used, or undefined when it can (blank is allowed). */
 export function tenantProblem(value: string): string | undefined {
@@ -87,8 +96,10 @@ export function tenantProblem(value: string): string | undefined {
   if (MULTI_TENANT.has(tenant.toLowerCase())) {
     return `"${tenant}" accepts sign-ins from any tenant. Use your directory (tenant) id.`;
   }
-  if (!GUID.test(tenant) && !DOMAIN.test(tenant)) {
-    return "Use the directory (tenant) id, a GUID, or a verified domain such as contoso.onmicrosoft.com.";
+  if (!GUID.test(tenant)) {
+    // ID tokens name the tenant by its GUID in `iss`, so a domain here would never
+    // match the issuer and every sign-in would be refused.
+    return "Use the directory (tenant) id, a GUID. Find it on the Entra admin center's overview page.";
   }
   return undefined;
 }
@@ -131,7 +142,12 @@ export function buildOAuthAuthEnv(providers: CollectedOAuthProvider[]): {
       redirectUri: REDIRECT_URI,
       redirectUris: [REDIRECT_URI],
       ...(catalog.pkce ? { pkce: true } : {}),
-      ...(catalog.extra ?? {}),
+      ...Object.fromEntries(
+        Object.entries(catalog.extra ?? {}).map(([key, value]) => [
+          key,
+          typeof value === "string" ? withTenant(value) : value,
+        ]),
+      ),
     };
   });
 

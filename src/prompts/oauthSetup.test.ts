@@ -55,13 +55,13 @@ describe("runOAuthSetupPrompts", () => {
     vi.mocked(multiselect).mockResolvedValue(["microsoft"] as never);
     vi.mocked(text).mockImplementation(async (args: unknown) => {
       const a = args as { message: string };
-      return a.message.includes("tenant") ? " contoso.onmicrosoft.com " : "ms-id";
+      return a.message.includes("tenant") ? " 2c0d53c2-a541-452b-b71b-54c7f15e5877 " : "ms-id";
     });
     vi.mocked(password).mockResolvedValue("ms-secret" as never);
 
     const [result] = await runOAuthSetupPrompts();
 
-    expect(result.tenant).toBe("contoso.onmicrosoft.com");
+    expect(result.tenant).toBe("2c0d53c2-a541-452b-b71b-54c7f15e5877");
     const tenantPrompt = vi
       .mocked(text)
       .mock.calls.map(([args]) => args as { message: string; validate?: (v: string) => unknown })

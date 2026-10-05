@@ -116,6 +116,13 @@ describe("buildOAuthAuthEnv", () => {
       `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`,
     );
     expect(config.tokenUrl).toBe(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`);
+    expect(config).toMatchObject({
+      issuer: `https://login.microsoftonline.com/${tenant}/v2.0`,
+      jwksUri: `https://login.microsoftonline.com/${tenant}/discovery/v2.0/keys`,
+      emailVerifiedJsonPath: "xms_edov",
+      externalIdSource: "entra-id",
+      externalIdJsonPath: "oid",
+    });
   });
 
   it("scaffolds Microsoft disabled with a placeholder when the tenant is missing", () => {
@@ -144,10 +151,13 @@ describe("buildOAuthAuthEnv", () => {
 });
 
 describe("tenantProblem", () => {
-  it("accepts a tenant id, a verified domain, or blank", () => {
+  it("accepts a tenant id or blank", () => {
     expect(tenantProblem("2c0d53c2-a541-452b-b71b-54c7f15e5877")).toBeUndefined();
-    expect(tenantProblem("contoso.onmicrosoft.com")).toBeUndefined();
     expect(tenantProblem("  ")).toBeUndefined();
+  });
+
+  it("refuses a domain, since ID tokens name the tenant by its id", () => {
+    expect(tenantProblem("contoso.onmicrosoft.com")).toMatch(/a GUID/);
   });
 
   it("refuses the multi-tenant aliases in any case", () => {
@@ -156,7 +166,7 @@ describe("tenantProblem", () => {
     }
   });
 
-  it("refuses something that is neither a GUID nor a domain", () => {
+  it("refuses something that is not a GUID", () => {
     expect(tenantProblem("my tenant")).toMatch(/directory \(tenant\) id/);
   });
 });
