@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildOAuthAuthEnv,
   OAUTH_PROVIDER_CATALOG,
+  tenantProblem,
   withLoginMethod,
   type CollectedOAuthProvider,
 } from "./oauthProviders.js";
@@ -10,10 +11,11 @@ function collected(
   id: string,
   clientId: string,
   clientSecret: string,
+  tenant?: string,
 ): CollectedOAuthProvider {
   const catalog = OAUTH_PROVIDER_CATALOG.find((p) => p.id === id);
   if (!catalog) throw new Error(`unknown test provider ${id}`);
-  return { catalog, clientId, clientSecret };
+  return { catalog, clientId, clientSecret, ...(tenant !== undefined ? { tenant } : {}) };
 }
 
 describe("OAUTH_PROVIDER_CATALOG", () => {
@@ -93,6 +95,38 @@ describe("buildOAuthAuthEnv", () => {
     expect(configs[0].clientId).toBe("client-only");
   });
 
+  it("never scopes Microsoft to a multi-tenant endpoint", () => {
+    const microsoft = OAUTH_PROVIDER_CATALOG.find((p) => p.id === "microsoft")!;
+    for (const url of [microsoft.authorizationUrl, microsoft.tokenUrl]) {
+      expect(url).toContain("/{tenant}/");
+      expect(url).not.toMatch(/\/(common|organizations|consumers)\//);
+    }
+  });
+
+  it("fills the Microsoft endpoints with the tenant", () => {
+    const tenant = "2c0d53c2-a541-452b-b71b-54c7f15e5877";
+    const { env, pending } = buildOAuthAuthEnv([
+      collected("microsoft", "client-id", "secret", tenant),
+    ]);
+
+    expect(pending).toEqual([]);
+    const [config] = JSON.parse(env.OAUTH_PROVIDERS);
+    expect(config.enabled).toBe(true);
+    expect(config.authorizationUrl).toBe(
+      `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`,
+    );
+    expect(config.tokenUrl).toBe(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`);
+  });
+
+  it("scaffolds Microsoft disabled with a placeholder when the tenant is missing", () => {
+    const { env, pending } = buildOAuthAuthEnv([collected("microsoft", "client-id", "secret")]);
+
+    expect(pending).toEqual(["Microsoft"]);
+    const [config] = JSON.parse(env.OAUTH_PROVIDERS);
+    expect(config.enabled).toBe(false);
+    expect(config.authorizationUrl).toContain("/REPLACE_WITH_MICROSOFT_TENANT_ID/");
+  });
+
   it("handles multiple providers, replacing dashes in the secret env name", () => {
     const { env, pending } = buildOAuthAuthEnv([
       collected("google", "g-id", "g-secret"),
@@ -106,6 +140,24 @@ describe("buildOAuthAuthEnv", () => {
     const configs = JSON.parse(env.OAUTH_PROVIDERS);
     expect(configs).toHaveLength(2);
     expect(configs[1].clientSecretEnv).toBe("GITLAB_CLIENT_SECRET");
+  });
+});
+
+describe("tenantProblem", () => {
+  it("accepts a tenant id, a verified domain, or blank", () => {
+    expect(tenantProblem("2c0d53c2-a541-452b-b71b-54c7f15e5877")).toBeUndefined();
+    expect(tenantProblem("contoso.onmicrosoft.com")).toBeUndefined();
+    expect(tenantProblem("  ")).toBeUndefined();
+  });
+
+  it("refuses the multi-tenant aliases in any case", () => {
+    for (const alias of ["common", "Organizations", "CONSUMERS"]) {
+      expect(tenantProblem(alias)).toMatch(/any tenant/);
+    }
+  });
+
+  it("refuses something that is neither a GUID nor a domain", () => {
+    expect(tenantProblem("my tenant")).toMatch(/directory \(tenant\) id/);
   });
 });
 

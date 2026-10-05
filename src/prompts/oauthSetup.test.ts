@@ -51,6 +51,35 @@ describe("runOAuthSetupPrompts", () => {
     expect(text).not.toHaveBeenCalled();
   });
 
+  it("asks Microsoft for a tenant and validates it", async () => {
+    vi.mocked(multiselect).mockResolvedValue(["microsoft"] as never);
+    vi.mocked(text).mockImplementation(async (args: unknown) => {
+      const a = args as { message: string };
+      return a.message.includes("tenant") ? " contoso.onmicrosoft.com " : "ms-id";
+    });
+    vi.mocked(password).mockResolvedValue("ms-secret" as never);
+
+    const [result] = await runOAuthSetupPrompts();
+
+    expect(result.tenant).toBe("contoso.onmicrosoft.com");
+    const tenantPrompt = vi
+      .mocked(text)
+      .mock.calls.map(([args]) => args as { message: string; validate?: (v: string) => unknown })
+      .find((args) => args.message.includes("tenant"))!;
+    expect(tenantPrompt.validate!("common")).toMatch(/any tenant/);
+  });
+
+  it("does not ask providers without a tenant for one", async () => {
+    vi.mocked(multiselect).mockResolvedValue(["google"] as never);
+    vi.mocked(text).mockResolvedValue("g" as never);
+    vi.mocked(password).mockResolvedValue("s" as never);
+
+    const [result] = await runOAuthSetupPrompts();
+
+    expect(result).not.toHaveProperty("tenant");
+    expect(vi.mocked(text).mock.calls.some(([a]) => (a as { message: string }).message.includes("tenant"))).toBe(false);
+  });
+
   it("collects trimmed credentials for each chosen provider", async () => {
     vi.mocked(multiselect).mockResolvedValue(["google", "github"] as never);
 

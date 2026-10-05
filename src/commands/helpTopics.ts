@@ -36,7 +36,9 @@ With a template flag (e.g. --oauth, --react-oauth, --fastify):
   • A template answers to both its id and its short alias, so --basic and
     --react-vite select the same starter
   • --oauth also prompts for OIDC providers (Google, GitHub, Microsoft,
-    GitLab) and wires the ones you configure into the auth server
+    GitLab) and wires the ones you configure into the auth server.
+    Microsoft asks for your directory (tenant) id and is never set up
+    to accept sign-ins from any tenant
   • Run seamless templates list to see every id, alias, and flag
 
 --profile <name>

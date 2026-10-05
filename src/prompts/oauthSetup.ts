@@ -3,6 +3,7 @@ import { multiselect, password, text } from "@clack/prompts";
 import { orCancel } from "../core/cancel.js";
 import {
   OAUTH_PROVIDER_CATALOG,
+  tenantProblem,
   type CollectedOAuthProvider,
 } from "../core/oauthProviders.js";
 
@@ -42,10 +43,21 @@ export async function runOAuthSetupPrompts(): Promise<CollectedOAuthProvider[]> 
       }),
     ) as string;
 
+    const tenant = catalog.tenanted
+      ? (orCancel(
+          await text({
+            message: `${catalog.label} directory (tenant) ID`,
+            placeholder: "leave blank to configure later",
+            validate: (value) => tenantProblem(value ?? ""),
+          }),
+        ) as string)
+      : undefined;
+
     collected.push({
       catalog,
       clientId: (clientId ?? "").trim(),
       clientSecret: (clientSecret ?? "").trim(),
+      ...(tenant !== undefined ? { tenant: tenant.trim() } : {}),
     });
   }
 
