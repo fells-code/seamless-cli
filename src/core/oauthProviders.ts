@@ -19,6 +19,8 @@ export interface OAuthProviderCatalogEntry {
   pkce?: boolean;
   // Provider-specific claim path overrides (defaults on the server are sub/email).
   extra?: Record<string, unknown>;
+  // The endpoints contain `{tenant}`, filled from a tenant the user supplies.
+  tenanted?: boolean;
 }
 
 export const OAUTH_PROVIDER_CATALOG: OAuthProviderCatalogEntry[] = [
@@ -43,12 +45,26 @@ export const OAUTH_PROVIDER_CATALOG: OAuthProviderCatalogEntry[] = [
   {
     id: "microsoft",
     label: "Microsoft",
+    // Tenant-scoped, never `common`, `organizations` or `consumers`. Those accept a
+    // sign-in from any Entra tenant, and every tenant's administrator controls the
+    // email its users present.
     authorizationUrl:
-      "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-    tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize",
+    tokenUrl: "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
     userInfoUrl: "https://graph.microsoft.com/oidc/userinfo",
     scopes: ["openid", "email", "profile"],
     pkce: true,
+    tenanted: true,
+    // The profile comes from the verified ID token. `xms_edov` is the optional claim
+    // saying the tenant verified the email's domain; add it to the app registration's
+    // token configuration. Users imported with source `entra-id` are matched on `oid`.
+    extra: {
+      issuer: "https://login.microsoftonline.com/{tenant}/v2.0",
+      jwksUri: "https://login.microsoftonline.com/{tenant}/discovery/v2.0/keys",
+      emailVerifiedJsonPath: "xms_edov",
+      externalIdSource: "entra-id",
+      externalIdJsonPath: "oid",
+    },
   },
   {
     id: "gitlab",
@@ -66,6 +82,26 @@ export interface CollectedOAuthProvider {
   catalog: OAuthProviderCatalogEntry;
   clientId: string;
   clientSecret: string;
+  /** For a tenanted provider: the directory (tenant) id. */
+  tenant?: string;
+}
+
+const MULTI_TENANT = new Set(["common", "organizations", "consumers"]);
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Why a tenant value cannot be used, or undefined when it can (blank is allowed). */
+export function tenantProblem(value: string): string | undefined {
+  const tenant = value.trim();
+  if (!tenant) return undefined;
+  if (MULTI_TENANT.has(tenant.toLowerCase())) {
+    return `"${tenant}" accepts sign-ins from any tenant. Use your directory (tenant) id.`;
+  }
+  if (!GUID.test(tenant)) {
+    // ID tokens name the tenant by its GUID in `iss`, so a domain here would never
+    // match the issuer and every sign-in would be refused.
+    return "Use the directory (tenant) id, a GUID. Find it on the Entra admin center's overview page.";
+  }
+  return undefined;
 }
 
 function secretEnvName(id: string): string {
@@ -83,10 +119,13 @@ export function buildOAuthAuthEnv(providers: CollectedOAuthProvider[]): {
   const env: Record<string, string> = {};
   const pending: string[] = [];
 
-  const configs = providers.map(({ catalog, clientId, clientSecret }) => {
+  const configs = providers.map(({ catalog, clientId, clientSecret, tenant = "" }) => {
     const envName = secretEnvName(catalog.id);
-    const ready = clientId.length > 0 && clientSecret.length > 0;
+    const ready =
+      clientId.length > 0 && clientSecret.length > 0 && (!catalog.tenanted || tenant.length > 0);
     if (!ready) pending.push(catalog.label);
+    const withTenant = (url: string) =>
+      url.replace("{tenant}", tenant || `REPLACE_WITH_${catalog.id.toUpperCase()}_TENANT_ID`);
 
     env[envName] = clientSecret;
 
@@ -96,14 +135,19 @@ export function buildOAuthAuthEnv(providers: CollectedOAuthProvider[]): {
       enabled: ready,
       clientId: clientId || `REPLACE_WITH_${catalog.id.toUpperCase()}_CLIENT_ID`,
       clientSecretEnv: envName,
-      authorizationUrl: catalog.authorizationUrl,
-      tokenUrl: catalog.tokenUrl,
+      authorizationUrl: withTenant(catalog.authorizationUrl),
+      tokenUrl: withTenant(catalog.tokenUrl),
       userInfoUrl: catalog.userInfoUrl,
       scopes: catalog.scopes,
       redirectUri: REDIRECT_URI,
       redirectUris: [REDIRECT_URI],
       ...(catalog.pkce ? { pkce: true } : {}),
-      ...(catalog.extra ?? {}),
+      ...Object.fromEntries(
+        Object.entries(catalog.extra ?? {}).map(([key, value]) => [
+          key,
+          typeof value === "string" ? withTenant(value) : value,
+        ]),
+      ),
     };
   });
 
