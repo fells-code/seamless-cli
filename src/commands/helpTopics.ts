@@ -37,8 +37,8 @@ With a template flag (e.g. --oauth, --react-oauth, --fastify):
     --react-vite select the same starter
   • --oauth also prompts for OIDC providers (Google, GitHub, Microsoft,
     GitLab) and wires the ones you configure into the auth server.
-    Microsoft asks for your directory (tenant) id and is never set up
-    to accept sign-ins from any tenant
+    Microsoft asks for your directory (tenant) id, is never set up to
+    accept sign-ins from any tenant, and signs in with a verified ID token
   • Run seamless templates list to see every id, alias, and flag
 
 --profile <name>
