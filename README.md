@@ -675,7 +675,7 @@ Seamless CLI exists to make this setup fast and repeatable.
 
 ## Requirements
 
-- Node.js 24 (see `.nvmrc`; the package `engines` requires `>=24 <25`)
+- Node.js 22 or newer (the package `engines` requires `>=22`; `.nvmrc` pins 24 for development)
 - npm or pnpm
 - Docker (optional)
 
