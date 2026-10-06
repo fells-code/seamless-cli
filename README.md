@@ -1,6 +1,6 @@
 # Seamless CLI
 
-[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL3-yellow.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/seamless-cli.svg?style=flat)](https://www.npmjs.com/package/seamless-cli)
 ![coverage](resources/coverage-badge.svg)
 [![conformance](https://github.com/fells-code/seamless-cli/actions/workflows/conformance.yml/badge.svg)](https://github.com/fells-code/seamless-cli/actions/workflows/conformance.yml)
@@ -711,7 +711,7 @@ npm --cache /tmp/npm-cache exec -- seamless --version
 
 ## License
 
-AGPL-3.0-only © 2026 Fells Code LLC
+Apache-2.0 © 2026 Fells Code LLC
 
 This license ensures:
 
