@@ -24,6 +24,7 @@
     "dev": "tsx src/index.ts",
     "clean": "rm -rf dist",
     "test": "vitest run",
+    "check:types-current": "node scripts/check-types-current.mjs",
     "coverage": "vitest run --coverage --fileParallelism=false",
     "coverage:badge": "node ./scripts/updateCoverageBadge.mjs",
     "prepare": "husky",

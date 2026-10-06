@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check @seamless-auth/types is current
+        run: npm run check:types-current
+
       - name: Build
         run: npm run build
 
