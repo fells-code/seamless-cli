@@ -1,5 +1,36 @@
 # seamless-cli
 
+## 0.18.0
+
+### Minor Changes
+
+- 306e23f: `seamless init` supports full-stack templates (`kind: "fullstack"` in the template registry), starting with the Next.js App Router starter: `seamless init --nextjs`, `--web=nextjs`, or pick it at the web prompt. A full-stack template is the web app and its own backend, so it fills the web layer and the project gets no `api/`. The backend question is skipped, and `--api` beside it is refused before anything is created.
+
+  - The local stack runs it as the `web` service: the template's dev container on port 5173, with the source mounted for reload and the auth wiring the api service would have had. One-time codes and sign-in links print in `docker compose logs web`.
+  - The admin console is not available for full-stack templates yet, since the Next.js adapter cannot host it. Only `--admin=none` applies, and other values are refused.
+  - `seamless.config.json` records the web service as `kind: "fullstack"` with no `api` entry, and `seamless check` checks the web app's `/health` instead of the API.
+  - `seamless verify` says it is skipping full-stack templates rather than dropping them silently.
+
+- 6c226be: The Microsoft preset now signs in with OpenID Connect: it sets `issuer` and `jwksUri` for the tenant so the auth server verifies the ID token, reads email verification from the `xms_edov` optional claim (add it to the app registration's token configuration), and links users imported with `seamless migrate` under source `entra-id` by their `oid`. The tenant prompt now takes the directory (tenant) id as a GUID only, because ID tokens name the tenant that way. Needs an auth server that supports the `issuer`, `jwksUri` and `externalIdSource` provider fields.
+- 4711f7d: The Microsoft OAuth preset is now scoped to one tenant. `init --oauth` asks for the directory (tenant) id, refuses `common`, `organizations` and `consumers`, and writes tenant-specific endpoints. Without a tenant, Microsoft is scaffolded disabled with a placeholder, like a missing client id. Projects scaffolded earlier still point at `common`; replace it with your tenant id in the auth server's `OAUTH_PROVIDERS`.
+- 0928a39: Add `seamless migrate csv <file>` to import users from a CSV export into an instance. It is a dry run unless `--apply` is passed, finds columns by header (or a `--map` file kept beside the export), validates each row locally with the shared `@seamless-auth/types` schema, sends rows in batches of 200, and writes a CSV and JSON report of every row's outcome. Exits 1 when any row is rejected or invalid. Needs an auth server with `POST /admin/users/import`.
+- b651ff2: Relicense from AGPL-3.0-only to the Apache License, Version 2.0 (fells-code/seamless-auth-api#335). The `LICENSE` file, the `license` field and the license header in source files now say Apache-2.0, and the AGPL summary in `LICENSE.md` is removed.
+- 37c8c8a: `seamless verify` covers the OAuth migration cutover path (fells-code/seamless-auth-api#337) at the API layer. The spec:
+
+  1. Imports a user from a directory, then signs them in through that directory's OIDC provider. The link is made on the ID token's `oid`, not the email.
+  2. Checks that the sign-in answers `nextStep: 'enroll_passkey'`, enrolls a passkey, and checks the prompt stops.
+  3. Retires the provider for the user's organization. It checks that the user's sessions are revoked and that the next sign-in is refused with `oauth_provider_retired`.
+  4. Restores the provider and checks the user can sign in again.
+
+  The mock OIDC provider now issues signed ID tokens, serves `/jwks`, and can sign in as a named user. The existing `mock` provider is unaffected.
+
+  Needs an auth API that includes fells-code/seamless-auth-api#348 (session revocation on retirement).
+
+### Patch Changes
+
+- 80991a5: Correct the advice printed after connecting a project to a managed application. It told you to set the auth server URL on your frontend, which cannot sign in; the frontend points at your backend, which runs the adapter. It now also names `JWKS_KID` among the backend values.
+- 65e9668: Depend on `@seamless-auth/types` `^0.26.0` (was `^0.24.0`), so the CLI's wire types track the current auth API contract.
+
 ## 0.17.0
 
 ### Minor Changes
