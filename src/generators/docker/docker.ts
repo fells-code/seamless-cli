@@ -21,6 +21,9 @@ export async function generateDockerCompose(
     adminMode: AdminMode;
     oauth?: CollectedOAuthProvider[];
     ownerEmail?: string;
+    // The web template serves /auth itself, so there is no api service and the
+    // web container gets the auth wiring the api container would have had.
+    fullStack?: boolean;
   },
 ) {
   const { compose, shared } = await buildCompose(options, root);
@@ -40,10 +43,11 @@ async function buildCompose(
     adminMode: AdminMode;
     oauth?: CollectedOAuthProvider[];
     ownerEmail?: string;
+    fullStack?: boolean;
   },
   root: string,
 ) {
-  const { authMode, adminMode, oauth, ownerEmail } = options;
+  const { authMode, adminMode, oauth, ownerEmail, fullStack } = options;
 
   const { service: authBlock, shared } = await authService(
     authMode,
@@ -84,9 +88,9 @@ services:
 
 ${authBlock}
 
-${apiService(shared, adminMode)}
+${fullStack ? fullStackWebService(shared) : `${apiService(shared, adminMode)}
 
-${webService()}
+${webService()}`}
 
 ${includeAdminContainer ? adminService(adminMode) : ""}
 
@@ -192,6 +196,42 @@ function webService() {
       interval: 5s
       timeout: 5s
       retries: 10
+`;
+}
+
+// A full-stack web app is its own backend: it reaches the auth server inside the
+// compose network and holds the service token, as the api service does. It runs
+// the template's dev target, so its messaging handlers print one-time codes and
+// magic links to `docker compose logs web` (the local auth server sends none).
+// node_modules and .next stay in the container: the bind mount would otherwise
+// hide the installed dependencies and share a build cache with the host.
+function fullStackWebService(shared: any) {
+  return `
+  web:
+    container_name: web
+    build: ./web
+    ports:
+      - "127.0.0.1:5173:80"
+    env_file:
+      - ./web/.env
+    environment:
+      AUTH_SERVER_URL: http://auth:5312
+      API_SERVICE_TOKEN: ${shared.apiToken}
+      JWKS_KID: ${shared.kid}
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 `;
 }
 

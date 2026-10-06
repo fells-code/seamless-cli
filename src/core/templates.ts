@@ -9,7 +9,20 @@ import { fetchRemote } from "./fetch.js";
 import { generateSecret } from "./secrets.js";
 import { SEAMLESS_TEMPLATES_REF, SEAMLESS_TEMPLATES_REPO } from "./images.js";
 
-export type TemplateKind = "web" | "api" | "mobile";
+export type TemplateKind = "web" | "api" | "mobile" | "fullstack";
+
+// The slot a template fills in a project. A full-stack template is the web app
+// and its own backend in one (it serves /auth itself), so it takes the web slot,
+// lands in web/ on port 5173 like any web starter, and leaves no api layer.
+export type TemplateLayer = "web" | "api" | "mobile";
+
+export function layerOf(kind: TemplateKind): TemplateLayer {
+  return kind === "fullstack" ? "web" : kind;
+}
+
+export function isFullStack(entry: RegistryEntry | undefined): boolean {
+  return entry?.kind === "fullstack";
+}
 export type TemplateStatus = "stable" | "beta" | "coming-soon";
 
 export interface RegistryEntry {

@@ -64,6 +64,8 @@ NON-INTERACTIVE
 --web=<id|alias>, --api=<id|alias>
   • Choose the web and api starters by name
   • Default to the first selectable template of that kind in the registry
+  • --web also takes a full-stack template (e.g. --nextjs), which serves
+    /auth itself: the project gets no api layer, and --api is refused
 
 --mobile=<id|alias>
   • Include a mobile starter (Expo), placed at mobile/
@@ -80,6 +82,7 @@ NON-INTERACTIVE
 
 --admin=<api|image|source|none>
   • Where the admin console is hosted (default: api)
+  • A full-stack template cannot host the console yet, so only none applies
 
 --force
   • Allow the two destructive steps --yes will not take on its own:

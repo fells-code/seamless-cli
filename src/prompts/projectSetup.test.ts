@@ -524,3 +524,116 @@ describe("the optional mobile layer", () => {
     );
   });
 });
+
+describe("full-stack templates", () => {
+  // A full-stack template is the web app and its backend in one, so it is
+  // offered with the web templates and leaves no api layer to choose.
+  function withFullStack(): RegistryEntry[] {
+    return [
+      ...fullRegistry(),
+      entry({
+        id: "fs-a",
+        kind: "fullstack",
+        framework: "nextjs",
+        label: "Next.js",
+        status: "beta",
+        path: "fs-a",
+      }),
+    ];
+  }
+
+  it("offers a full-stack template alongside the web templates", async () => {
+    const calls = mockSelect({
+      "Web example": "web-a",
+      "Backend framework": "api-a",
+      "How would you like to run SeamlessAuth?": "docker",
+      "How would you like to host the admin console?": "api",
+    });
+
+    await runProjectSetupPrompts(withFullStack());
+
+    const web = calls.find((c) => c.message === "Web example")!;
+    expect(web.options.map((o) => o.value)).toContain("fs-a");
+    expect(web.options.find((o) => o.value === "fs-a")?.label).toBe(
+      "Next.js (beta)",
+    );
+    const api = calls.find((c) => c.message === "Backend framework")!;
+    expect(api.options.map((o) => o.value)).toEqual(["api-a"]);
+  });
+
+  it("skips the backend and admin console questions when one is chosen", async () => {
+    const calls = mockSelect({
+      "Web example": "fs-a",
+      "How would you like to run SeamlessAuth?": "docker",
+    });
+
+    const result = await runProjectSetupPrompts(withFullStack());
+
+    expect(result).toMatchObject({
+      webTemplateId: "fs-a",
+      api: false,
+      apiTemplateId: undefined,
+      adminMode: "none",
+    });
+    expect(calls.map((c) => c.message)).not.toContain("Backend framework");
+    expect(out()).toContain("Backend: served by Next.js");
+    expect(out()).toContain("Admin console: none");
+  });
+
+  it("refuses an api template beside a full-stack one", async () => {
+    await expect(
+      runProjectSetupPrompts(
+        withFullStack(),
+        { webTemplateId: "fs-a", apiTemplateId: "api-a", ownerEmail: "o@example.com" },
+        undefined,
+        true,
+      ),
+    ).rejects.toThrow(/serves its own \/auth routes/);
+  });
+
+  it("refuses an admin console a full-stack template cannot host", async () => {
+    await expect(
+      runProjectSetupPrompts(
+        withFullStack(),
+        { webTemplateId: "fs-a", adminMode: "image", ownerEmail: "o@example.com" },
+        undefined,
+        true,
+      ),
+    ).rejects.toThrow(/--admin=image needs an api template/);
+  });
+
+  it("accepts --admin=none with a full-stack template", async () => {
+    const result = await runProjectSetupPrompts(
+      withFullStack(),
+      { webTemplateId: "fs-a", adminMode: "none", ownerEmail: "o@example.com" },
+      undefined,
+      true,
+    );
+
+    expect(result.adminMode).toBe("none");
+  });
+
+  it("does not change the --yes default when a full-stack template is listed last", async () => {
+    const result = await runProjectSetupPrompts(
+      withFullStack(),
+      { ownerEmail: "o@example.com" },
+      undefined,
+      true,
+    );
+
+    expect(result).toMatchObject({
+      webTemplateId: "web-a",
+      apiTemplateId: "api-a",
+      adminMode: "api",
+    });
+  });
+
+  it("skips the backend question on the managed path too", async () => {
+    const calls = mockSelect({ "Web example": "fs-a" });
+
+    const result = await runManagedTemplatePrompts(withFullStack());
+
+    expect(result).toMatchObject({ webTemplateId: "fs-a", apiTemplateId: undefined });
+    expect(calls.map((c) => c.message)).toEqual(["Web example"]);
+  });
+});
