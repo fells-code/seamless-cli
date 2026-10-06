@@ -291,3 +291,41 @@ describe("maskDatabaseUrl", () => {
     );
   });
 });
+
+describe("output for a full-stack web app", () => {
+  it("presents the web app as the backend and says where codes appear", () => {
+    printSuccessOutput({
+      projectName: "demo",
+      root: "/tmp/demo",
+      webFramework: "nextjs",
+      webFullStack: true,
+      apiFramework: null,
+      authMode: "docker",
+      adminMode: "none",
+      ownerEmail: "owner@example.com",
+    });
+
+    const out = allLogs();
+    expect(out).toContain("Web application and backend");
+    expect(out).toContain("Next.js, serves /auth");
+    expect(out).toContain("docker compose logs web");
+    expect(out).not.toContain("http://localhost:3000");
+    expect(out).not.toContain("Web connects to API automatically");
+  });
+
+  it("points the managed token note at web/.env and skips the api database step", () => {
+    printManagedSuccessOutput({
+      webFramework: "nextjs",
+      webFullStack: true,
+      apiFramework: null,
+      authServerUrl: "https://acme.seamlessauth.com",
+      appName: "Acme",
+      databaseUrl: "postgres://USER:PASSWORD@db.example.com/acme",
+    });
+
+    const out = allLogs();
+    expect(out).toContain("written to web/.env");
+    expect(out).not.toContain("api/.env");
+    expect(out).not.toContain("# Database");
+  });
+});

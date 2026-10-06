@@ -21,6 +21,8 @@ import { generateSeamlessConfig } from "../generators/config/config.js";
 import {
   applyTemplateEnv,
   assertCliSupports,
+  isFullStack,
+  layerOf,
   matchesTemplateFlag,
   openTemplateSource,
   templateFlags,
@@ -126,6 +128,7 @@ export async function runCLI(
       answers,
       resolveTemplateSelection(aliases, opts, registry.templates),
     );
+    assertFullStackFlags(answers, registry.templates);
   }
 
   let root = cwd;
@@ -433,7 +436,9 @@ async function scaffoldManaged(
     }
 
     const webEntry = findEntry(source.registry.templates, answers.webTemplateId);
-    const apiEntry = findEntry(source.registry.templates, answers.apiTemplateId);
+    const apiEntry = answers.apiTemplateId
+      ? findEntry(source.registry.templates, answers.apiTemplateId)
+      : undefined;
     const mobileEntry = answers.mobileTemplateId
       ? findEntry(source.registry.templates, answers.mobileTemplateId)
       : undefined;
@@ -441,7 +446,8 @@ async function scaffoldManaged(
     generateSeamlessConfig(root, {
       projectName,
       webFramework: webEntry.framework,
-      apiFramework: apiEntry.framework,
+      webFullStack: isFullStack(webEntry),
+      apiFramework: apiEntry?.framework,
       mobileFramework: mobileEntry?.framework,
       authMode: "managed",
       adminMode: "image",
@@ -455,7 +461,8 @@ async function scaffoldManaged(
     printManagedSuccessOutput({
       projectName,
       webFramework: webEntry.framework,
-      apiFramework: apiEntry.framework,
+      webFullStack: isFullStack(webEntry),
+      apiFramework: apiEntry?.framework ?? null,
       mobileFramework: mobileEntry?.framework ?? null,
       authServerUrl,
       appName: app.name,
@@ -497,7 +504,7 @@ async function scaffoldLocal(
   // before scaffolding, so the auth server can be wired up with them below.
   // Provider credentials are per-provider secrets with no flag form, so --yes
   // scaffolds the starter with none configured rather than asking.
-  const webSelection = selected.find((s) => s.entry.kind === "web");
+  const webSelection = selected.find((s) => layerOf(s.entry.kind) === "web");
   let oauthProviders: CollectedOAuthProvider[] = [];
   if (webSelection?.manifest.setup?.oauth) {
     if (opts.yes) {
@@ -544,6 +551,7 @@ async function scaffoldLocal(
   const dockerShared = await generateDockerCompose(root, {
     authMode: answers.authMode,
     adminMode: answers.adminMode,
+    fullStack: answers.apiTemplateId === undefined,
     oauth: oauthProviders,
     ownerEmail: answers.ownerEmail,
   });
@@ -568,7 +576,9 @@ async function scaffoldLocal(
   }
 
   const webEntry = findEntry(source.registry.templates, answers.webTemplateId);
-  const apiEntry = findEntry(source.registry.templates, answers.apiTemplateId);
+  const apiEntry = answers.apiTemplateId
+    ? findEntry(source.registry.templates, answers.apiTemplateId)
+    : undefined;
   const mobileEntry = answers.mobileTemplateId
     ? findEntry(source.registry.templates, answers.mobileTemplateId)
     : undefined;
@@ -576,7 +586,8 @@ async function scaffoldLocal(
   generateSeamlessConfig(root, {
     projectName,
     webFramework: webEntry.framework,
-    apiFramework: apiEntry.framework,
+    webFullStack: isFullStack(webEntry),
+    apiFramework: apiEntry?.framework,
     mobileFramework: mobileEntry?.framework,
     authMode: answers.authMode,
     adminMode: answers.adminMode,
@@ -586,7 +597,8 @@ async function scaffoldLocal(
     projectName,
     root,
     webFramework: webEntry.framework,
-    apiFramework: apiEntry.framework,
+    webFullStack: isFullStack(webEntry),
+    apiFramework: apiEntry?.framework ?? null,
     mobileFramework: mobileEntry?.framework ?? null,
     authMode: answers.authMode,
     adminMode: answers.adminMode,
@@ -916,8 +928,33 @@ function resolveTemplateSelection(
   return preselect;
 }
 
+// A full-stack template fills the web layer, so --nextjs and --web=nextjs land
+// in the same slot and a second web template is a conflict like any other.
 function preselectKey(kind: TemplateKind): keyof TemplatePreselect {
-  return `${kind}TemplateId`;
+  return `${layerOf(kind)}TemplateId`;
+}
+
+// Checked with the other flags, before a directory is created: a full-stack
+// template serves /auth itself, so an api template beside it, or an admin
+// console it cannot host, is a contradiction to report rather than resolve.
+function assertFullStackFlags(
+  answers: Preselect,
+  templates: RegistryEntry[],
+): void {
+  const web = templates.find((t) => t.id === answers.webTemplateId);
+  if (!isFullStack(web)) return;
+
+  if (answers.apiTemplateId) {
+    throw new Error(
+      `${web!.label} serves its own /auth routes, so it cannot be combined with an api template. Drop the api flag.`,
+    );
+  }
+
+  if (answers.adminMode && answers.adminMode !== "none") {
+    throw new Error(
+      `--admin=${answers.adminMode} needs an api template to host the admin console, and full-stack templates cannot host it yet. Use --admin=none.`,
+    );
+  }
 }
 
 // Resolves `--<alias>` and `--<id>` flags (e.g. --oauth, --react-oauth) to specific
@@ -945,9 +982,10 @@ export function resolveTemplateAliases(
     }
 
     const key = preselectKey(entry.kind);
+    const layer = layerOf(entry.kind);
     if (preselect[key] && preselect[key] !== entry.id) {
       throw new Error(
-        `Conflicting ${entry.kind} template flags: --${alias} cannot combine with another ${entry.kind} example.`,
+        `Conflicting ${layer} template flags: --${alias} cannot combine with another ${layer} example.`,
       );
     }
     preselect[key] = entry.id;

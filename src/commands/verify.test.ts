@@ -32,6 +32,7 @@ const REGISTRY_JSON = JSON.stringify({
     { id: "coming", kind: "web", status: "coming-soon", path: "templates/coming" },
     { id: "an-api", kind: "api", status: "stable", path: "templates/an-api" },
     { id: "expo", kind: "mobile", status: "beta", path: "templates/mobile/expo" },
+    { id: "nextjs", kind: "fullstack", status: "beta", path: "templates/fullstack/nextjs" },
   ],
 });
 
@@ -145,6 +146,14 @@ describe("runVerify — published (default) mode", () => {
     // And nothing tried to build or test it as a web layer.
     const composeArgs = dockerTails().flat();
     expect(composeArgs.join(" ")).not.toContain("expo");
+  });
+
+  it("announces the full-stack template it cannot run yet", async () => {
+    await runVerify([]);
+
+    const out = logSpy.mock.calls.flat().join("\n");
+    expect(out).toContain('Skipping full-stack template "nextjs"');
+    expect(dockerTails().flat().join(" ")).not.toContain("nextjs");
   });
 
   it("installs harness deps and the browser when node_modules is missing", async () => {

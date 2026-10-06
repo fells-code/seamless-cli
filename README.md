@@ -170,8 +170,8 @@ Each question also has its own flag, honored with or without `--yes`:
 
 | Flag | Question | Default under `--yes` |
 | --- | --- | --- |
-| `--web=<id\|alias>` | Web example | first selectable web template |
-| `--api=<id\|alias>` | Backend framework | first selectable api template |
+| `--web=<id\|alias>` | Web example (also takes a full-stack template) | first selectable web template |
+| `--api=<id\|alias>` | Backend framework (not asked for a full-stack template) | first selectable api template |
 | `--mobile=<id\|alias>` | Mobile app | none |
 | `--email=<address>` | Owner email (becomes the admin) | required |
 | `--auth=<docker\|local>` | How the auth server runs | `docker` |
@@ -210,8 +210,8 @@ Depending on your selections, the CLI generates a project like this:
 ```text
 my-app/
 ├─ auth/                  # Seamless Auth server (local auth mode only)
-├─ web/                   # React web application
-├─ api/                   # Express or Fastify API server
+├─ web/                   # React web application, or a full-stack app (see below)
+├─ api/                   # Express or Fastify API server (not for a full-stack app)
 ├─ mobile/                # Expo mobile app (--mobile only)
 ├─ admin/                 # Admin console source (--admin=source only)
 ├─ docker-compose.yml     # not written for a managed project
@@ -223,6 +223,22 @@ All services are preconfigured to work together.
 - Web calls the API
 - API communicates with the auth server
 - Auth manages sessions and tokens
+
+### Full-stack templates
+
+A full-stack template is the web app and its own backend in one: it serves the `/auth` routes
+itself, so the project has no `api/`. The first is the Next.js App Router starter
+(`seamless init --nextjs`, or pick it at the web prompt):
+
+- `web/` holds the Next.js app, which runs `/auth` through `@seamless-auth/nextjs`. The backend
+  question is skipped, and `--api` is refused alongside it.
+- On the local stack, `docker compose up` runs it in development on port 5173, with the source
+  mounted for reload. One-time codes and sign-in links print in `docker compose logs web`.
+- There is no admin console yet: the Next.js adapter cannot host it
+  ([seamless-auth-server#185](https://github.com/fells-code/seamless-auth-server/issues/185)), so
+  only `--admin=none` applies.
+- `seamless check` expects no API and checks the web app's `/health`. `seamless verify` skips
+  full-stack templates for now (#222).
 
 No manual wiring is required.
 

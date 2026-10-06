@@ -3,7 +3,12 @@ import { select, text } from "@clack/prompts";
 import { orCancel } from "../core/cancel.js";
 import { requireInteractive } from "../core/tty.js";
 
-import type { RegistryEntry, TemplateKind } from "../core/templates.js";
+import {
+  isFullStack,
+  layerOf,
+  type RegistryEntry,
+  type TemplateLayer,
+} from "../core/templates.js";
 
 export type AuthMode = "local" | "docker";
 export type AdminMode = "api" | "image" | "source" | "none";
@@ -26,10 +31,11 @@ interface Option {
 // Builds the framework choices for one layer (web or api) from the registry, so
 // adding a template is a registry edit, not a code change here. coming-soon
 // templates show as disabled; beta templates are selectable but labelled.
-function toOptions(templates: RegistryEntry[], kind: TemplateKind): Option[] {
-  const forKind = templates.filter((t) => t.kind === kind);
+// Full-stack templates are offered for the web layer, which they fill.
+function toOptions(templates: RegistryEntry[], layer: TemplateLayer): Option[] {
+  const forKind = templates.filter((t) => layerOf(t.kind) === layer);
   if (forKind.length === 0) {
-    throw new Error(`The template registry has no ${kind} templates.`);
+    throw new Error(`The template registry has no ${layer} templates.`);
   }
   return forKind.map((t) => ({
     value: t.id,
@@ -47,14 +53,14 @@ function toOptions(templates: RegistryEntry[], kind: TemplateKind): Option[] {
 // selectable one of a kind is what a developer pressing Enter would land on.
 function defaultTemplateId(
   templates: RegistryEntry[],
-  kind: TemplateKind,
+  layer: TemplateLayer,
 ): string {
   const entry = templates.find(
-    (t) => t.kind === kind && t.status !== "coming-soon",
+    (t) => layerOf(t.kind) === layer && t.status !== "coming-soon",
   );
   if (!entry) {
     throw new Error(
-      `The template registry has no selectable ${kind} templates, so --yes has nothing to choose. Run \`seamless templates list\` to see what is available.`,
+      `The template registry has no selectable ${layer} templates, so --yes has nothing to choose. Run \`seamless templates list\` to see what is available.`,
     );
   }
   return entry.id;
@@ -78,7 +84,7 @@ function labelFor(templates: RegistryEntry[], id: string): string {
 
 async function resolveTemplateId(
   templates: RegistryEntry[],
-  kind: TemplateKind,
+  kind: TemplateLayer,
   preselected: string | undefined,
   message: string,
   echoLabel: string,
@@ -102,6 +108,37 @@ async function resolveTemplateId(
   ) as string;
 }
 
+// A full-stack template serves /auth itself, so a project built on one has no
+// api layer to choose. Picking one after an api flag is a contradiction the
+// developer has to settle, not something to resolve by dropping either.
+async function resolveApiTemplateId(
+  templates: RegistryEntry[],
+  webTemplateId: string,
+  preselected: string | undefined,
+  assumeYes: boolean,
+): Promise<string | undefined> {
+  const web = templates.find((t) => t.id === webTemplateId);
+
+  if (isFullStack(web)) {
+    if (preselected) {
+      throw new Error(
+        `${web!.label} serves its own /auth routes, so it cannot be combined with an api template. Drop --api (or --${preselected}).`,
+      );
+    }
+    console.log(`Backend: served by ${web!.label}`);
+    return undefined;
+  }
+
+  return resolveTemplateId(
+    templates,
+    "api",
+    preselected,
+    "Backend framework",
+    "Backend",
+    assumeYes,
+  );
+}
+
 const NO_MOBILE = "none";
 
 // A mobile starter is optional, unlike the web and api layers, which every
@@ -111,7 +148,7 @@ const NO_MOBILE = "none";
 // offers nothing, so there is no question to ask.
 async function resolveOptionalTemplateId(
   templates: RegistryEntry[],
-  kind: TemplateKind,
+  kind: TemplateLayer,
   preselected: string | undefined,
   message: string,
   echoLabel: string,
@@ -168,12 +205,10 @@ export async function runManagedTemplatePrompts(
     "Web example",
     assumeYes,
   );
-  const apiTemplateId = await resolveTemplateId(
+  const apiTemplateId = await resolveApiTemplateId(
     templates,
-    "api",
+    webTemplateId,
     preselect.apiTemplateId,
-    "Backend framework",
-    "Backend",
     assumeYes,
   );
   const mobileTemplateId = await resolveOptionalTemplateId(
@@ -202,12 +237,10 @@ export async function runProjectSetupPrompts(
     "Web example",
     assumeYes,
   );
-  const apiTemplateId = await resolveTemplateId(
+  const apiTemplateId = await resolveApiTemplateId(
     templates,
-    "api",
+    webTemplateId,
     preselect.apiTemplateId,
-    "Backend framework",
-    "Backend",
     assumeYes,
   );
   const mobileTemplateId = await resolveOptionalTemplateId(
@@ -255,8 +288,47 @@ export async function runProjectSetupPrompts(
       ) as AuthMode,
   );
 
-  const adminMode = await resolveChoice<AdminMode>(
-    preselect.adminMode,
+  const adminMode = apiTemplateId
+    ? await resolveAdminMode(preselect.adminMode, assumeYes)
+    : noAdminConsoleForFullStack(preselect.adminMode);
+
+  return {
+    web: true,
+    webTemplateId,
+
+    api: apiTemplateId !== undefined,
+    apiTemplateId,
+
+    mobile: mobileTemplateId !== undefined,
+    mobileTemplateId,
+
+    authMode,
+
+    adminMode,
+    ownerEmail: ownerEmail.trim(),
+  };
+}
+
+// No Next.js adapter serves the console yet: there is no console proxy for
+// /console, and a standalone dashboard on :5174 would call the app's /auth
+// cross-origin, which the route handler does not allow.
+// TODO(fells-code/seamless-auth-server#185): offer the console once the adapter serves it.
+function noAdminConsoleForFullStack(supplied: AdminMode | undefined): AdminMode {
+  if (supplied && supplied !== "none") {
+    throw new Error(
+      `--admin=${supplied} needs an api template to host the admin console, and full-stack templates cannot host it yet. Use --admin=none.`,
+    );
+  }
+  console.log("Admin console: none (not yet available for full-stack templates)");
+  return "none";
+}
+
+async function resolveAdminMode(
+  supplied: AdminMode | undefined,
+  assumeYes: boolean,
+): Promise<AdminMode> {
+  return resolveChoice<AdminMode>(
+    supplied,
     assumeYes ? DEFAULT_ADMIN_MODE : undefined,
     "Admin console",
     "How would you like to host the admin console?",
@@ -288,22 +360,6 @@ export async function runProjectSetupPrompts(
         }),
       ) as AdminMode,
   );
-
-  return {
-    web: true,
-    webTemplateId,
-
-    api: true,
-    apiTemplateId,
-
-    mobile: mobileTemplateId !== undefined,
-    mobileTemplateId,
-
-    authMode,
-
-    adminMode,
-    ownerEmail: ownerEmail.trim(),
-  };
 }
 
 // A flag answers the question outright; --yes falls back to the recommended

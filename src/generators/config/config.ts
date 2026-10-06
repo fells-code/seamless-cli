@@ -17,7 +17,9 @@ export function generateSeamlessConfig(
   options: {
     projectName?: string;
     webFramework: string;
-    apiFramework: string;
+    // The web template serves /auth itself, so the project has no api service.
+    webFullStack?: boolean;
+    apiFramework?: string;
     mobileFramework?: string;
     authMode: "local" | "docker" | "managed";
     adminMode: "api" | "image" | "source" | "none";
@@ -67,11 +69,11 @@ export function generateSeamlessConfig(
       web: {
         framework: options.webFramework,
         path: "./web",
+        ...(options.webFullStack ? { kind: "fullstack" } : {}),
       },
-      api: {
-        framework: options.apiFramework,
-        path: "./api",
-      },
+      ...(options.apiFramework
+        ? { api: { framework: options.apiFramework, path: "./api" } }
+        : {}),
       ...(options.mobileFramework
         ? { mobile: { framework: options.mobileFramework, path: "./mobile" } }
         : {}),

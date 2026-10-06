@@ -354,3 +354,53 @@ describe("buildAuthEnv owner grant", () => {
     expect("OWNER_EMAIL" in env).toBe(false);
   });
 });
+
+describe("generateDockerCompose for a full-stack web app", () => {
+  it("runs the web app as the backend, with no api service", async () => {
+    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
+
+    await generateDockerCompose(tmpDir, {
+      authMode: "local",
+      adminMode: "none",
+      fullStack: true,
+    });
+
+    const compose = fs.readFileSync(
+      path.join(tmpDir, "docker-compose.yml"),
+      "utf-8",
+    );
+    const web = compose.slice(compose.indexOf("\n  web:"));
+
+    expect(compose).not.toContain("\n  api:");
+    expect(compose).not.toContain("\n  admin:");
+    expect(web).toContain("- ./web/.env");
+    expect(web).toContain("AUTH_SERVER_URL: http://auth:5312");
+    expect(web).toContain("API_SERVICE_TOKEN: existing-token");
+    expect(web).toContain("JWKS_KID: existing-kid");
+    expect(web).toContain('- "127.0.0.1:5173:80"');
+    // The bind mount must not hide the container's dependencies or share a
+    // build cache with the host.
+    expect(web).toContain("- /app/node_modules");
+    expect(web).toContain("- /app/.next");
+    expect(web).not.toContain("depends_on:\n      - api");
+    expect(web).not.toContain("API_URL");
+  });
+
+  it("keeps the api and web services for a split stack", async () => {
+    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
+
+    await generateDockerCompose(tmpDir, {
+      authMode: "local",
+      adminMode: "none",
+      fullStack: false,
+    });
+
+    const compose = fs.readFileSync(
+      path.join(tmpDir, "docker-compose.yml"),
+      "utf-8",
+    );
+
+    expect(compose).toContain("\n  api:");
+    expect(compose).toContain("API_URL: http://localhost:3000/");
+  });
+});

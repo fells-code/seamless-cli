@@ -4,6 +4,8 @@ export function printSuccessOutput(config: {
   projectName?: string;
   root: string;
   webFramework: string | null;
+  // The web app serves /auth itself; there is no api service.
+  webFullStack?: boolean;
   apiFramework: string | null;
   mobileFramework?: string | null;
   authMode: "local" | "docker";
@@ -13,6 +15,7 @@ export function printSuccessOutput(config: {
   const {
     projectName,
     webFramework,
+    webFullStack = false,
     apiFramework,
     mobileFramework = null,
     authMode,
@@ -49,8 +52,10 @@ export function printSuccessOutput(config: {
   if (webFramework) {
     console.log(
       "  • " +
-        kleur.white("Web application") +
-        kleur.dim(` (${formatFramework(webFramework)})`),
+        kleur.white(webFullStack ? "Web application and backend" : "Web application") +
+        kleur.dim(
+          ` (${formatFramework(webFramework)}${webFullStack ? ", serves /auth" : ""})`,
+        ),
     );
   }
 
@@ -133,8 +138,24 @@ export function printSuccessOutput(config: {
 
   console.log(kleur.bold("Notes:\n"));
 
-  console.log(kleur.dim("  • Web connects to API automatically"));
-  console.log(kleur.dim("  • API connects to Auth automatically"));
+  if (webFullStack) {
+    console.log(
+      kleur.dim("  • The web app serves /auth itself and connects to Auth automatically"),
+    );
+    console.log(
+      kleur.dim(
+        "  • One-time codes and sign-in links print in: docker compose logs web",
+      ),
+    );
+    console.log(
+      kleur.dim(
+        "  • No admin console yet: full-stack templates cannot host it (see the Next.js docs)",
+      ),
+    );
+  } else {
+    console.log(kleur.dim("  • Web connects to API automatically"));
+    console.log(kleur.dim("  • API connects to Auth automatically"));
+  }
   if (consoleUrl) {
     console.log(
       kleur.dim(
@@ -176,6 +197,7 @@ export function printSuccessOutput(config: {
 export function printManagedSuccessOutput(config: {
   projectName?: string;
   webFramework: string | null;
+  webFullStack?: boolean;
   apiFramework: string | null;
   mobileFramework?: string | null;
   authServerUrl: string;
@@ -185,6 +207,7 @@ export function printManagedSuccessOutput(config: {
   const {
     projectName,
     webFramework,
+    webFullStack = false,
     apiFramework,
     mobileFramework = null,
     authServerUrl,
@@ -215,8 +238,10 @@ export function printManagedSuccessOutput(config: {
   if (webFramework) {
     console.log(
       "  • " +
-        kleur.white("Web application") +
-        kleur.dim(` (${formatFramework(webFramework)})`),
+        kleur.white(webFullStack ? "Web application and backend" : "Web application") +
+        kleur.dim(
+          ` (${formatFramework(webFramework)}${webFullStack ? ", serves /auth" : ""})`,
+        ),
     );
   }
   if (apiFramework) {
@@ -242,7 +267,8 @@ export function printManagedSuccessOutput(config: {
 
   // The placeholders are the only thing standing between the scaffold and a
   // working database, so they lead rather than sitting in a footnote.
-  if (databaseUrl) {
+  // The database is the api starter's; a full-stack starter has none to fill in.
+  if (databaseUrl && apiFramework) {
     console.log(kleur.dim("  # Database"));
     console.log(
       "  Fill in the credentials in " +
@@ -277,7 +303,7 @@ export function printManagedSuccessOutput(config: {
   console.log(kleur.bold("Notes:\n"));
   console.log(
     kleur.dim(
-      "  • The API service token was written to api/.env. Keep it out of version control.",
+      `  • The API service token was written to ${webFullStack ? "web/.env" : "api/.env"}. Keep it out of version control.`,
     ),
   );
   console.log(
@@ -309,6 +335,7 @@ function formatFramework(name: string) {
     express: "Express",
     angular: "Angular",
     next: "Next.js",
+    nextjs: "Next.js",
     fastapi: "FastAPI",
     fastify: "Fastify",
     vue: "Vue",

@@ -129,6 +129,17 @@ function resolveWebTemplates(): WebTemplate[] {
     );
   }
 
+  // A full-stack template serves /auth itself, and this harness builds web
+  // templates as static sites behind the Express adapter.
+  // TODO(#222): cover full-stack templates.
+  for (const t of runnable.filter((t) => t.kind === "fullstack")) {
+    console.log(
+      kleur.yellow(
+        `→ Skipping full-stack template "${t.id}": the harness cannot run a template that serves its own /auth yet (#222).`,
+      ),
+    );
+  }
+
   return webTemplates.map((t) => {
     const dir = path.resolve(root, t.path);
     if (!fs.existsSync(path.join(dir, "package.json"))) {

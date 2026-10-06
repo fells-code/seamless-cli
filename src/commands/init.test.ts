@@ -183,6 +183,14 @@ function registry() {
         status: "beta",
         path: "mobile/expo",
       },
+      {
+        id: "nextjs",
+        kind: "fullstack",
+        framework: "nextjs",
+        label: "Next.js",
+        status: "beta",
+        path: "fullstack/nextjs",
+      },
     ],
   };
 }
@@ -483,6 +491,7 @@ describe("scaffoldLocal", () => {
       authMode: "docker",
       adminMode: "image",
       oauth: [],
+      fullStack: false,
     });
     // env applied with the docker-provided token/kid for both templates.
     expect(applyTemplateEnv).toHaveBeenCalledTimes(2);
@@ -563,6 +572,7 @@ describe("scaffoldLocal", () => {
       authMode: "local",
       adminMode: "image",
       oauth: [],
+      fullStack: false,
     });
     expect(applyTemplateEnv).toHaveBeenLastCalledWith(
       "/work/api",
@@ -626,6 +636,7 @@ describe("scaffoldLocal", () => {
       oauth: expect.arrayContaining([
         expect.objectContaining({ catalog: { label: "Google" } }),
       ]),
+      fullStack: false,
     });
     // OAuth next-steps summary lists ready and pending providers.
     expect(out()).toContain("Enabled: Google");
@@ -1835,5 +1846,90 @@ describe("managed scaffold JWKS kid", () => {
   it("does not fail the scaffold when the kid cannot be read", async () => {
     vi.mocked(fetchActiveJwksKid).mockResolvedValue(undefined);
     await expect(managedRun()).resolves.not.toThrow();
+  });
+});
+
+describe("full-stack templates", () => {
+  function fullStackAnswers(over: Record<string, unknown> = {}) {
+    return {
+      webTemplateId: "nextjs",
+      apiTemplateId: undefined,
+      api: false,
+      authMode: "docker",
+      adminMode: "none",
+      ownerEmail: "dev@example.com",
+      ...over,
+    } as never;
+  }
+
+  beforeEach(() => {
+    vi.mocked(openTemplateSource).mockResolvedValue(makeSource() as never);
+    vi.mocked(runProjectSetupPrompts).mockResolvedValue(fullStackAnswers());
+    vi.mocked(generateDockerCompose).mockResolvedValue({} as never);
+  });
+
+  it("puts --nextjs in the web slot", async () => {
+    await runCLI(undefined, ["nextjs"], { local: true, yes: true });
+
+    expect(runProjectSetupPrompts).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ webTemplateId: "nextjs" }),
+      undefined,
+      true,
+    );
+  });
+
+  it("accepts a full-stack template for --web", async () => {
+    await runCLI(undefined, [], { local: true, yes: true, web: "nextjs" });
+
+    expect(runProjectSetupPrompts).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ webTemplateId: "nextjs" }),
+      undefined,
+      true,
+    );
+  });
+
+  it("rejects --api naming a full-stack template", async () => {
+    await expect(
+      runCLI(undefined, [], { local: true, api: "nextjs" }),
+    ).rejects.toThrow(/--api expects a api template/);
+  });
+
+  it("rejects an api template beside it, before anything is scaffolded", async () => {
+    await expect(
+      runCLI(undefined, ["nextjs", "express"], { local: true, yes: true }),
+    ).rejects.toThrow(/serves its own \/auth routes/);
+    expect(runProjectSetupPrompts).not.toHaveBeenCalled();
+  });
+
+  it("rejects an admin console it cannot host, before anything is scaffolded", async () => {
+    await expect(
+      runCLI(undefined, ["nextjs"], { local: true, yes: true, admin: "api" }),
+    ).rejects.toThrow(/--admin=api needs an api template/);
+    expect(runProjectSetupPrompts).not.toHaveBeenCalled();
+  });
+
+  it("treats a second web template as a conflict", async () => {
+    await expect(
+      runCLI(undefined, ["nextjs", "oauth"], { local: true }),
+    ).rejects.toThrow(/Conflicting web template flags/);
+  });
+
+  it("scaffolds the full-stack compose stack and config, with no api", async () => {
+    await runCLI(undefined, ["nextjs"], { local: true, yes: true });
+
+    expect(generateDockerCompose).toHaveBeenCalledWith(
+      CWD,
+      expect.objectContaining({ fullStack: true, adminMode: "none" }),
+    );
+    expect(generateSeamlessConfig).toHaveBeenCalledWith(
+      CWD,
+      expect.objectContaining({
+        webFramework: "nextjs",
+        webFullStack: true,
+        apiFramework: undefined,
+      }),
+    );
   });
 });
