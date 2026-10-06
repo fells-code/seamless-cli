@@ -17,7 +17,7 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=22"
   },
   "scripts": {
     "build": "npm run clean && tsc",
