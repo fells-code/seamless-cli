@@ -69,6 +69,7 @@ NON-INTERACTIVE
 
 --mobile=<id|alias>
   • Include a mobile starter (Expo), placed at mobile/
+  • --mobile alone (or --expo) picks Expo, since mobile is its alias
   • Optional: the prompt defaults to none, and --yes scaffolds without one
   • Email codes and sign-in links work against the local stack; passkeys
     need an associated domain, which the starter's README walks through

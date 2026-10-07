@@ -804,6 +804,85 @@ describe("template alias resolution", () => {
     );
   });
 
+  // The Expo template's alias is `mobile`, the same word as the layer flag, so
+  // the space-separated form has to decide which one it was given (#231).
+  describe("a layer flag that is also an alias", () => {
+    it("reads `--mobile my-app` as the bare alias and the project name", async () => {
+      await runCLI(undefined, [], { mobile: "my-app", spaced: { mobile: true } });
+
+      expect(fs.mkdirSync).toHaveBeenCalledWith("/work/my-app");
+      expect(runProjectSetupPrompts).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ mobileTemplateId: "expo" }),
+        undefined,
+        undefined,
+      );
+    });
+
+    it("still reads `--mobile expo` as the template", async () => {
+      await runCLI(undefined, [], { mobile: "expo", spaced: { mobile: true } });
+
+      expect(fs.mkdirSync).not.toHaveBeenCalled();
+      expect(runProjectSetupPrompts).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ mobileTemplateId: "expo" }),
+        undefined,
+        undefined,
+      );
+    });
+
+    it("keeps an unknown value an error once a project name was given", async () => {
+      await expect(
+        runCLI("demo", [], { mobile: "my-app", spaced: { mobile: true } }),
+      ).rejects.toThrow(/Unknown option "--my-app"/);
+      expect(fs.mkdirSync).not.toHaveBeenCalled();
+    });
+
+    it("keeps a template of another layer an error rather than a project name", async () => {
+      await expect(
+        runCLI(undefined, [], { mobile: "express", spaced: { mobile: true } }),
+      ).rejects.toThrow(/--mobile expects a mobile template/);
+      expect(fs.mkdirSync).not.toHaveBeenCalled();
+    });
+
+    it("never takes `--mobile=my-app` as a project name", async () => {
+      await expect(runCLI(undefined, [], { mobile: "my-app" })).rejects.toThrow(
+        /Unknown option "--my-app"/,
+      );
+      expect(fs.mkdirSync).not.toHaveBeenCalled();
+    });
+
+    it("leaves a layer flag that is no alias valued", async () => {
+      await expect(
+        runCLI(undefined, [], { api: "my-app", spaced: { api: true } }),
+      ).rejects.toThrow(/Unknown option "--my-app"/);
+      expect(fs.mkdirSync).not.toHaveBeenCalled();
+    });
+
+    it("names the missing value for a bare layer flag that is no alias", async () => {
+      await expect(runCLI("demo", ["web"])).rejects.toThrow(
+        /--web needs a template: --web=<id\|alias>/,
+      );
+      expect(fs.mkdirSync).not.toHaveBeenCalled();
+    });
+
+    it("treats an alias that names a layer generically", async () => {
+      const src = makeSource();
+      src.registry.templates[1].alias = "web";
+      vi.mocked(openTemplateSource).mockResolvedValue(src as never);
+
+      await runCLI(undefined, [], { web: "my-app", spaced: { web: true } });
+
+      expect(fs.mkdirSync).toHaveBeenCalledWith("/work/my-app");
+      expect(runProjectSetupPrompts).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ webTemplateId: "web-basic" }),
+        undefined,
+        undefined,
+      );
+    });
+  });
+
   it("rejects conflicting mobile flags", async () => {
     const src = makeSource();
     src.registry.templates.push({

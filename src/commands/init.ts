@@ -84,6 +84,9 @@ export interface InitOptions {
   web?: string;
   api?: string;
   mobile?: string;
+  // Which of those came as `--mobile <value>` rather than `--mobile=<value>`.
+  // Only that form can turn out to be a bare alias followed by the project name.
+  spaced?: Partial<Record<"web" | "api" | "mobile", true>>;
   email?: string;
   auth?: string;
   admin?: string;
@@ -127,10 +130,14 @@ export async function runCLI(
   const answers = resolveAnswerFlags(opts);
   if (aliases.length > 0 || opts.web || opts.api || opts.mobile) {
     const { registry } = await openSource();
-    Object.assign(
-      answers,
-      resolveTemplateSelection(aliases, opts, registry.templates),
+    const selection = resolveTemplateSelection(
+      aliases,
+      opts,
+      registry.templates,
+      projectName,
     );
+    Object.assign(answers, selection.preselect);
+    projectName = selection.projectName;
     assertFullStackFlags(answers, registry.templates);
   }
 
@@ -902,15 +909,52 @@ const TEMPLATE_KIND_NOUN = { web: "a web", api: "an API", mobile: "a mobile" } a
 // the layer from the registry, and the explicit `--web=` / `--api=` form, which
 // names it. Both accept either spelling, and disagreeing about a layer is an
 // error rather than a silent last-one-wins.
+//
+// A layer flag whose name is also a registry alias (`--mobile` for Expo) is
+// ambiguous when a word follows it: `--mobile expo` names the template, while
+// `--mobile my-app` is the bare alias followed by the project name. The word
+// counts as the project name only when it is no template flag at all and no
+// project name was given, so a template of the wrong layer is still an error.
 function resolveTemplateSelection(
   aliases: string[],
   opts: InitOptions,
   templates: RegistryEntry[],
-): TemplatePreselect {
-  const preselect = resolveTemplateAliases(aliases, templates);
+  projectName: string | undefined,
+): { preselect: TemplatePreselect; projectName: string | undefined } {
+  const selectable = templates.filter((t) => t.status !== "coming-soon");
+  const isTemplateFlag = (flag: string) =>
+    selectable.some((t) => matchesTemplateFlag(t, flag));
 
+  const values: Partial<Record<"web" | "api" | "mobile", string>> = {};
+  const bare = [...aliases];
   for (const kind of ["web", "api", "mobile"] as const) {
     const value = opts[kind];
+    if (!value) continue;
+    if (
+      opts.spaced?.[kind] &&
+      projectName === undefined &&
+      isTemplateFlag(kind) &&
+      !isTemplateFlag(value.replace(/^--+/, ""))
+    ) {
+      bare.push(kind);
+      projectName = value;
+      continue;
+    }
+    values[kind] = value;
+  }
+
+  for (const kind of ["web", "api", "mobile"] as const) {
+    if (bare.includes(kind) && !isTemplateFlag(kind)) {
+      throw new Error(
+        `--${kind} needs a template: --${kind}=<id|alias>. Run \`seamless templates list\` to see them.`,
+      );
+    }
+  }
+
+  const preselect = resolveTemplateAliases(bare, templates);
+
+  for (const kind of ["web", "api", "mobile"] as const) {
+    const value = values[kind];
     if (!value) continue;
 
     const named = value.replace(/^--+/, "");
@@ -932,7 +976,7 @@ function resolveTemplateSelection(
     preselect[key] = id;
   }
 
-  return preselect;
+  return { preselect, projectName };
 }
 
 // A full-stack template fills the web layer, so --nextjs and --web=nextjs land

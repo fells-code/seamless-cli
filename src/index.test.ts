@@ -174,6 +174,47 @@ describe("index dispatcher", () => {
     );
   });
 
+  // `mobile` is both a valued flag and the Expo template's alias (#231).
+  it("keeps a trailing bare --mobile as the alias", async () => {
+    await dispatch(["init", "my-app", "--mobile"]);
+    const { runCLI } = await import("./commands/init.js");
+    expect(runCLI).toHaveBeenCalledWith(
+      "my-app",
+      ["mobile"],
+      expect.not.objectContaining({ mobile: expect.anything() }),
+    );
+  });
+
+  it("keeps --mobile before another flag as the alias", async () => {
+    await dispatch(["init", "--mobile", "--yes", "my-app"]);
+    const { runCLI } = await import("./commands/init.js");
+    expect(runCLI).toHaveBeenCalledWith(
+      "my-app",
+      ["mobile"],
+      expect.objectContaining({ yes: true }),
+    );
+  });
+
+  it("marks `--mobile <word>` as spaced so init can tell a template from a name", async () => {
+    await dispatch(["init", "--mobile", "my-app"]);
+    const { runCLI } = await import("./commands/init.js");
+    expect(runCLI).toHaveBeenCalledWith(
+      undefined,
+      [],
+      expect.objectContaining({ mobile: "my-app", spaced: { mobile: true } }),
+    );
+  });
+
+  it("does not mark the = form as spaced", async () => {
+    await dispatch(["init", "my-app", "--mobile=expo"]);
+    const { runCLI } = await import("./commands/init.js");
+    expect(runCLI).toHaveBeenCalledWith(
+      "my-app",
+      [],
+      expect.not.objectContaining({ spaced: expect.anything() }),
+    );
+  });
+
   // -y is a switch, not a project name, and the answer flags must not be
   // mistaken for template ids.
   it("keeps init switches out of the template aliases and the project name", async () => {
