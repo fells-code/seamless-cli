@@ -140,19 +140,60 @@ async function main() {
 // keeps adding a template to the registry from needing code here.
 const INIT_SWITCHES = new Set(["--local", "--yes", "-y", "--force"]);
 
+const TEMPLATE_LAYER_FLAGS = ["web", "api", "mobile"] as const;
+
+// A layer flag's name can also be a registry alias (the Expo template's alias is
+// `mobile`), so `--mobile` alone, or before another flag, stays in `rest` and is
+// read as that alias. A value after a space is only a candidate: init.ts, which
+// has the registry, decides whether `--mobile my-app` named a template or a
+// project.
+function extractTemplateLayerFlag(
+  args: string[],
+  name: (typeof TEMPLATE_LAYER_FLAGS)[number],
+): { value?: string; spaced: boolean; rest: string[] } {
+  const rest: string[] = [];
+  let value: string | undefined;
+  let spaced = false;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const next = args[i + 1];
+    if (arg === `--${name}` && next !== undefined && !next.startsWith("-")) {
+      value = next;
+      spaced = true;
+      i++;
+    } else if (arg.startsWith(`--${name}=`)) {
+      value = arg.slice(name.length + 3);
+      spaced = false;
+    } else {
+      rest.push(arg);
+    }
+  }
+
+  return { value, spaced, rest };
+}
+
 // init's arguments, as the runCLI(projectName, aliases, opts) triple. Only
 // splits them up: which values are valid is settled in init.ts, against the
 // registry, before anything is written.
 export function parseInitArgs(
   args: string[],
 ): [string | undefined, string[], InitOptions] {
-  const valued = ["profile", "app", "web", "api", "mobile", "email", "auth", "admin"];
+  const valued = ["profile", "app", "email", "auth", "admin"];
   const values: Record<string, string | undefined> = {};
 
   let rest = args;
   for (const name of valued) {
     const extracted = extractFlag(rest, name);
     values[name] = extracted.value;
+    rest = extracted.rest;
+  }
+
+  const spaced: NonNullable<InitOptions["spaced"]> = {};
+  for (const name of TEMPLATE_LAYER_FLAGS) {
+    const extracted = extractTemplateLayerFlag(rest, name);
+    values[name] = extracted.value;
+    if (extracted.spaced) spaced[name] = true;
     rest = extracted.rest;
   }
 
@@ -173,6 +214,7 @@ export function parseInitArgs(
       email: values.email,
       auth: values.auth,
       admin: values.admin,
+      ...(Object.keys(spaced).length > 0 ? { spaced } : {}),
       local: rest.includes("--local"),
       yes: rest.includes("--yes") || rest.includes("-y"),
       force: rest.includes("--force"),
