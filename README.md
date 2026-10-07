@@ -42,12 +42,24 @@ Or run it in your current directory:
 npx seamless-cli init
 ```
 
-You’ll be guided through a short setup process where you can choose:
+You’ll be guided through a short setup process. For a local stack, `init` asks, in order:
 
-- Whether to create a web application
-- Whether to create an API server
-- How to run the auth server (local or Docker)
-- Whether to run everything with Docker
+- **Web example**: the web starter. Full-stack templates such as Next.js are offered here too.
+- **Backend framework**: the api starter. Skipped for a full-stack template, which serves `/auth`
+  itself.
+- **Mobile app**: an optional mobile starter (defaults to none).
+- **Your email**: the owner email, which becomes the admin when you register.
+- **How would you like to run SeamlessAuth?**: the auth server as a Docker container
+  (recommended) or a local dev server.
+- **How would you like to host the admin console?**: served by your API at `/console`
+  (recommended), a separate container from the official image or a cloned repo, or none. Skipped
+  for a full-stack template, which cannot host the console yet.
+- **Which OAuth providers do you want to enable?**: only for a template that sets up OAuth (such as
+  `react-oauth`), followed by each chosen provider's client ID and secret
+  (and directory tenant ID where the provider needs one).
+
+Before these, `init` may ask whether to scaffold into a non-empty directory, and, when you are
+signed in with a managed application, whether to connect to it instead (see below).
 
 ---
 
@@ -149,12 +161,15 @@ seamless templates list
 ```
 
 ```text
-ID           KIND  FRAMEWORK  FLAGS                   STATUS
-react-vite   web     react      --basic, --react-vite   stable
-react-oauth  web     react      --oauth, --react-oauth  stable
-express      api     express    --express               stable
-fastify      api     fastify    --fastify               beta
-expo         mobile  expo       --mobile, --expo        beta
+ID           KIND       FRAMEWORK  FLAGS                   STATUS
+react-vite   web        react      --basic, --react-vite   stable
+react-oauth  web        react      --oauth, --react-oauth  stable
+express      api        express    --express               stable
+fastify      api        fastify    --fastify               beta
+expo         mobile     expo       --mobile, --expo        beta
+nextjs       fullstack  nextjs     --nextjs                beta
+
+Pass a flag to seamless init to skip that layer's prompt, e.g. seamless init --oauth
 ```
 
 Every template answers to `--<id>`; some also declare a shorter `--<alias>`, and the two are
@@ -667,7 +682,7 @@ Seamless CLI scaffolds from, and conformance-tests against, these repositories:
 | Repository | What it provides | How the CLI uses it |
 | --- | --- | --- |
 | [seamless-auth-api](https://github.com/fells-code/seamless-auth-api) | The auth server | Run as a pinned image (`--auth=docker`) or cloned into `auth/` (`--auth=local`) |
-| [seamless-templates](https://github.com/fells-code/seamless-templates) | The web, API, and mobile starters | Scaffolded from its registry at a pinned ref |
+| [seamless-templates](https://github.com/fells-code/seamless-templates) | The web, API, mobile, and full-stack starters | Scaffolded from its registry at a pinned ref |
 | [seamless-auth-server](https://github.com/fells-code/seamless-auth-server) | `@seamless-auth/core`, `/express`, `/fastify` | The adapters the scaffolded `api/` runs on |
 | [seamless-auth-react](https://github.com/fells-code/seamless-auth-react) | `@seamless-auth/client`, `/react`, `/react-native` | The client SDKs the scaffolded `web/` and `mobile/` run on |
 
