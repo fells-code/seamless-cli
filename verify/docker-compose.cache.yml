@@ -41,3 +41,26 @@ services:
         - type=gha,scope=verify-react-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
       cache_to:
         - type=gha,mode=max,scope=verify-react-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+
+  react-dev:
+    build:
+      cache_from:
+        - type=gha,scope=verify-react-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+      cache_to:
+        - type=gha,mode=max,scope=verify-react-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+
+  # The two Next.js targets share their deps stage, but each gets its own scope so
+  # neither evicts the other.
+  nextjs:
+    build:
+      cache_from:
+        - type=gha,scope=verify-nextjs-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+      cache_to:
+        - type=gha,mode=max,scope=verify-nextjs-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+
+  nextjs-dev:
+    build:
+      cache_from:
+        - type=gha,scope=verify-nextjs-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+      cache_to:
+        - type=gha,mode=max,scope=verify-nextjs-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}

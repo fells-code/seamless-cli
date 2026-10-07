@@ -152,11 +152,11 @@ Every check runs, so one failure does not hide the rest.
   {
     name: "verify",
     usage: [
-      "seamless verify [--local] [--api-only] [--no-react] [--filter=<flow>] [--keep-up]",
+      "seamless verify [--local] [--api-only] [--no-react] [--dev] [--filter=<flow>] [--keep-up]",
     ],
     sections: [
       {
-        heading: "verify [--local] [--api-only] [--filter=<flow>] [--keep-up]",
+        heading: "verify [--local] [--api-only] [--dev] [--filter=<flow>] [--keep-up]",
         body: `Stand up the auth stack and run the conformance suite across the API and
 the cookie (adapter) paths. Requires Docker. Builds the auth server from
 a sibling seamless-auth-api checkout (override with SEAMLESS_API_DIR).
@@ -173,6 +173,10 @@ a sibling seamless-auth-api checkout (override with SEAMLESS_API_DIR).
 --no-react
   • Skip the browser layer but keep the adapter layer
 
+--dev
+  • Also run each browser template on its development server, where React
+    Strict Mode runs every effect twice, after its production build
+
 --filter=<flow>
   • Run only the flows matching <flow> (the = form; a space-separated
     --filter <flow> is not parsed)
@@ -186,6 +190,8 @@ a sibling seamless-auth-api checkout (override with SEAMLESS_API_DIR).
   → Fast pass against the API layer only`,
       `seamless verify --local --filter=passkey
   → Run the passkey flows against locally built SDK source`,
+      `seamless verify --dev
+  → Run the browser specs against production builds and dev servers`,
     ],
   },
   {

@@ -19,6 +19,8 @@ interface VerifyOptions {
   keepUp: boolean;
   apiOnly: boolean;
   react: boolean;
+  // Also run every browser template on its development server (React Strict Mode).
+  dev: boolean;
   grep?: string;
 }
 
@@ -30,6 +32,7 @@ function parseArgs(args: string[]): VerifyOptions {
     apiOnly,
     // The browser layer runs by default; --no-react (or --api-only) skips it.
     react: !apiOnly && !args.includes("--no-react"),
+    dev: args.includes("--dev"),
     grep: args.find((a) => a.startsWith("--filter="))?.split("=")[1],
   };
 }
@@ -67,24 +70,68 @@ function resolveTemplatesRoot(): string {
   );
 }
 
-// A web template to conformance-test: its served source and the flow tags to run.
+// How a browser template is served and driven. A web template is a static site in
+// front of the Express adapter; a full-stack template is its own backend. Each runs
+// once as a production build and, with --dev, once more on its development server.
+interface BrowserRuntime {
+  // The Playwright project (and spec directory) that drives it.
+  project: string;
+  // Compose services (and profiles of the same name) for the two builds.
+  service: string;
+  devService: string;
+  // The compose variable that points the services at the template's source.
+  dirEnv: "SEAMLESS_REACT_DIR" | "SEAMLESS_FULLSTACK_DIR";
+}
+
+const WEB_RUNTIME: BrowserRuntime = {
+  project: "react",
+  service: "react",
+  devService: "react-dev",
+  dirEnv: "SEAMLESS_REACT_DIR",
+};
+
+// Full-stack templates render their own screens, so each framework has its own
+// specs. A full-stack template whose project is not listed here is skipped, said
+// out loud.
+const FULLSTACK_RUNTIMES: Record<string, BrowserRuntime> = {
+  nextjs: {
+    project: "nextjs",
+    service: "nextjs",
+    devService: "nextjs-dev",
+    dirEnv: "SEAMLESS_FULLSTACK_DIR",
+  },
+};
+
+// Every profile the browser services live behind, so a clean, a log dump, or a
+// teardown reaches whichever one a run left up.
+const ALL_PROFILES = [WEB_RUNTIME, ...Object.values(FULLSTACK_RUNTIMES)].flatMap((r) => [
+  "--profile",
+  r.service,
+  "--profile",
+  r.devService,
+]);
+
+// A browser template to conformance-test: its served source, how it runs, and the
+// flow tags to run.
 interface WebTemplate {
   id: string;
   dir: string;
   flows?: string[];
+  runtime: BrowserRuntime;
 }
 
-function readTemplateFlows(dir: string): string[] | undefined {
+function readManifest(dir: string): TemplateManifest | undefined {
   const manifestPath = path.join(dir, "template.json");
   if (!fs.existsSync(manifestPath)) return undefined;
   try {
-    const manifest = JSON.parse(
-      fs.readFileSync(manifestPath, "utf-8"),
-    ) as TemplateManifest;
-    return manifest.verify?.flows;
+    return JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as TemplateManifest;
   } catch {
     return undefined;
   }
+}
+
+function readTemplateFlows(dir: string): string[] | undefined {
+  return readManifest(dir)?.verify?.flows;
 }
 
 // The web templates to build, serve, and drive. Each is served at :5173 in turn and
@@ -98,7 +145,12 @@ function resolveWebTemplates(): WebTemplate[] {
       throw new Error(`SEAMLESS_REACT_DIR=${override} has no package.json.`);
     }
     return [
-      { id: path.basename(override), dir: override, flows: readTemplateFlows(override) },
+      {
+        id: path.basename(override),
+        dir: override,
+        flows: readTemplateFlows(override),
+        runtime: WEB_RUNTIME,
+      },
     ];
   }
 
@@ -129,26 +181,39 @@ function resolveWebTemplates(): WebTemplate[] {
     );
   }
 
-  // A full-stack template serves /auth itself, and this harness builds web
-  // templates as static sites behind the Express adapter.
-  // TODO(#222): cover full-stack templates.
-  for (const t of runnable.filter((t) => t.kind === "fullstack")) {
-    console.log(
-      kleur.yellow(
-        `→ Skipping full-stack template "${t.id}": the harness cannot run a template that serves its own /auth yet (#222).`,
-      ),
-    );
-  }
-
-  return webTemplates.map((t) => {
+  const resolveDir = (t: { id: string; path: string }, kind: string): string => {
     const dir = path.resolve(root, t.path);
     if (!fs.existsSync(path.join(dir, "package.json"))) {
-      throw new Error(
-        `Web template "${t.id}" resolved to ${dir}, which has no package.json.`,
-      );
+      throw new Error(`${kind} template "${t.id}" resolved to ${dir}, which has no package.json.`);
     }
-    return { id: t.id, dir, flows: readTemplateFlows(dir) };
+    return dir;
+  };
+
+  const targets: WebTemplate[] = webTemplates.map((t) => {
+    const dir = resolveDir(t, "Web");
+    return { id: t.id, dir, flows: readTemplateFlows(dir), runtime: WEB_RUNTIME };
   });
+
+  // A full-stack template serves /auth itself and renders its own screens, so it
+  // runs from its own Dockerfile against specs written for its framework. The
+  // manifest's verify.project names them, falling back to the framework.
+  for (const t of runnable.filter((t) => t.kind === "fullstack")) {
+    const dir = resolveDir(t, "Full-stack");
+    const manifest = readManifest(dir);
+    const project = manifest?.verify?.project ?? t.framework;
+    const runtime = FULLSTACK_RUNTIMES[project];
+    if (!runtime) {
+      console.log(
+        kleur.yellow(
+          `→ Skipping full-stack template "${t.id}": the harness has no specs for "${project}".`,
+        ),
+      );
+      continue;
+    }
+    targets.push({ id: t.id, dir, flows: manifest?.verify?.flows, runtime });
+  }
+
+  return targets;
 }
 
 // A manifest's verify.flows (e.g. ["oauth"]) becomes a Playwright grep over the
@@ -369,6 +434,15 @@ function collectPackageVersions(
     for (const pin of reactPins) push("@seamless-auth/react", pin);
   }
 
+  // A full-stack template builds from its own lockfile in both modes, so its
+  // server SDK is always the version it pins.
+  for (const tmpl of webTemplates.filter((t) => t.runtime !== WEB_RUNTIME)) {
+    push(
+      `@seamless-auth/${tmpl.runtime.project} (${tmpl.id})`,
+      readDepVersion(path.join(tmpl.dir, "package.json"), `@seamless-auth/${tmpl.runtime.project}`),
+    );
+  }
+
   return versions;
 }
 
@@ -485,9 +559,12 @@ export async function runVerify(args: string[] = []): Promise<void> {
     // consumed by the harness
     SEAMLESS_API_SERVICE_TOKEN: serviceToken,
     SEAMLESS_OWNER_EMAIL: ownerEmail,
-    SEAMLESS_API_URL: "http://localhost:5312",
-    SEAMLESS_ADAPTER_URL: "http://localhost:3000",
-    SEAMLESS_FASTIFY_ADAPTER_URL: "http://localhost:3001",
+    // Where the harness reaches the published services. Overridable for a host
+    // where something else answers `localhost` on one of these ports over IPv6.
+    SEAMLESS_API_URL: process.env.SEAMLESS_API_URL ?? "http://localhost:5312",
+    SEAMLESS_ADAPTER_URL: process.env.SEAMLESS_ADAPTER_URL ?? "http://localhost:3000",
+    SEAMLESS_FASTIFY_ADAPTER_URL:
+      process.env.SEAMLESS_FASTIFY_ADAPTER_URL ?? "http://localhost:3001",
   };
 
   // The base stack (no browser layer). The react service is added per template below.
@@ -506,7 +583,7 @@ export async function runVerify(args: string[] = []): Promise<void> {
 
     // Fresh volumes each run → deterministic system_config seed (e.g. LOGIN_METHODS).
     console.log(kleur.cyan("→ Cleaning any previous stack…"));
-    await compose(baseEnv, "--profile", "react", "down", "-v").catch(() => undefined);
+    await compose(baseEnv, ...ALL_PROFILES, "down", "-v").catch(() => undefined);
 
     console.log(kleur.cyan(`→ Building & starting the stack (${baseServices.join(", ")})…`));
     await compose(baseEnv, "up", "-d", "--build", ...baseServices);
@@ -536,34 +613,56 @@ export async function runVerify(args: string[] = []): Promise<void> {
       failed = true;
     }
 
-    // The browser layer runs once per web template, each pointed at its own source
-    // and scoped to the flows its manifest declares (all flows when unset).
+    // The browser layer runs once per browser template, each pointed at its own
+    // source and scoped to the flows its manifest declares (all flows when unset).
+    // With --dev, each also runs on its development server, under Strict Mode.
     for (const tmpl of webTemplates) {
+      const { runtime } = tmpl;
       const reactEnv: NodeJS.ProcessEnv = {
         ...baseEnv,
-        SEAMLESS_REACT_DIR: tmpl.dir,
+        [runtime.dirEnv]: tmpl.dir,
         SEAMLESS_REACT_URL: "http://localhost:5173",
         SEAMLESS_VERIFY_REACT: "1",
-        // Only read by the CI cache override, which keys the react build cache per
-        // template. Each one is different source, so sharing a scope would have them
-        // evict each other every run.
+        // Only read by the CI cache override, which keys the browser build caches
+        // per template. Each one is different source, so sharing a scope would have
+        // them evict each other every run.
         SEAMLESS_VERIFY_TEMPLATE_ID: tmpl.id,
       };
       const grep = opts.grep ?? flowsToGrep(tmpl.flows);
-      const label = `Web · ${tmpl.id}${grep ? ` (${grep})` : " (all flows)"}`;
+      const scope = grep ? ` (${grep})` : " (all flows)";
+      const kind = runtime === WEB_RUNTIME ? "Web" : "Full-stack";
       console.log(
         kleur.bold(
-          `\n→ Web template: ${tmpl.id}${grep ? ` (flows: ${grep})` : " (all flows)"}\n`,
+          `\n→ ${kind} template: ${tmpl.id}${grep ? ` (flows: ${grep})` : " (all flows)"}\n`,
         ),
       );
-      await compose(reactEnv, "--profile", "react", "up", "-d", "--build", "react");
-      if (!(await runLayer(results, label, () => runProjects(reactEnv, ["react"], grep)))) {
-        failed = true;
+
+      const passes = [
+        { service: runtime.service, project: runtime.project, label: `${kind} · ${tmpl.id}${scope}` },
+      ];
+      if (opts.dev) {
+        passes.push({
+          service: runtime.devService,
+          project: `${runtime.project}-dev`,
+          label: `${kind} (dev) · ${tmpl.id}${scope}`,
+        });
       }
-      // Remove the react container so the next template rebuilds from its own source.
-      await compose(reactEnv, "--profile", "react", "rm", "-sf", "react").catch(
-        () => undefined,
-      );
+
+      for (const pass of passes) {
+        await compose(reactEnv, "--profile", pass.service, "up", "-d", "--build", pass.service);
+        if (
+          !(await runLayer(results, pass.label, () =>
+            runProjects(reactEnv, [pass.project], grep),
+          ))
+        ) {
+          failed = true;
+        }
+        // Remove the container so the next pass (and the next template) can take
+        // the port and rebuild from its own source.
+        await compose(reactEnv, "--profile", pass.service, "rm", "-sf", pass.service).catch(
+          () => undefined,
+        );
+      }
     }
   } catch (err) {
     failed = true;
@@ -574,8 +673,7 @@ export async function runVerify(args: string[] = []): Promise<void> {
     console.log(kleur.dim("→ Recent container logs:\n"));
     await compose(
       baseEnv,
-      "--profile",
-      "react",
+      ...ALL_PROFILES,
       "logs",
       "--tail",
       "80",
@@ -583,10 +681,12 @@ export async function runVerify(args: string[] = []): Promise<void> {
   } finally {
     if (opts.keepUp) {
       console.log(kleur.dim("Stack left running (--keep-up). Tear down with:"));
-      console.log(kleur.dim(`  docker compose -f ${COMPOSE_FILE} --profile react down -v\n`));
+      console.log(
+        kleur.dim(`  docker compose -f ${COMPOSE_FILE} ${ALL_PROFILES.join(" ")} down -v\n`),
+      );
     } else {
       console.log(kleur.cyan("→ Tearing down…"));
-      await compose(baseEnv, "--profile", "react", "down", "-v").catch(() => undefined);
+      await compose(baseEnv, ...ALL_PROFILES, "down", "-v").catch(() => undefined);
     }
     // Printed last so the consolidated report stays on screen after teardown noise.
     printSummary(results, packageVersions, opts, failed, setupError, Date.now() - startedAt);

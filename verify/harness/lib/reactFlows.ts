@@ -7,16 +7,34 @@ import { ADAPTER_URL } from './env';
 // so codes are read from its /__captured readout (same seam as adapterFlows).
 
 /** Read a code the adapter captured for `recipient` (email or phone), polling until present. */
-export async function readCapturedCode(recipient: string, timeoutMs = 10_000): Promise<string> {
-  const ctx = await request.newContext({ baseURL: ADAPTER_URL });
+export function readCapturedCode(recipient: string, timeoutMs = 10_000): Promise<string> {
+  return pollCaptured(
+    `${ADAPTER_URL}/__captured/${encodeURIComponent(recipient)}`,
+    recipient,
+    timeoutMs,
+  );
+}
+
+/**
+ * Poll a capture readout (`{ token }`, or null until something was sent) until it
+ * holds a code. The adapter and the full-stack starters each serve one. A readout
+ * keeps the latest code per recipient, so pass `previous` to wait for a new one.
+ */
+export async function pollCaptured(
+  url: string,
+  recipient: string,
+  timeoutMs = 10_000,
+  previous?: string,
+): Promise<string> {
+  const ctx = await request.newContext();
   try {
     const deadline = Date.now() + timeoutMs;
     let last = 'never set';
     while (Date.now() < deadline) {
-      const res = await ctx.get(`/__captured/${encodeURIComponent(recipient)}`);
+      const res = await ctx.get(url);
       if (res.ok()) {
         const body = await res.json();
-        if (body?.token) return String(body.token);
+        if (body?.token && String(body.token) !== previous) return String(body.token);
         last = JSON.stringify(body);
       } else {
         last = `status ${res.status()}`;

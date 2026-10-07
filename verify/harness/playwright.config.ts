@@ -3,6 +3,16 @@ import { defineConfig, devices } from '@playwright/test';
 import { FASTIFY_ADAPTER_URL, REACT_URL } from './lib/env';
 import type { AdapterOptions } from './lib/fixtures';
 
+// Every service is published by Docker on IPv4. A host process listening on
+// [::1] at the same port (a developer's own `vite` on 5173, say) would otherwise
+// win the browser's lookup for `localhost`, and the suite would drive the wrong
+// app. The page origin has to stay `localhost` (it is the passkey RP ID and the
+// allowed origin), so the browser resolves the name to 127.0.0.1 instead.
+const browser = {
+  ...devices['Desktop Chrome'],
+  launchOptions: { args: ['--host-resolver-rules=MAP localhost 127.0.0.1'] },
+};
+
 // One runner, multiple projects. `api` and `adapter` hit HTTP directly (no
 // browser); `react` drives chromium against the starter SPA. global-setup
 // health-gates the stack before any project runs.
@@ -35,10 +45,14 @@ export default defineConfig<AdapterOptions>({
       testDir: './adapter',
       use: { adapterUrl: FASTIFY_ADAPTER_URL },
     },
-    {
-      name: 'react',
-      testDir: './react',
-      use: { ...devices['Desktop Chrome'], baseURL: REACT_URL },
-    },
+    { name: 'react', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
+    // The same specs against the template's development server, where React
+    // Strict Mode runs every effect twice. Same URL: `seamless verify --dev`
+    // serves the dev build on the port the production build just left.
+    { name: 'react-dev', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
+    // The Next.js full-stack starter renders its own screens, so it has its own
+    // specs; its dev pass runs them on `next dev`.
+    { name: 'nextjs', testDir: './nextjs', use: { ...browser, baseURL: REACT_URL } },
+    { name: 'nextjs-dev', testDir: './nextjs', use: { ...browser, baseURL: REACT_URL } },
   ],
 });
