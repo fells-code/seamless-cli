@@ -226,7 +226,7 @@ function app(over: Record<string, any> = {}) {
 let logs: string[];
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   logs = [];
   vi.spyOn(console, "log").mockImplementation((msg?: unknown) => {
     logs.push(String(msg ?? ""));
