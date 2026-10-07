@@ -223,6 +223,40 @@ function flowsToGrep(flows?: string[]): string | undefined {
   return flows.map((f) => `@${f}`).join("|");
 }
 
+// The grep a template's layer runs with. --filter narrows within the flows the
+// template declares rather than replacing them: a template that only supports
+// OAuth must never be driven through specs it does not implement. Both have to
+// match, so the two patterns become lookaheads over the same title.
+function templateGrep(filter: string | undefined, flows?: string[]): string | undefined {
+  const declared = flowsToGrep(flows);
+  if (!filter) return declared;
+  if (!declared) return filter;
+  return `^(?=.*(?:${filter}))(?=.*(?:${declared}))`;
+}
+
+// Whether a Playwright project has any test matching `grep`, by listing rather
+// than running (a listing does not run global setup, so it needs no stack). Used
+// when --filter meets a template's declared flows: an empty intersection is a
+// layer with nothing to run, reported as skipped instead of failed.
+function hasMatchingTests(env: NodeJS.ProcessEnv, project: string, grep: string): boolean {
+  try {
+    const out = execSync(
+      `npx playwright test --list --project ${project} --grep ${shellQuote(grep)}`,
+      { cwd: HARNESS_DIR, env, stdio: ["ignore", "pipe", "pipe"] },
+    ).toString();
+    return /Total: [1-9]\d* tests?/.test(out);
+  } catch {
+    // Playwright exits non-zero with "No tests found" when nothing matches.
+    return false;
+  }
+}
+
+// runCommand spawns through a shell, so a grep with `|` or `(` must be quoted or
+// the shell reads it as a pipe or a subshell.
+function shellQuote(arg: string): string {
+  return /^[\w@.,:/=+-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
 const VENDOR_DIR = path.join(VERIFY_DIR, "adapter-app", "vendor");
 const FASTIFY_VENDOR_DIR = path.join(VERIFY_DIR, "adapter-fastify-app", "vendor");
 const REACT_VENDOR_DIR = path.join(VERIFY_DIR, "react-vendor");
@@ -340,7 +374,7 @@ async function runProjects(
   grep: string | undefined,
 ): Promise<boolean> {
   const passthrough = projects.flatMap((p) => ["--project", p]);
-  if (grep) passthrough.push("--grep", grep);
+  if (grep) passthrough.push("--grep", shellQuote(grep));
   try {
     await runCommand("npm", ["test", "--", ...passthrough], HARNESS_DIR, env);
     return true;
@@ -452,6 +486,8 @@ interface LayerResult {
   label: string;
   ok: boolean;
   durationMs: number;
+  // Nothing to run: --filter matched none of the flows the template declares.
+  skipped?: boolean;
 }
 
 // Times a single layer, records its outcome, and returns its pass/fail.
@@ -508,8 +544,12 @@ function printSummary(
   } else {
     const width = Math.max(...results.map((r) => r.label.length));
     for (const r of results) {
-      const icon = r.ok ? kleur.green("✔") : kleur.red("✖");
       const padded = r.label.padEnd(width);
+      if (r.skipped) {
+        console.log(`  ${kleur.dim("-")}  ${kleur.dim(padded)}  ${kleur.dim("skipped, no declared flow matches --filter")}`);
+        continue;
+      }
+      const icon = r.ok ? kleur.green("✔") : kleur.red("✖");
       const label = r.ok ? padded : kleur.red(padded);
       console.log(`  ${icon}  ${label}  ${kleur.dim(formatDuration(r.durationMs))}`);
     }
@@ -518,15 +558,20 @@ function printSummary(
   console.log(rule);
   if (setupError) {
     console.log(kleur.red(`  ✖ Verify aborted: ${setupError.message}`));
-  } else if (failed) {
-    const failedCount = results.filter((r) => !r.ok).length;
-    console.log(
-      kleur.red(
-        `  ✖ Conformance failed — ${failedCount} of ${results.length} layer(s) failed.`,
-      ),
-    );
   } else {
-    console.log(kleur.green(`  ✔ Conformance passed — ${results.length} layer(s).`));
+    const ran = results.filter((r) => !r.skipped).length;
+    const skipped = results.length - ran;
+    const skippedNote = skipped ? `, ${skipped} skipped` : "";
+    if (failed) {
+      const failedCount = results.filter((r) => !r.ok).length;
+      console.log(
+        kleur.red(
+          `  ✖ Conformance failed — ${failedCount} of ${ran} layer(s) failed${skippedNote}.`,
+        ),
+      );
+    } else {
+      console.log(kleur.green(`  ✔ Conformance passed — ${ran} layer(s)${skippedNote}.`));
+    }
   }
   console.log(`${rule}\n`);
 }
@@ -628,14 +673,39 @@ export async function runVerify(args: string[] = []): Promise<void> {
         // them evict each other every run.
         SEAMLESS_VERIFY_TEMPLATE_ID: tmpl.id,
       };
-      const grep = opts.grep ?? flowsToGrep(tmpl.flows);
-      const scope = grep ? ` (${grep})` : " (all flows)";
+      const grep = templateGrep(opts.grep, tmpl.flows);
+      const scope = opts.grep
+        ? ` (${opts.grep}${tmpl.flows?.length ? ` within ${flowsToGrep(tmpl.flows)}` : ""})`
+        : grep
+          ? ` (${grep})`
+          : " (all flows)";
       const kind = runtime === WEB_RUNTIME ? "Web" : "Full-stack";
       console.log(
         kleur.bold(
-          `\n→ ${kind} template: ${tmpl.id}${grep ? ` (flows: ${grep})` : " (all flows)"}\n`,
+          `\n→ ${kind} template: ${tmpl.id}${scope}\n`,
         ),
       );
+
+      // A filter that shares no test with the declared flows leaves nothing to
+      // run. Building and serving the template for that would be wasted, and an
+      // empty Playwright run exits non-zero, so the layer is recorded as skipped.
+      if (opts.grep && tmpl.flows?.length && grep && !hasMatchingTests(reactEnv, runtime.project, grep)) {
+        console.log(
+          kleur.yellow(
+            `→ Skipping ${tmpl.id}: --filter=${opts.grep} matches none of its declared flows (${flowsToGrep(tmpl.flows)}).`,
+          ),
+        );
+        results.push({ label: `${kind} · ${tmpl.id}${scope}`, ok: true, durationMs: 0, skipped: true });
+        if (opts.dev) {
+          results.push({
+            label: `${kind} (dev) · ${tmpl.id}${scope}`,
+            ok: true,
+            durationMs: 0,
+            skipped: true,
+          });
+        }
+        continue;
+      }
 
       const passes = [
         { service: runtime.service, project: runtime.project, label: `${kind} · ${tmpl.id}${scope}` },

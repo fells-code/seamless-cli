@@ -352,7 +352,8 @@ seamless verify --keep-up          # leave the stack running afterwards
 `--local` is the pre-publish check: it builds and packs the local SDK source rather than
 installing from npm, so an SDK regression surfaces before a release rather than after.
 The browser layer runs once per web template in the registry, each scoped to the flows
-its `template.json` declares. Full-stack templates (the Next.js starter) run too, built from
+its `template.json` declares. `--filter` narrows within those flows: a template whose declared
+flows share no test with the filter is reported as skipped. Full-stack templates (the Next.js starter) run too, built from
 their own Dockerfile's `runtime` target and driven by specs written for their own screens.
 Mobile templates are announced and skipped: the harness has no
 simulator to drive, so a native app is checked by running it against a `--keep-up` stack.

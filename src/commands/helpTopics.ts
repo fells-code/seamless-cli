@@ -180,6 +180,8 @@ a sibling seamless-auth-api checkout (override with SEAMLESS_API_DIR).
 --filter=<flow>
   • Run only the flows matching <flow> (the = form; a space-separated
     --filter <flow> is not parsed)
+  • A template that declares its flows runs only tests matching both, and
+    is skipped when none do
 
 --keep-up
   • Leave the Docker stack running after the suite finishes`,

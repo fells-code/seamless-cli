@@ -177,6 +177,10 @@ Modes and sibling repos:
   `SEAMLESS_REACT_DIR` is the narrower override: it names a single template directory and runs
   that one instead of the registry's set.
 - Useful flags: `--api-only`, `--no-react`, `--dev`, `--filter=<flow>` (the `=` form; a space-separated `--filter <flow>` is not parsed), `--keep-up`.
+- `--filter` narrows within a template's declared `verify.flows`, never replaces them: the
+  layer runs only tests matching both (two lookaheads in one grep). When the intersection is
+  empty (checked with `playwright test --list`, which needs no stack) the template's layers are
+  recorded as skipped, not failed, and nothing is built for them.
 
 ## Important Folders
 

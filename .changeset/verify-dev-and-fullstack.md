@@ -8,3 +8,4 @@
 - Full-stack templates are no longer skipped. The Next.js starter is built from its own Dockerfile's `runtime` target (and its `dev` target under `--dev`) and driven by specs written for its own screens: passkey enrollment and sign-in, an emailed code, a magic link, the server-rendered session page, and its role-gated route (#222).
 - The React magic-link spec fails when the link is verified more than once, and the JWKS spec no longer expects the signing key's kid to be `dev-main`.
 - The browser resolves `localhost` to 127.0.0.1, so a server of your own on `[::1]:5173` no longer answers in place of the stack, and `SEAMLESS_API_URL`, `SEAMLESS_ADAPTER_URL`, and `SEAMLESS_FASTIFY_ADAPTER_URL` are honored when set.
+- `--filter` narrows within the flows a template declares instead of replacing them. A template whose declared flows share no test with the filter is reported as skipped rather than run against specs it does not support.

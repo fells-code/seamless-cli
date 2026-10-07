@@ -318,10 +318,14 @@ describe("runVerify — flag parsing", () => {
     expect(downs).toHaveLength(1);
   });
 
-  it("--filter overrides the manifest flows for every layer", async () => {
+  it("--filter narrows a template to the tests in both the filter and its declared flows", async () => {
+    vi.mocked(execSync).mockImplementation(((cmd: string) =>
+      Buffer.from(String(cmd).includes("--list") ? "Total: 2 tests in 1 file" : "")) as never);
+
     await runVerify(["--filter=@login"]);
 
     const npmTests = callsFor("npm").filter((a) => a[0] === "test");
+    // The api / adapter layers declare no flows, so the filter applies as is.
     expect(npmTests).toContainEqual([
       "test",
       "--",
@@ -334,14 +338,61 @@ describe("runVerify — flag parsing", () => {
       "--grep",
       "@login",
     ]);
+    // The template declares ["oauth"], so both have to match, and the regex is
+    // quoted for the shell runCommand spawns through.
     expect(npmTests).toContainEqual([
       "test",
       "--",
       "--project",
       "react",
       "--grep",
-      "@login",
+      "'^(?=.*(?:@login))(?=.*(?:@oauth))'",
     ]);
+    const listing = vi
+      .mocked(execSync)
+      .mock.calls.map((c) => String(c[0]))
+      .find((c) => c.includes("--list"));
+    expect(listing).toContain("--project react");
+    expect(listing).toContain("'^(?=.*(?:@login))(?=.*(?:@oauth))'");
+  });
+
+  it("--filter that matches none of a template's declared flows skips its layers", async () => {
+    vi.mocked(execSync).mockImplementation(((cmd: string) => {
+      if (String(cmd).includes("--list")) throw new Error("No tests found");
+      return Buffer.from("");
+    }) as never);
+
+    await runVerify(["--filter=magic", "--dev"]);
+
+    // Nothing is built or run for the skipped template.
+    const tails = dockerTails();
+    expect(tails.some((t) => t.includes("up") && t.includes("react"))).toBe(false);
+    expect(tails.some((t) => t.includes("up") && t.includes("react-dev"))).toBe(false);
+    const npmTests = callsFor("npm").filter((a) => a[0] === "test");
+    expect(npmTests.some((t) => t.includes("react") || t.includes("react-dev"))).toBe(false);
+
+    // Skipped is not failed.
+    expect(exitSpy).not.toHaveBeenCalled();
+    const out = logSpy.mock.calls.flat().join("\n");
+    expect(out).toContain("Skipping web-basic: --filter=magic matches none of its declared flows");
+    expect(out).toContain("skipped, no declared flow matches --filter");
+    expect(out).toMatch(/Conformance passed .* 1 layer\(s\), 4 skipped/);
+  });
+
+  it("--filter applies as is to a template that declares no flows", async () => {
+    vi.mocked(fs.readFileSync).mockImplementation((p: never) => {
+      const s = String(p);
+      if (s.endsWith("registry.json")) return REGISTRY_JSON as never;
+      if (s.endsWith("template.json")) return JSON.stringify({}) as never;
+      return PKG_JSON as never;
+    });
+
+    await runVerify(["--filter=magic"]);
+
+    const npmTests = callsFor("npm").filter((a) => a[0] === "test");
+    expect(npmTests).toContainEqual(["test", "--", "--project", "react", "--grep", "magic"]);
+    // No listing is needed when there is nothing to intersect with.
+    expect(vi.mocked(execSync).mock.calls.some((c) => String(c[0]).includes("--list"))).toBe(false);
   });
 });
 
