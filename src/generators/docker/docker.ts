@@ -300,6 +300,8 @@ ${envBlock}
   };
 }
 
+// The dashboard image (and the Dockerfile `--admin=source` builds) runs
+// unprivileged nginx on 8080, not 80.
 function adminService(mode: "image" | "source") {
   if (mode === "source") {
     return `
@@ -307,7 +309,7 @@ function adminService(mode: "image" | "source") {
     container_name: admin
     build: ./admin
     ports:
-      - "127.0.0.1:5174:80"
+      - "127.0.0.1:5174:8080"
     environment:
       API_URL: http://localhost:3000/
     volumes:
@@ -323,7 +325,7 @@ function adminService(mode: "image" | "source") {
     image: ${SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE}
     container_name: admin
     ports:
-      - "127.0.0.1:5174:80"
+      - "127.0.0.1:5174:8080"
     environment:
       API_URL: http://localhost:3000/
     depends_on:
