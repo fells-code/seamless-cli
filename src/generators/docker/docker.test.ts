@@ -253,7 +253,7 @@ describe("generateDockerCompose", () => {
       "127.0.0.1:5312:5312",
       "127.0.0.1:3000:3000",
       "127.0.0.1:5173:80",
-      "127.0.0.1:5174:80",
+      "127.0.0.1:5174:8080",
     ]) {
       expect(compose).toContain(`- "${mapping}"`);
     }
@@ -313,6 +313,7 @@ describe("generateDockerCompose", () => {
     expect(compose).toContain("build: ./admin");
     expect(compose).not.toContain("AUTH_MODE");
     expect(compose).toContain("- ./admin:/app");
+    expect(compose).toContain('- "127.0.0.1:5174:8080"');
     expect(compose).toContain(
       "UI_ORIGINS: http://localhost:5173,http://localhost:5174",
     );
