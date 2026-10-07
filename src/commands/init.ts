@@ -12,7 +12,10 @@ import {
   type Preselect,
 } from "../prompts/projectSetup.js";
 import { generateAuthServer } from "../generators/auth/auth.js";
-import { generateDockerCompose } from "../generators/docker/docker.js";
+import {
+  generateDockerCompose,
+  LOCAL_AUTH_ISSUER,
+} from "../generators/docker/docker.js";
 import {
   printManagedSuccessOutput,
   printSuccessOutput,
@@ -562,6 +565,8 @@ async function scaffoldLocal(
 
   const ctx: ScaffoldContext = {
     authServerUrl: AUTH_SERVER_URL,
+    // Both auth modes run the server in compose, signing as its service name.
+    authServerIssuer: LOCAL_AUTH_ISSUER,
     apiUrl: API_URL,
     apiToken: sharedConfig.apiToken,
     jwksKid: sharedConfig.kid,
@@ -891,6 +896,8 @@ function oneOf<T extends string>(value: string, allowed: T[], flag: string): T {
   return value as T;
 }
 
+const TEMPLATE_KIND_NOUN = { web: "a web", api: "an API", mobile: "a mobile" } as const;
+
 // Combines the template flags: the bare `--<id>` / `--<alias>` form, which infers
 // the layer from the registry, and the explicit `--web=` / `--api=` form, which
 // names it. Both accept either spelling, and disagreeing about a layer is an
@@ -911,7 +918,7 @@ function resolveTemplateSelection(
     const id = resolveTemplateAliases([named], templates)[key];
     if (!id) {
       throw new Error(
-        `--${kind} expects a ${kind} template, but "${value}" is not one. Run \`seamless templates list\` to see which templates are ${kind}.`,
+        `--${kind} expects ${TEMPLATE_KIND_NOUN[kind]} template, but "${value}" is not one. Run \`seamless templates list\` to see each template's kind.`,
       );
     }
 

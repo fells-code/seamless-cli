@@ -77,6 +77,11 @@ export interface TemplateManifest {
 // template manifest's env.set.
 export interface ScaffoldContext {
   authServerUrl: string;
+  // The issuer the auth server signs with, when it differs from the URL this
+  // app reaches it at. On the local stack the server signs as its compose
+  // service name while a host-run app calls localhost. Falls back to
+  // authServerUrl, which is what a managed instance advertises.
+  authServerIssuer?: string;
   apiUrl: string;
   apiToken?: string;
   jwksKid?: string;
@@ -280,6 +285,7 @@ function resolveToken(token: string, ctx: ScaffoldContext): string {
 
   const known: Record<string, string | undefined> = {
     authServerUrl: ctx.authServerUrl,
+    authServerIssuer: ctx.authServerIssuer ?? ctx.authServerUrl,
     apiUrl: ctx.apiUrl,
     apiToken: ctx.apiToken,
     jwksKid: ctx.jwksKid,

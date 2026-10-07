@@ -469,6 +469,41 @@ describe("applyTemplateEnv", () => {
     expect(written).toContain("PLAIN=literal-value");
   });
 
+  it("resolves authServerIssuer to the issuer the context names", () => {
+    applyTemplateEnv(
+      destDir,
+      {
+        id: "x",
+        targetDir: ".",
+        env: {
+          set: {
+            AUTH_SERVER_URL: "{{authServerUrl}}",
+            AUTH_SERVER_ISSUER: "{{authServerIssuer}}",
+          },
+        },
+      },
+      { ...ctx, authServerIssuer: "http://auth:5312" },
+    );
+
+    const written = readEnv();
+    expect(written).toContain("AUTH_SERVER_URL=http://auth.local");
+    expect(written).toContain("AUTH_SERVER_ISSUER=http://auth:5312");
+  });
+
+  it("falls back to authServerUrl for authServerIssuer when the issuer is the URL", () => {
+    applyTemplateEnv(
+      destDir,
+      {
+        id: "x",
+        targetDir: ".",
+        env: { set: { AUTH_SERVER_ISSUER: "{{authServerIssuer}}" } },
+      },
+      ctx,
+    );
+
+    expect(readEnv()).toContain("AUTH_SERVER_ISSUER=http://auth.local");
+  });
+
   it("resolves the serveAdminConsole placeholder from the scaffold context", () => {
     applyTemplateEnv(
       destDir,

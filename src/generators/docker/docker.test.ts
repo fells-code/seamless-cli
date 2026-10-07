@@ -8,6 +8,7 @@ import {
   envToDockerBlock,
   extractSharedFromExistingEnv,
   generateDockerCompose,
+  LOCAL_AUTH_ISSUER,
 } from "./docker.js";
 import {
   POSTGRES_IMAGE,
@@ -337,6 +338,87 @@ describe("generateDockerCompose", () => {
     expect(compose).toContain(`API_SERVICE_TOKEN: ${shared.apiToken}`);
     expect(compose).toContain(`JWKS_KID: ${shared.kid}`);
     expect(compose).toContain("OAUTH_PROVIDERS");
+  });
+});
+
+describe("generateDockerCompose output shape", () => {
+  async function render(
+    authMode: "local" | "docker",
+    adminMode: "api" | "image" | "source" | "none",
+    fullStack: boolean,
+  ) {
+    const root = fs.mkdtempSync(path.join(tmpDir, `${authMode}-`));
+    if (authMode === "local") writeAuthEnvFixture(root, "SEAMLESS_JWKS_ACTIVE_KID");
+    else stubEnvExampleFetch("SOME_VAR=value\n");
+    await generateDockerCompose(root, { authMode, adminMode, fullStack });
+    return fs.readFileSync(path.join(root, "docker-compose.yml"), "utf-8");
+  }
+
+  const combos = (["local", "docker"] as const).flatMap((authMode) =>
+    (["api", "image", "source", "none"] as const).flatMap((adminMode) =>
+      [false, true].map((fullStack) => ({ authMode, adminMode, fullStack })),
+    ),
+  );
+
+  it.each(combos)(
+    "separates blocks with exactly one blank line ($authMode, $adminMode, fullStack=$fullStack)",
+    async ({ authMode, adminMode, fullStack }) => {
+      const compose = await render(authMode, adminMode, fullStack);
+
+      expect(compose).not.toMatch(/\n[ \t]*\n[ \t]*\n/);
+      expect(compose).not.toMatch(/[ \t]+\n/);
+      expect(compose.endsWith("\n")).toBe(true);
+      expect(compose.endsWith("\n\n")).toBe(false);
+      // Every service but the first is preceded by one blank line.
+      const servicesSection = compose.slice(0, compose.indexOf("\nvolumes:"));
+      const services = servicesSection.match(/^  [a-z]+:$/gm) ?? [];
+      expect(services[0]).toBe("  db:");
+      for (const name of services.slice(1)) {
+        expect(compose).toContain(`\n\n${name}\n`);
+      }
+    },
+  );
+
+  // An app run on the host reads AUTH_SERVER_ISSUER from its .env; a container
+  // gets the same value here, matching the URL it reaches the server at.
+  it.each(combos)(
+    "gives the app container an issuer equal to its auth URL ($authMode, $adminMode, fullStack=$fullStack)",
+    async ({ authMode, adminMode, fullStack }) => {
+      const compose = await render(authMode, adminMode, fullStack);
+      const app = compose.slice(
+        compose.indexOf(fullStack ? "\n  web:" : "\n  api:"),
+      );
+
+      expect(app).toContain(
+        `AUTH_SERVER_URL: ${LOCAL_AUTH_ISSUER}\n      AUTH_SERVER_ISSUER: ${LOCAL_AUTH_ISSUER}\n`,
+      );
+      expect(compose).toContain(
+        authMode === "docker"
+          ? `ISSUER: "${LOCAL_AUTH_ISSUER}"`
+          : `ISSUER: ${LOCAL_AUTH_ISSUER}`,
+      );
+    },
+  );
+
+  it("persists the docker auth server's dev signing keys on a named volume", async () => {
+    const compose = await render("docker", "api", false);
+    const auth = compose.slice(
+      compose.indexOf("\n  auth:"),
+      compose.indexOf("\n  api:"),
+    );
+
+    expect(auth).toContain("volumes:");
+    expect(auth).toContain("- auth-keys:/app/keys\n");
+    expect(compose).toMatch(/\nvolumes:\n  pgdata:\n  auth-keys:\n$/);
+  });
+
+  // The local auth server bind-mounts ./auth over /app, so its keys already
+  // land on the host and a named volume would only shadow them.
+  it("declares no key volume for the source-built auth server", async () => {
+    const compose = await render("local", "api", false);
+
+    expect(compose).not.toContain("auth-keys");
+    expect(compose).toMatch(/\nvolumes:\n  pgdata:\n$/);
   });
 });
 
