@@ -1,5 +1,28 @@
 # seamless-cli
 
+## 0.19.0
+
+### Minor Changes
+
+- 99fb8b2: Let a starter run on the host sign in against the local Docker stack, and keep the auth server's dev signing keys across a container recreate.
+
+  - Templates can now use a `{{authServerIssuer}}` placeholder. On a local stack it resolves to `http://auth:5312`, the issuer the auth container signs with, so a starter run with `npm run dev` (which reaches the server at `http://localhost:5312`) can verify signed auth responses once it sets `AUTH_SERVER_ISSUER` from it. On a managed instance it resolves to the instance URL. The generated compose file also sets `AUTH_SERVER_ISSUER` on the app container.
+  - The Docker auth service mounts a named `auth-keys` volume at `/app/keys`, so `docker compose up` after a config change no longer mints a new dev key pair under the same key id and breaks every adapter's cached key.
+  - The generated `docker-compose.yml` no longer has runs of blank lines between services.
+  - `--api` with a non-API template now says it "expects an API template".
+
+- 061f749: `seamless verify` covers what a developer sees on their first `npm run dev`, and the Next.js starter.
+
+  - `--dev` runs every browser template a second time on its development server, where React Strict Mode runs every effect twice. The production pass alone could not see an effect that is not idempotent, such as the magic-link screen spending its single-use link twice (fells-code/seamless-auth-react#161). The conformance workflow passes it on every pull request (#225).
+  - Full-stack templates are no longer skipped. The Next.js starter is built from its own Dockerfile's `runtime` target (and its `dev` target under `--dev`) and driven by specs written for its own screens: passkey enrollment and sign-in, an emailed code, a magic link, the server-rendered session page, and its role-gated route (#222).
+  - The React magic-link spec fails when the link is verified more than once, and the JWKS spec no longer expects the signing key's kid to be `dev-main`.
+  - The browser resolves `localhost` to 127.0.0.1, so a server of your own on `[::1]:5173` no longer answers in place of the stack, and `SEAMLESS_API_URL`, `SEAMLESS_ADAPTER_URL`, and `SEAMLESS_FASTIFY_ADAPTER_URL` are honored when set.
+
+### Patch Changes
+
+- 01d9b3d: Support Node 22 and newer. The `engines` field now requires `>=22` instead of `>=24 <25`, and CI runs on Node 22, 24, and the latest release (fells-code/seamless-auth-api#339).
+- 9a21318: Depend on `@seamless-auth/types` ^0.28.0. The new release adds time range schemas for the dashboard metrics and security anomalies; its new response fields are optional, so nothing the CLI reads changes.
+
 ## 0.18.0
 
 ### Minor Changes
