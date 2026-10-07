@@ -7,7 +7,10 @@
 #
 # Env comes from the `seamless verify` process, not a file:
 #   SEAMLESS_API_DIR    absolute path to the seamless-auth-api source (build context)
-#   SEAMLESS_REACT_DIR  absolute path to the web template to serve (react profile only)
+#   SEAMLESS_REACT_DIR  absolute path to the web template to serve (react and
+#                       react-dev profiles)
+#   SEAMLESS_FULLSTACK_DIR  absolute path to the full-stack template to serve
+#                       (nextjs and nextjs-dev profiles)
 #   API_SERVICE_TOKEN   shared secret between the API and both adapters
 #   JWKS_KID            key id the adapters expect (must match the API's active kid)
 #   OWNER_EMAIL         tenant owner; this email gets the admin role at signup
@@ -54,7 +57,8 @@ services:
       # claim on API-signed tokens against the URL it reaches the API on.
       ISSUER: http://auth-api:5312
       DEFAULT_ROLES: user
-      AVAILABLE_ROLES: user,admin
+      # betaUser is the role the Next.js starter's /beta route requires.
+      AVAILABLE_ROLES: user,admin,betaUser
       LOGIN_METHODS: passkey,magic_link,email_otp,phone_otp,oauth
       # The base URL for emailed magic links, required at boot: with a fresh DB
       # there is no seeded system_config row to fall back on, so the server exits
@@ -194,3 +198,98 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+  # The same web template on its development server (`npm run dev`), so the
+  # browser specs also run under React Strict Mode, which mounts every component
+  # twice and runs every effect twice. Production builds run effects once, so an
+  # effect that is not idempotent (a single-use link spent twice, say) passes the
+  # `react` service and fails here, exactly as it fails on a developer's first
+  # `npm run dev`. Same host port as `react`; the two are never up together.
+  #
+  # Vite listens on 5173 inside the container as well, so the HMR client's
+  # websocket goes to the port the page was served from.
+  react-dev:
+    profiles: ['react-dev']
+    build:
+      context: ${SEAMLESS_REACT_DIR}
+      additional_contexts:
+        sdk: ./react-vendor
+      dockerfile_inline: |
+        FROM node:24-slim
+        WORKDIR /app
+        COPY package.json package-lock.json ./
+        RUN npm ci
+        COPY . .
+        COPY --from=sdk . /tmp/sdk/
+        RUN if ls /tmp/sdk/*.tgz >/dev/null 2>&1; then \
+              npm install /tmp/sdk/*.tgz; \
+            fi
+        EXPOSE 5173
+        CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173", "--strictPort"]
+    ports:
+      - '5173:5173'
+    environment:
+      # The dev server reads the API origin from the environment, not from the
+      # config.js the nginx entrypoint writes.
+      VITE_API_URL: http://localhost:3000
+    depends_on:
+      adapter:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  # A full-stack template (the Next.js starter) built with its own Dockerfile's
+  # `runtime` target: the standalone production server, on port 80 with /health.
+  # It serves /auth itself, so it talks to the auth API directly and needs no
+  # adapter. SEAMLESS_VERIFY_CAPTURE turns on the starter's capture transport,
+  # which holds OTP and magic-link codes for the harness to read; it is off in
+  # every other environment.
+  #
+  # Built from the template's own lockfile, so it runs the SDK versions the
+  # starter pins, with or without --local.
+  nextjs:
+    profiles: ['nextjs']
+    build:
+      context: ${SEAMLESS_FULLSTACK_DIR:-.}
+      target: runtime
+    ports:
+      - '5173:80'
+    environment: &nextjs-env
+      AUTH_SERVER_URL: http://auth-api:5312
+      # Equal to AUTH_SERVER_URL here (the API's ISSUER above), so a starter that
+      # reads a separate issuer and one that does not both verify the same way.
+      AUTH_SERVER_ISSUER: http://auth-api:5312
+      API_SERVICE_TOKEN: ${API_SERVICE_TOKEN}
+      COOKIE_SIGNING_KEY: ${API_SERVICE_TOKEN}
+      JWKS_KID: ${JWKS_KID}
+      SEAMLESS_VERIFY_CAPTURE: 'true'
+    depends_on:
+      auth-api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  # The same starter on `next dev` (the Dockerfile's `dev` target), for the
+  # Strict Mode pass. See react-dev above.
+  nextjs-dev:
+    profiles: ['nextjs-dev']
+    build:
+      context: ${SEAMLESS_FULLSTACK_DIR:-.}
+      target: dev
+    ports:
+      - '5173:80'
+    environment: *nextjs-env
+    depends_on:
+      auth-api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 60

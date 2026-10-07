@@ -4,7 +4,15 @@ import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/tes
 // the Playwright project; flow from the spec file name, with a few aliases folded
 // together so the same flow lines up across layers.
 
-const LAYERS = ['api', 'adapter', 'adapter-fastify', 'react'] as const;
+const LAYERS = [
+  'api',
+  'adapter',
+  'adapter-fastify',
+  'react',
+  'react-dev',
+  'nextjs',
+  'nextjs-dev',
+] as const;
 type Layer = (typeof LAYERS)[number];
 
 function isLayer(name: string): name is Layer {
@@ -31,7 +39,7 @@ export default class MatrixReporter implements Reporter {
   private tests = new Map<string, Entry>();
 
   onTestEnd(test: TestCase, result: TestResult): void {
-    const match = test.location.file.match(/\/(api|adapter|react)\/([^/]+)\.spec\.[tj]s$/);
+    const match = test.location.file.match(/\/(api|adapter|react|nextjs)\/([^/]+)\.spec\.[tj]s$/);
     if (!match) return;
     // The project name, not the directory: the two adapter projects run the same
     // specs from ./adapter, so the path cannot tell them apart. Falls back to the
@@ -53,6 +61,9 @@ export default class MatrixReporter implements Reporter {
     if (cells.size === 0) return;
 
     const flows = [...new Set([...cells.keys()].map((k) => k.split('|')[0]))].sort();
+    // Only the layers this run drove: one run covers one browser template at a time.
+    const ran = new Set([...this.tests.values()].map((e) => e.layer));
+    const layers = LAYERS.filter((l) => ran.has(l));
     const symbol = (flow: string, layer: Layer): string => {
       const value = cells.get(`${flow}|${layer}`);
       return value === undefined ? '-' : value ? '✓' : '✗';
@@ -65,9 +76,9 @@ export default class MatrixReporter implements Reporter {
     const pad = (text: string, width: number) =>
       text + ' '.repeat(Math.max(0, width - text.length));
     const row = (label: string, get: (layer: Layer) => string) =>
-      `  ${pad(label, flowWidth)}   ${LAYERS.map((l) => pad(get(l), layerWidth(l))).join('')}`;
+      `  ${pad(label, flowWidth)}   ${layers.map((l) => pad(get(l), layerWidth(l))).join('')}`;
     const totalWidth =
-      flowWidth + 3 + LAYERS.reduce((sum, l) => sum + layerWidth(l), 0);
+      flowWidth + 3 + layers.reduce((sum, l) => sum + layerWidth(l), 0);
     const rule = `  ${'-'.repeat(totalWidth)}`;
 
     const lines = [

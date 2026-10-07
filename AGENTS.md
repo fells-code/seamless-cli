@@ -135,7 +135,7 @@ prints a flow x layer pass/fail grid (plus JUnit and HTML reports).
   same routes on the same env contract, so a spec cannot tell which one answered and any difference
   in behaviour is a real one. Keep them in step when either changes.
 - [verify/harness](verify/harness): the Playwright projects (`api`, `adapter`, `adapter-fastify`,
-  `react`), `lib/` helpers, `mock-oidc.ts`, `global-setup.ts`, and `lib/matrixReporter.ts` (the
+  `react`, `react-dev`, `nextjs`, `nextjs-dev`), `lib/` helpers, `mock-oidc.ts`, `global-setup.ts`, and `lib/matrixReporter.ts` (the
   printed grid). It has its own `node_modules` and browsers.
   - The two adapter projects run the *same* specs from `./adapter`; only the `adapterUrl` project
     option differs (`lib/fixtures.ts`). Adding an adopter framework is a project entry plus a compose
@@ -146,6 +146,27 @@ Modes and sibling repos:
 
 - `--local` builds the `@seamless-auth/*` packages from source (pre-publish contract testing); the
   default uses the published packages.
+- `--dev` adds a development-server pass after each browser template's production pass: the
+  `react-dev` (vite) and `nextjs-dev` (`next dev`) compose services, on the same :5173, driven
+  by the `react-dev` / `nextjs-dev` Playwright projects running the same specs. That is the
+  only pass that runs under React Strict Mode (every effect twice), which is where
+  non-idempotent effects break (fells-code/seamless-auth-react#161: a single-use magic link
+  verified twice). CI passes `--dev` on every pull request (the `dev` input of
+  `verify-conformance.yml`, default true): the bugs it catches are introduced in SDK and
+  template PRs, so a schedule would find them only after they merged.
+- Full-stack templates (`kind: fullstack`) run from their own Dockerfile (`runtime` target, and
+  `dev` for `--dev`) as the `nextjs` compose service, and are driven by `./nextjs` specs written
+  against the starter's own screens. The manifest's `verify.project` (falling back to the
+  registry `framework`) picks the specs; a full-stack template with none is announced and
+  skipped. The starter serves `/auth` itself, so it reads codes from its own capture readout
+  (`/api/verify-capture/<recipient>`, on only with `SEAMLESS_VERIFY_CAPTURE=true`) rather than
+  the adapter's. It builds from its own lockfile, so it runs its pinned SDKs even with `--local`.
+- Chromium resolves `localhost` to 127.0.0.1 (`--host-resolver-rules`), because Docker publishes
+  on IPv4 and a developer's own server on `[::1]:5173` would otherwise answer. The page origin has
+  to stay `localhost` (passkey RP ID, allowed origins). The harness's own requests take their
+  URLs from `SEAMLESS_API_URL`, `SEAMLESS_ADAPTER_URL`, and `SEAMLESS_FASTIFY_ADAPTER_URL`, which
+  `verify` now leaves alone when set (for example `http://127.0.0.1:3000` when another process
+  holds `localhost:3000` on IPv6).
 - The browser layer runs once per web template, not once. `verify` reads the templates registry
   and drives every `kind: web` entry that is not `coming-soon`, each served at :5173 in turn and
   scoped to the flow tags its `template.json` declares in `verify.flows` (the whole suite when it
@@ -155,7 +176,7 @@ Modes and sibling repos:
   (the templates checkout the web templates come from, defaulting to `../seamless-templates`).
   `SEAMLESS_REACT_DIR` is the narrower override: it names a single template directory and runs
   that one instead of the registry's set.
-- Useful flags: `--api-only`, `--no-react`, `--filter=<flow>` (the `=` form; a space-separated `--filter <flow>` is not parsed), `--keep-up`.
+- Useful flags: `--api-only`, `--no-react`, `--dev`, `--filter=<flow>` (the `=` form; a space-separated `--filter <flow>` is not parsed), `--keep-up`.
 
 ## Important Folders
 

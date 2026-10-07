@@ -343,6 +343,7 @@ need Docker and a sibling `seamless-auth-api` source tree to build the auth serv
 seamless verify                    # everything, against the published SDKs
 seamless verify --api-only         # fast pass: the API layer alone
 seamless verify --no-react         # skip the browser layer, keep the adapters
+seamless verify --dev              # browser specs on dev servers too (Strict Mode)
 seamless verify --local            # build @seamless-auth/* from source first
 seamless verify --filter=passkey   # one flow (the = form only)
 seamless verify --keep-up          # leave the stack running afterwards
@@ -351,8 +352,16 @@ seamless verify --keep-up          # leave the stack running afterwards
 `--local` is the pre-publish check: it builds and packs the local SDK source rather than
 installing from npm, so an SDK regression surfaces before a release rather than after.
 The browser layer runs once per web template in the registry, each scoped to the flows
-its `template.json` declares. Mobile templates are announced and skipped: the harness has no
+its `template.json` declares. Full-stack templates (the Next.js starter) run too, built from
+their own Dockerfile's `runtime` target and driven by specs written for their own screens.
+Mobile templates are announced and skipped: the harness has no
 simulator to drive, so a native app is checked by running it against a `--keep-up` stack.
+
+`--dev` runs every browser template a second time on its development server (`vite`, or
+`next dev`). Production React runs each effect once; Strict Mode in development runs it
+twice, so an effect that is not idempotent (a single-use magic link verified twice, say)
+passes the production pass and fails this one, the way it fails on a developer's first
+`npm run dev`. The conformance workflow passes `--dev` on every pull request.
 
 Sibling repositories are resolved next to this one and can be pointed elsewhere with
 `SEAMLESS_API_DIR`, `SEAMLESS_SERVER_DIR`, `SEAMLESS_REACT_SDK_DIR`, and

@@ -11,6 +11,13 @@ on:
         description: Build the SDKs from source (true) or use published packages (false).
         type: boolean
         default: true
+      dev:
+        description: >-
+          Also run each browser template on its development server (React Strict Mode).
+          On by default: the bugs it catches are introduced in SDK and template pull
+          requests, so it has to see those pull requests, not a nightly build.
+        type: boolean
+        default: true
       cli-ref:
         type: string
         default: ''
@@ -170,7 +177,7 @@ jobs:
           # Point at the whole templates checkout so verify enumerates the registry
           # and conformance-tests every web template, each scoped to its own flows.
           SEAMLESS_TEMPLATES_DIR: ${{ github.workspace }}/seamless-templates
-        run: node dist/index.js verify ${{ inputs.local && '--local' || '' }}
+        run: node dist/index.js verify ${{ inputs.local && '--local' || '' }} ${{ inputs.dev && '--dev' || '' }}
 
       - name: Upload conformance report
         if: always()
