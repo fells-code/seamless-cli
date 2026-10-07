@@ -311,6 +311,28 @@ describe("output for a full-stack web app", () => {
     expect(out).toContain("docker compose logs web");
     expect(out).not.toContain("http://localhost:3000");
     expect(out).not.toContain("Web connects to API automatically");
+    expect(out).not.toContain("Admin console");
+    expect(out).not.toContain("/console");
+  });
+
+  it("points at the console the web app serves in api mode", () => {
+    printSuccessOutput({
+      projectName: "demo",
+      root: "/tmp/demo",
+      webFramework: "nextjs",
+      webFullStack: true,
+      apiFramework: null,
+      authMode: "docker",
+      adminMode: "api",
+      ownerEmail: "owner@example.com",
+    });
+
+    const out = allLogs();
+    expect(out).toContain("served by the web app at /console");
+    expect(out).toContain("Console: http://localhost:5173/console");
+    expect(out).toContain("Admin console is served by the web app at /console");
+    expect(out).not.toContain("http://localhost:3000");
+    expect(out).not.toContain("cannot host");
   });
 
   it("points the managed token note at web/.env and skips the api database step", () => {

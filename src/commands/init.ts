@@ -8,6 +8,7 @@ import {
   runProjectSetupPrompts,
   runManagedTemplatePrompts,
   ADMIN_MODES,
+  assertFullStackAdminMode,
   AUTH_MODES,
   type Preselect,
 } from "../prompts/projectSetup.js";
@@ -28,6 +29,7 @@ import {
   layerOf,
   matchesTemplateFlag,
   openTemplateSource,
+  servesAdminConsole,
   templateFlags,
   type RegistryEntry,
   type TemplateKind,
@@ -515,6 +517,20 @@ async function scaffoldLocal(
   // Provider credentials are per-provider secrets with no flag form, so --yes
   // scaffolds the starter with none configured rather than asking.
   const webSelection = selected.find((s) => layerOf(s.entry.kind) === "web");
+
+  if (
+    answers.adminMode === "api" &&
+    webSelection &&
+    isFullStack(webSelection.entry) &&
+    !servesAdminConsole(webSelection.manifest)
+  ) {
+    const reason = `${webSelection.entry.label} in this templates release cannot serve the admin console`;
+    if (preselect.adminMode) {
+      throw new Error(`${reason}. Use --admin=none.`);
+    }
+    console.log(kleur.yellow(`${reason}, so none is included.`));
+    answers.adminMode = "none";
+  }
   let oauthProviders: CollectedOAuthProvider[] = [];
   if (webSelection?.manifest.setup?.oauth) {
     if (opts.yes) {
@@ -552,6 +568,7 @@ async function scaffoldLocal(
       oauthProviders,
       answers.adminMode,
       answers.ownerEmail,
+      answers.apiTemplateId === undefined,
     );
   }
 
@@ -987,7 +1004,7 @@ function preselectKey(kind: TemplateKind): keyof TemplatePreselect {
 
 // Checked with the other flags, before a directory is created: a full-stack
 // template serves /auth itself, so an api template beside it, or an admin
-// console it cannot host, is a contradiction to report rather than resolve.
+// console container that cannot call it, is a contradiction to report rather than resolve.
 function assertFullStackFlags(
   answers: Preselect,
   templates: RegistryEntry[],
@@ -1001,11 +1018,7 @@ function assertFullStackFlags(
     );
   }
 
-  if (answers.adminMode && answers.adminMode !== "none") {
-    throw new Error(
-      `--admin=${answers.adminMode} needs an api template to host the admin console, and full-stack templates cannot host it yet. Use --admin=none.`,
-    );
-  }
+  assertFullStackAdminMode(answers.adminMode, web!.label);
 }
 
 // Resolves `--<alias>` and `--<id>` flags (e.g. --oauth, --react-oauth) to specific

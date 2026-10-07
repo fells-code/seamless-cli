@@ -23,11 +23,14 @@ export function printSuccessOutput(config: {
     ownerEmail,
   } = config;
 
-  // Where the admin console lives: proxied by the app API at /console, or a
-  // standalone container on 5174. "none" scaffolds no console at all.
+  // Where the admin console lives: proxied at /console by the app API (or by a
+  // full-stack web app, which is its own backend), or a standalone container on
+  // 5174. "none" scaffolds no console at all.
   const consoleUrl =
     adminMode === "api"
-      ? "http://localhost:3000/console"
+      ? webFullStack
+        ? "http://localhost:5173/console"
+        : "http://localhost:3000/console"
       : adminMode === "none"
         ? null
         : "http://localhost:5174";
@@ -86,7 +89,9 @@ export function printSuccessOutput(config: {
       "  • " +
         kleur.white("Admin console") +
         kleur.dim(
-          adminMode === "api" ? " (served by API at /console)" : " (management UI)",
+          adminMode === "api"
+            ? ` (served by ${webFullStack ? "the web app" : "API"} at /console)`
+            : " (management UI)",
         ),
     );
   }
@@ -147,11 +152,6 @@ export function printSuccessOutput(config: {
         "  • One-time codes and sign-in links print in: docker compose logs web",
       ),
     );
-    console.log(
-      kleur.dim(
-        "  • No admin console yet: full-stack templates cannot host it (see the Next.js docs)",
-      ),
-    );
   } else {
     console.log(kleur.dim("  • Web connects to API automatically"));
     console.log(kleur.dim("  • API connects to Auth automatically"));
@@ -160,7 +160,7 @@ export function printSuccessOutput(config: {
     console.log(
       kleur.dim(
         adminMode === "api"
-          ? "  • Admin console is served by the API at /console"
+          ? `  • Admin console is served by the ${webFullStack ? "web app" : "API"} at /console`
           : "  • Admin console uses the same auth system",
       ),
     );

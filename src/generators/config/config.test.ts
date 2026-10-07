@@ -235,4 +235,21 @@ describe("generateSeamlessConfig for a full-stack web app", () => {
     });
     expect(config.services).not.toHaveProperty("api");
   });
+
+  it("records the console at the web app's /console in api mode", () => {
+    generateSeamlessConfig(tmpDir, {
+      projectName: "demo",
+      webFramework: "nextjs",
+      webFullStack: true,
+      authMode: "docker",
+      adminMode: "api",
+    });
+
+    expect(readConfig(tmpDir).services.admin).toEqual({
+      mode: "api",
+      image: null,
+      path: null,
+      url: "http://localhost:5173/console",
+    });
+  });
 });

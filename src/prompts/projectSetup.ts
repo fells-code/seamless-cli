@@ -16,6 +16,23 @@ export type AdminMode = "api" | "image" | "source" | "none";
 export const AUTH_MODES: AuthMode[] = ["docker", "local"];
 export const ADMIN_MODES: AdminMode[] = ["api", "image", "source", "none"];
 
+// A full-stack template serves the console itself at /console (the "api" mode,
+// with the web app as the backend). A standalone dashboard container on :5174
+// would call the app's /auth cross-origin, which its route handler does not
+// allow, so the container modes do not apply.
+export const FULL_STACK_ADMIN_MODES: AdminMode[] = ["api", "none"];
+
+export function assertFullStackAdminMode(
+  adminMode: AdminMode | undefined,
+  templateLabel: string,
+): void {
+  if (adminMode && !FULL_STACK_ADMIN_MODES.includes(adminMode)) {
+    throw new Error(
+      `--admin=${adminMode} runs the admin console as its own container, which cannot call ${templateLabel}'s same-origin /auth routes. Use --admin=api to serve it from the app at /console, or --admin=none.`,
+    );
+  }
+}
+
 // What each question falls back to when --yes answers it. These match the
 // options labelled "(recommended)" in the prompts below, so an unattended run
 // gets the same stack a developer pressing Enter would.
@@ -288,9 +305,13 @@ export async function runProjectSetupPrompts(
       ) as AuthMode,
   );
 
-  const adminMode = apiTemplateId
-    ? await resolveAdminMode(preselect.adminMode, assumeYes)
-    : noAdminConsoleForFullStack(preselect.adminMode);
+  const web = templates.find((t) => t.id === webTemplateId);
+  const fullStackWeb = isFullStack(web) ? web : undefined;
+  const adminMode = await resolveAdminMode(
+    preselect.adminMode,
+    assumeYes,
+    fullStackWeb,
+  );
 
   return {
     web: true,
@@ -309,31 +330,24 @@ export async function runProjectSetupPrompts(
   };
 }
 
-// No Next.js adapter serves the console yet: there is no console proxy for
-// /console, and a standalone dashboard on :5174 would call the app's /auth
-// cross-origin, which the route handler does not allow.
-// TODO(fells-code/seamless-auth-server#185): offer the console once the adapter serves it.
-function noAdminConsoleForFullStack(supplied: AdminMode | undefined): AdminMode {
-  if (supplied && supplied !== "none") {
-    throw new Error(
-      `--admin=${supplied} needs an api template to host the admin console, and full-stack templates cannot host it yet. Use --admin=none.`,
-    );
-  }
-  console.log("Admin console: none (not yet available for full-stack templates)");
-  return "none";
-}
-
+// With a full-stack template the web app is the backend, so "api" serves the
+// console from the web app and only that or none is offered.
 async function resolveAdminMode(
   supplied: AdminMode | undefined,
   assumeYes: boolean,
+  fullStackWeb?: RegistryEntry,
 ): Promise<AdminMode> {
+  if (fullStackWeb) {
+    assertFullStackAdminMode(supplied, fullStackWeb.label);
+  }
+
   return resolveChoice<AdminMode>(
     supplied,
     assumeYes ? DEFAULT_ADMIN_MODE : undefined,
     "Admin console",
     "How would you like to host the admin console?",
     "--admin",
-    ADMIN_MODES,
+    fullStackWeb ? FULL_STACK_ADMIN_MODES : ADMIN_MODES,
     async () =>
       orCancel(
         await select({
@@ -341,7 +355,9 @@ async function resolveAdminMode(
           options: [
             {
               value: "api",
-              label: "Served by your API at /console (recommended)",
+              label: fullStackWeb
+                ? `Served by ${fullStackWeb.label} at /console (recommended)`
+                : "Served by your API at /console (recommended)",
             },
             {
               value: "image",
@@ -355,7 +371,11 @@ async function resolveAdminMode(
               value: "none",
               label: "Don't include the admin console",
             },
-          ],
+          ].filter(
+            ({ value }) =>
+              !fullStackWeb ||
+              FULL_STACK_ADMIN_MODES.includes(value as AdminMode),
+          ),
           initialValue: "api",
         }),
       ) as AdminMode,

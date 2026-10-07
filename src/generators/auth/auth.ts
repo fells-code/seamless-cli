@@ -10,6 +10,7 @@ export async function generateAuthServer(
   oauth: CollectedOAuthProvider[] = [],
   adminMode: AdminMode = "api",
   ownerEmail?: string,
+  fullStack = false,
 ) {
   console.log("Cloning SeamlessAuth server...");
 
@@ -17,7 +18,13 @@ export async function generateAuthServer(
 
   console.log("Writing auth environment...");
 
-  const shared = await configureAuthLocalEnv(root, oauth, adminMode, ownerEmail);
+  const shared = await configureAuthLocalEnv(
+    root,
+    oauth,
+    adminMode,
+    ownerEmail,
+    fullStack,
+  );
 
   console.log("Auth server ready in /auth");
   return shared;

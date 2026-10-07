@@ -85,6 +85,23 @@ describe("generateAuthServer local mode", () => {
     expect(written).toContain(`API_SERVICE_TOKEN=${shared.apiToken}`);
   });
 
+  it("writes the full-stack origins when the web app serves the console", async () => {
+    const child = fakeChild();
+    vi.mocked(spawn).mockImplementation(() => {
+      fs.mkdirSync(path.join(tmpDir, "auth"), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, "auth", ".env.example"), "A=b\n");
+      return child as never;
+    });
+
+    const promise = generateAuthServer(tmpDir, [], "api", undefined, true);
+    child.emit("close", 0);
+    await promise;
+
+    const written = fs.readFileSync(path.join(tmpDir, "auth", ".env"), "utf-8");
+    expect(written).toContain("ORIGINS=http://localhost:5173\n");
+    expect(written).toContain("SERVE_ADMIN_DASHBOARD=true\n");
+  });
+
   it("propagates a failure when the git clone fails", async () => {
     const child = fakeChild();
     vi.mocked(spawn).mockReturnValue(child as never);

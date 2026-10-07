@@ -73,6 +73,15 @@ export interface TemplateManifest {
   requires?: { cliMin?: string };
 }
 
+// Whether a template's env contract carries the console switch. A full-stack
+// starter from a templates release before its /console route has none, and
+// scaffolding the console for it would leave /console answering 404.
+export function servesAdminConsole(manifest: TemplateManifest): boolean {
+  return Object.values(manifest.env?.set ?? {}).includes(
+    "{{serveAdminConsole}}",
+  );
+}
+
 // Values the CLI computes for a scaffold, used to resolve {{placeholders}} in a
 // template manifest's env.set.
 export interface ScaffoldContext {

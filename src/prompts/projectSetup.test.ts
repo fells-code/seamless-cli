@@ -1,5 +1,13 @@
 import { confirm, select, text } from "@clack/prompts";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 
 import type { RegistryEntry } from "../core/templates.js";
 import {
@@ -561,10 +569,11 @@ describe("full-stack templates", () => {
     expect(api.options.map((o) => o.value)).toEqual(["api-a"]);
   });
 
-  it("skips the backend and admin console questions when one is chosen", async () => {
+  it("skips the backend question and offers only the console modes it can host", async () => {
     const calls = mockSelect({
       "Web example": "fs-a",
       "How would you like to run SeamlessAuth?": "docker",
+      "How would you like to host the admin console?": "api",
     });
 
     const result = await runProjectSetupPrompts(withFullStack());
@@ -573,44 +582,79 @@ describe("full-stack templates", () => {
       webTemplateId: "fs-a",
       api: false,
       apiTemplateId: undefined,
-      adminMode: "none",
+      adminMode: "api",
     });
     expect(calls.map((c) => c.message)).not.toContain("Backend framework");
     expect(out()).toContain("Backend: served by Next.js");
-    expect(out()).toContain("Admin console: none");
+
+    const admin = calls.find(
+      (c) => c.message === "How would you like to host the admin console?",
+    )!;
+    expect(admin.options).toEqual([
+      { value: "api", label: "Served by Next.js at /console (recommended)" },
+      { value: "none", label: "Don't include the admin console" },
+    ]);
+    expect(admin.initialValue).toBe("api");
   });
 
-  it("refuses an api template beside a full-stack one", async () => {
-    await expect(
-      runProjectSetupPrompts(
-        withFullStack(),
-        { webTemplateId: "fs-a", apiTemplateId: "api-a", ownerEmail: "o@example.com" },
-        undefined,
-        true,
-      ),
-    ).rejects.toThrow(/serves its own \/auth routes/);
-  });
-
-  it("refuses an admin console a full-stack template cannot host", async () => {
-    await expect(
-      runProjectSetupPrompts(
-        withFullStack(),
-        { webTemplateId: "fs-a", adminMode: "image", ownerEmail: "o@example.com" },
-        undefined,
-        true,
-      ),
-    ).rejects.toThrow(/--admin=image needs an api template/);
-  });
-
-  it("accepts --admin=none with a full-stack template", async () => {
+  it("serves the console from the app under --yes", async () => {
     const result = await runProjectSetupPrompts(
       withFullStack(),
-      { webTemplateId: "fs-a", adminMode: "none", ownerEmail: "o@example.com" },
+      { webTemplateId: "fs-a", ownerEmail: "o@example.com" },
       undefined,
       true,
     );
 
-    expect(result.adminMode).toBe("none");
+    expect(result.adminMode).toBe("api");
+    expect(out()).toContain("Admin console: api");
+  });
+
+  it.each(["image", "source"] as const)(
+    "refuses --admin=%s, a container that cannot call the app's /auth",
+    async (adminMode) => {
+      await expect(
+        runProjectSetupPrompts(
+          withFullStack(),
+          { webTemplateId: "fs-a", adminMode, ownerEmail: "o@example.com" },
+          undefined,
+          true,
+        ),
+      ).rejects.toThrow(
+        new RegExp(
+          `--admin=${adminMode} runs the admin console as its own container.*Use --admin=api.*or --admin=none`,
+        ),
+      );
+    },
+  );
+
+  it.each(["api", "none"] as const)(
+    "accepts --admin=%s with a full-stack template",
+    async (adminMode) => {
+      const result = await runProjectSetupPrompts(
+        withFullStack(),
+        { webTemplateId: "fs-a", adminMode, ownerEmail: "o@example.com" },
+        undefined,
+        true,
+      );
+
+      expect(result.adminMode).toBe(adminMode);
+    },
+  );
+
+  it("names only the modes that apply when it cannot prompt", async () => {
+    const wasTTY = process.stdin.isTTY;
+    process.stdin.isTTY = false;
+    onTestFinished(() => {
+      process.stdin.isTTY = wasTTY;
+    });
+
+    await expect(
+      runProjectSetupPrompts(withFullStack(), {
+        webTemplateId: "fs-a",
+        authMode: "docker",
+        ownerEmail: "o@example.com",
+      }),
+    ).rejects.toThrow(/--admin=<api\|none>/);
   });
 
   it("does not change the --yes default when a full-stack template is listed last", async () => {
