@@ -80,6 +80,7 @@ vi.mock("../generators/auth/auth.js", () => ({
 }));
 vi.mock("../generators/docker/docker.js", () => ({
   generateDockerCompose: vi.fn(),
+  LOCAL_AUTH_ISSUER: "http://auth:5312",
 }));
 vi.mock("../generators/admin/admin.js", () => ({
   generateAdminSource: vi.fn(),
@@ -501,6 +502,10 @@ describe("scaffoldLocal", () => {
       expect.objectContaining({
         apiToken: "docker-token",
         jwksKid: "docker-kid",
+        // A host-run starter calls localhost but must accept the issuer the
+        // auth container signs as.
+        authServerUrl: "http://localhost:5312",
+        authServerIssuer: "http://auth:5312",
       }),
     );
     expect(generateSeamlessConfig).toHaveBeenCalledWith(
@@ -887,6 +892,9 @@ describe("scaffoldManaged", () => {
         jwksKid: "dev-main",
       }),
     );
+    // A managed instance signs as its own URL, so the issuer falls back to it.
+    const managedCtx = vi.mocked(applyTemplateEnv).mock.calls[0][2];
+    expect(managedCtx.authServerIssuer).toBeUndefined();
     expect(generateSeamlessConfig).toHaveBeenCalledWith(
       "/work",
       expect.objectContaining({
@@ -1893,7 +1901,7 @@ describe("full-stack templates", () => {
   it("rejects --api naming a full-stack template", async () => {
     await expect(
       runCLI(undefined, [], { local: true, api: "nextjs" }),
-    ).rejects.toThrow(/--api expects a api template/);
+    ).rejects.toThrow(/--api expects an API template/);
   });
 
   it("rejects an api template beside it, before anything is scaffolded", async () => {

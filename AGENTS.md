@@ -195,7 +195,8 @@ Templates are not in this repo — they live in the `seamless-templates` monorep
 [.github/workflows/scaffold-smoke.yml](.github/workflows/scaffold-smoke.yml) runs
 [scripts/scaffold-smoke.sh](scripts/scaffold-smoke.sh) on every PR: it scaffolds with
 `init --local --yes --auth=docker --admin=none`, brings up `db` and `auth` from the
-generated compose, then writes a row, recreates the container, and reads it back.
+generated compose, then writes a row (and a probe file in the auth server's key
+volume), recreates the containers, and reads both back.
 
 It exists because every other job asserts the generated files as *strings*. This is the
 only one that hands them to Docker, so it is the only one that can catch a compose file

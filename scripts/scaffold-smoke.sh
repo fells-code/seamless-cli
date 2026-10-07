@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Brings up what `seamless init` actually writes, and asserts the database keeps
-# its data across a container recreate.
+# its data, and the auth server its dev signing keys, across a container recreate.
 #
 # Everything else in CI tests the generated files as strings. This is the only job
 # that hands them to Docker, so it is the only one that can catch a compose file
@@ -103,9 +103,15 @@ compose exec -T db psql -U myuser -d postgres -v ON_ERROR_STOP=1 \
 
 # `down` without -v keeps the named volume, so the container is replaced while the
 # storage it declared survives. That is precisely the thing being asserted.
-echo "==> Recreating the container, keeping the volume"
+# The auth server writes its dev key pair under /app/keys on first sign, as the
+# image's non-root user. A probe file written as that same user proves the volume
+# is both writable and the place that survives.
+echo "==> Writing a key probe"
+compose exec -T auth sh -c 'echo 42 > /app/keys/smoke-probe'
+
+echo "==> Recreating the containers, keeping the volumes"
 compose down
-compose up -d --wait db
+compose up -d --wait db auth
 
 echo "==> Reading the row back"
 # `|| true` so a missing table reaches the comparison below rather than tripping
@@ -121,4 +127,16 @@ if [ "$value" != "42" ]; then
 fi
 
 echo "==> Data survived the recreate"
+
+echo "==> Reading the key probe back"
+key_probe="$(compose exec -T auth cat /app/keys/smoke-probe 2>/dev/null | tr -d '[:space:]' || true)"
+
+if [ "$key_probe" != "42" ]; then
+  echo "FAIL: the auth server's key directory did not survive a container recreate." >&2
+  echo "      Expected 42, read '${key_probe}'." >&2
+  echo "      A new dev key pair under the same kid breaks every adapter's cached key." >&2
+  exit 1
+fi
+
+echo "==> Signing keys survived the recreate"
 echo "PASS"
