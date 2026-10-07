@@ -14,6 +14,12 @@ import {
   SEAMLESS_AUTH_API_IMAGE,
 } from "../../core/images.js";
 
+// The issuer the local auth server signs with. Every container reaches it by its
+// compose service name, so containers see issuer == URL. An app run on the host
+// reaches it at localhost:5312 instead, and is told this issuer separately
+// (AUTH_SERVER_ISSUER in its .env) so signed responses still verify.
+export const LOCAL_AUTH_ISSUER = "http://auth:5312";
+
 export async function generateDockerCompose(
   root: string,
   options: {
@@ -21,6 +27,9 @@ export async function generateDockerCompose(
     adminMode: AdminMode;
     oauth?: CollectedOAuthProvider[];
     ownerEmail?: string;
+    // The web template serves /auth itself, so there is no api service and the
+    // web container gets the auth wiring the api container would have had.
+    fullStack?: boolean;
   },
 ) {
   const { compose, shared } = await buildCompose(options, root);
@@ -40,10 +49,11 @@ async function buildCompose(
     adminMode: AdminMode;
     oauth?: CollectedOAuthProvider[];
     ownerEmail?: string;
+    fullStack?: boolean;
   },
   root: string,
 ) {
-  const { authMode, adminMode, oauth, ownerEmail } = options;
+  const { authMode, adminMode, oauth, ownerEmail, fullStack } = options;
 
   const { service: authBlock, shared } = await authService(
     authMode,
@@ -55,12 +65,39 @@ async function buildCompose(
 
   const includeAdminContainer = adminMode === "image" || adminMode === "source";
 
+  // Each block is trimmed and joined with exactly one blank line, so an omitted
+  // service leaves no gap behind.
+  const services = [
+    dbService(),
+    authBlock,
+    ...(fullStack
+      ? [fullStackWebService(shared)]
+      : [apiService(shared, adminMode), webService()]),
+    includeAdminContainer ? adminService(adminMode) : "",
+  ]
+    .map((block) => block.replace(/^\n+|\s+$/g, ""))
+    .filter(Boolean);
+
+  const volumes = ["  pgdata:"];
+  if (authMode === "docker") volumes.push("  auth-keys:");
+
   return {
     compose: `# Ports are published on 127.0.0.1 so this stack is reachable from this machine
 # only. The auth server is configured to return OTP codes in the response for
 # local login, which would otherwise be an authentication bypass for anyone on
 # the same network. Drop the 127.0.0.1 prefix only if you know you want that.
 services:
+${services.join("\n\n")}
+
+volumes:
+${volumes.join("\n")}
+`,
+    shared,
+  };
+}
+
+function dbService() {
+  return `
   db:
     image: ${POSTGRES_IMAGE}
     container_name: seamless-db
@@ -81,21 +118,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-${authBlock}
-
-${apiService(shared, adminMode)}
-
-${webService()}
-
-${includeAdminContainer ? adminService(adminMode) : ""}
-
-volumes:
-  pgdata:
-`,
-    shared,
-  };
+`;
 }
+
 async function authService(
   mode: "local" | "docker",
   root: string,
@@ -122,7 +147,7 @@ async function authService(
       - ./auth/.env
     environment:
       DB_HOST: db
-      ISSUER: http://auth:5312
+      ISSUER: ${LOCAL_AUTH_ISSUER}
     volumes:
       - ./auth:/app
       - /app/node_modules
@@ -157,7 +182,8 @@ function apiService(shared: any, adminMode: AdminMode) {
     env_file:
       - ./api/.env
     environment:
-      AUTH_SERVER_URL: http://auth:5312
+      AUTH_SERVER_URL: ${LOCAL_AUTH_ISSUER}
+      AUTH_SERVER_ISSUER: ${LOCAL_AUTH_ISSUER}
       UI_ORIGINS: ${apiUiOrigins(adminMode)}
       DB_HOST: db
       API_SERVICE_TOKEN: ${shared.apiToken}
@@ -195,6 +221,43 @@ function webService() {
 `;
 }
 
+// A full-stack web app is its own backend: it reaches the auth server inside the
+// compose network and holds the service token, as the api service does. It runs
+// the template's dev target, so its messaging handlers print one-time codes and
+// magic links to `docker compose logs web` (the local auth server sends none).
+// node_modules and .next stay in the container: the bind mount would otherwise
+// hide the installed dependencies and share a build cache with the host.
+function fullStackWebService(shared: any) {
+  return `
+  web:
+    container_name: web
+    build: ./web
+    ports:
+      - "127.0.0.1:5173:80"
+    env_file:
+      - ./web/.env
+    environment:
+      AUTH_SERVER_URL: ${LOCAL_AUTH_ISSUER}
+      AUTH_SERVER_ISSUER: ${LOCAL_AUTH_ISSUER}
+      API_SERVICE_TOKEN: ${shared.apiToken}
+      JWKS_KID: ${shared.kid}
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+`;
+}
+
 async function authServiceDocker(
   oauth: CollectedOAuthProvider[] = [],
   adminMode: AdminMode = "api",
@@ -222,6 +285,13 @@ async function authServiceDocker(
       - "127.0.0.1:5312:5312"
     environment:
 ${envBlock}
+    volumes:
+      # The dev signing key pair is generated into /app/keys on first use. Without
+      # a volume a recreated container mints a new pair under the same kid, and
+      # every adapter that cached the old public key fails verification. The image
+      # creates /app/keys owned by its runtime user, and a fresh named volume
+      # copies that ownership, so the server can still write there.
+      - auth-keys:/app/keys
     depends_on:
       db:
         condition: service_healthy
@@ -297,7 +367,7 @@ export function buildAuthEnv(
   env.NODE_ENV = "development";
 
   env.ISSUER =
-    mode === "docker" ? "http://auth:5312" : "http://localhost:5312";
+    mode === "docker" ? LOCAL_AUTH_ISSUER : "http://localhost:5312";
 
   env.DB_HOST = mode === "docker" ? "db" : "localhost";
   env.DB_PORT = "5432";

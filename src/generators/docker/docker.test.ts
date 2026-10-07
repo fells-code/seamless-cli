@@ -8,6 +8,7 @@ import {
   envToDockerBlock,
   extractSharedFromExistingEnv,
   generateDockerCompose,
+  LOCAL_AUTH_ISSUER,
 } from "./docker.js";
 import {
   POSTGRES_IMAGE,
@@ -340,6 +341,87 @@ describe("generateDockerCompose", () => {
   });
 });
 
+describe("generateDockerCompose output shape", () => {
+  async function render(
+    authMode: "local" | "docker",
+    adminMode: "api" | "image" | "source" | "none",
+    fullStack: boolean,
+  ) {
+    const root = fs.mkdtempSync(path.join(tmpDir, `${authMode}-`));
+    if (authMode === "local") writeAuthEnvFixture(root, "SEAMLESS_JWKS_ACTIVE_KID");
+    else stubEnvExampleFetch("SOME_VAR=value\n");
+    await generateDockerCompose(root, { authMode, adminMode, fullStack });
+    return fs.readFileSync(path.join(root, "docker-compose.yml"), "utf-8");
+  }
+
+  const combos = (["local", "docker"] as const).flatMap((authMode) =>
+    (["api", "image", "source", "none"] as const).flatMap((adminMode) =>
+      [false, true].map((fullStack) => ({ authMode, adminMode, fullStack })),
+    ),
+  );
+
+  it.each(combos)(
+    "separates blocks with exactly one blank line ($authMode, $adminMode, fullStack=$fullStack)",
+    async ({ authMode, adminMode, fullStack }) => {
+      const compose = await render(authMode, adminMode, fullStack);
+
+      expect(compose).not.toMatch(/\n[ \t]*\n[ \t]*\n/);
+      expect(compose).not.toMatch(/[ \t]+\n/);
+      expect(compose.endsWith("\n")).toBe(true);
+      expect(compose.endsWith("\n\n")).toBe(false);
+      // Every service but the first is preceded by one blank line.
+      const servicesSection = compose.slice(0, compose.indexOf("\nvolumes:"));
+      const services = servicesSection.match(/^  [a-z]+:$/gm) ?? [];
+      expect(services[0]).toBe("  db:");
+      for (const name of services.slice(1)) {
+        expect(compose).toContain(`\n\n${name}\n`);
+      }
+    },
+  );
+
+  // An app run on the host reads AUTH_SERVER_ISSUER from its .env; a container
+  // gets the same value here, matching the URL it reaches the server at.
+  it.each(combos)(
+    "gives the app container an issuer equal to its auth URL ($authMode, $adminMode, fullStack=$fullStack)",
+    async ({ authMode, adminMode, fullStack }) => {
+      const compose = await render(authMode, adminMode, fullStack);
+      const app = compose.slice(
+        compose.indexOf(fullStack ? "\n  web:" : "\n  api:"),
+      );
+
+      expect(app).toContain(
+        `AUTH_SERVER_URL: ${LOCAL_AUTH_ISSUER}\n      AUTH_SERVER_ISSUER: ${LOCAL_AUTH_ISSUER}\n`,
+      );
+      expect(compose).toContain(
+        authMode === "docker"
+          ? `ISSUER: "${LOCAL_AUTH_ISSUER}"`
+          : `ISSUER: ${LOCAL_AUTH_ISSUER}`,
+      );
+    },
+  );
+
+  it("persists the docker auth server's dev signing keys on a named volume", async () => {
+    const compose = await render("docker", "api", false);
+    const auth = compose.slice(
+      compose.indexOf("\n  auth:"),
+      compose.indexOf("\n  api:"),
+    );
+
+    expect(auth).toContain("volumes:");
+    expect(auth).toContain("- auth-keys:/app/keys\n");
+    expect(compose).toMatch(/\nvolumes:\n  pgdata:\n  auth-keys:\n$/);
+  });
+
+  // The local auth server bind-mounts ./auth over /app, so its keys already
+  // land on the host and a named volume would only shadow them.
+  it("declares no key volume for the source-built auth server", async () => {
+    const compose = await render("local", "api", false);
+
+    expect(compose).not.toContain("auth-keys");
+    expect(compose).toMatch(/\nvolumes:\n  pgdata:\n$/);
+  });
+});
+
 describe("buildAuthEnv owner grant", () => {
   it("writes OWNER_EMAIL so the first signup becomes an admin", () => {
     const { env } = buildAuthEnv({}, "docker", [], "api", "dev@example.com");
@@ -352,5 +434,55 @@ describe("buildAuthEnv owner grant", () => {
   it("omits OWNER_EMAIL when no owner was collected", () => {
     const { env } = buildAuthEnv({}, "docker");
     expect("OWNER_EMAIL" in env).toBe(false);
+  });
+});
+
+describe("generateDockerCompose for a full-stack web app", () => {
+  it("runs the web app as the backend, with no api service", async () => {
+    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
+
+    await generateDockerCompose(tmpDir, {
+      authMode: "local",
+      adminMode: "none",
+      fullStack: true,
+    });
+
+    const compose = fs.readFileSync(
+      path.join(tmpDir, "docker-compose.yml"),
+      "utf-8",
+    );
+    const web = compose.slice(compose.indexOf("\n  web:"));
+
+    expect(compose).not.toContain("\n  api:");
+    expect(compose).not.toContain("\n  admin:");
+    expect(web).toContain("- ./web/.env");
+    expect(web).toContain("AUTH_SERVER_URL: http://auth:5312");
+    expect(web).toContain("API_SERVICE_TOKEN: existing-token");
+    expect(web).toContain("JWKS_KID: existing-kid");
+    expect(web).toContain('- "127.0.0.1:5173:80"');
+    // The bind mount must not hide the container's dependencies or share a
+    // build cache with the host.
+    expect(web).toContain("- /app/node_modules");
+    expect(web).toContain("- /app/.next");
+    expect(web).not.toContain("depends_on:\n      - api");
+    expect(web).not.toContain("API_URL");
+  });
+
+  it("keeps the api and web services for a split stack", async () => {
+    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
+
+    await generateDockerCompose(tmpDir, {
+      authMode: "local",
+      adminMode: "none",
+      fullStack: false,
+    });
+
+    const compose = fs.readFileSync(
+      path.join(tmpDir, "docker-compose.yml"),
+      "utf-8",
+    );
+
+    expect(compose).toContain("\n  api:");
+    expect(compose).toContain("API_URL: http://localhost:3000/");
   });
 });

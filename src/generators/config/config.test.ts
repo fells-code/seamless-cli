@@ -216,3 +216,23 @@ describe("generateSeamlessConfig", () => {
     expect(logSpy).toHaveBeenCalledWith("Seamless config created.");
   });
 });
+
+describe("generateSeamlessConfig for a full-stack web app", () => {
+  it("marks the web service full-stack and records no api", () => {
+    generateSeamlessConfig(tmpDir, {
+      projectName: "demo",
+      webFramework: "nextjs",
+      webFullStack: true,
+      authMode: "docker",
+      adminMode: "none",
+    });
+
+    const config = readConfig(tmpDir);
+    expect(config.services.web).toEqual({
+      framework: "nextjs",
+      path: "./web",
+      kind: "fullstack",
+    });
+    expect(config.services).not.toHaveProperty("api");
+  });
+});

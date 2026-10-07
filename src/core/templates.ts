@@ -9,7 +9,20 @@ import { fetchRemote } from "./fetch.js";
 import { generateSecret } from "./secrets.js";
 import { SEAMLESS_TEMPLATES_REF, SEAMLESS_TEMPLATES_REPO } from "./images.js";
 
-export type TemplateKind = "web" | "api" | "mobile";
+export type TemplateKind = "web" | "api" | "mobile" | "fullstack";
+
+// The slot a template fills in a project. A full-stack template is the web app
+// and its own backend in one (it serves /auth itself), so it takes the web slot,
+// lands in web/ on port 5173 like any web starter, and leaves no api layer.
+export type TemplateLayer = "web" | "api" | "mobile";
+
+export function layerOf(kind: TemplateKind): TemplateLayer {
+  return kind === "fullstack" ? "web" : kind;
+}
+
+export function isFullStack(entry: RegistryEntry | undefined): boolean {
+  return entry?.kind === "fullstack";
+}
 export type TemplateStatus = "stable" | "beta" | "coming-soon";
 
 export interface RegistryEntry {
@@ -64,6 +77,11 @@ export interface TemplateManifest {
 // template manifest's env.set.
 export interface ScaffoldContext {
   authServerUrl: string;
+  // The issuer the auth server signs with, when it differs from the URL this
+  // app reaches it at. On the local stack the server signs as its compose
+  // service name while a host-run app calls localhost. Falls back to
+  // authServerUrl, which is what a managed instance advertises.
+  authServerIssuer?: string;
   apiUrl: string;
   apiToken?: string;
   jwksKid?: string;
@@ -267,6 +285,7 @@ function resolveToken(token: string, ctx: ScaffoldContext): string {
 
   const known: Record<string, string | undefined> = {
     authServerUrl: ctx.authServerUrl,
+    authServerIssuer: ctx.authServerIssuer ?? ctx.authServerUrl,
     apiUrl: ctx.apiUrl,
     apiToken: ctx.apiToken,
     jwksKid: ctx.jwksKid,

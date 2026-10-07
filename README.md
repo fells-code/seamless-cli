@@ -1,6 +1,6 @@
 # Seamless CLI
 
-[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL3-yellow.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/seamless-cli.svg?style=flat)](https://www.npmjs.com/package/seamless-cli)
 ![coverage](resources/coverage-badge.svg)
 [![conformance](https://github.com/fells-code/seamless-cli/actions/workflows/conformance.yml/badge.svg)](https://github.com/fells-code/seamless-cli/actions/workflows/conformance.yml)
@@ -11,7 +11,24 @@ It guides you through creating a fully working authentication stack with a web a
 
 ---
 
-## Getting started
+## Start here
+
+New to Seamless Auth? The [self-hosted quickstart](https://docs.seamlessauth.com/start/quickstart/) runs the full stack locally with Docker. If Seamless hosts your auth instance, follow the [managed quickstart](https://docs.seamlessauth.com/start/managed-quickstart/) instead.
+
+This repo is the CLI, which sits outside the diagram below: `seamless init` scaffolds the whole stack from the [seamless-templates](https://github.com/fells-code/seamless-templates) starters, and `seamless check` and `seamless verify` test it once it runs.
+
+```mermaid
+flowchart LR
+  browser["Browser<br/>@seamless-auth/react"] -- "signed httpOnly cookies" --> backend
+  native["Native app<br/>@seamless-auth/react-native"] -- "bearer tokens" --> backend
+  backend["Your backend<br/>@seamless-auth/express, fastify, or nextjs<br/>mounted at /auth"] -- "bearer token + service token" --> api
+  api["seamless-auth-api<br/>owns the session"] --> db[("Postgres")]
+  backend -. "verifies tokens with JWKS" .-> api
+```
+
+[How the pieces connect](https://docs.seamlessauth.com/start/overview/#how-the-pieces-connect) explains each hop. [Compatibility matrix](https://docs.seamlessauth.com/build/ecosystem/#compatibility-matrix) lists which package versions work together.
+
+### Scaffold a project
 
 Run the CLI with `npx`:
 
@@ -25,12 +42,24 @@ Or run it in your current directory:
 npx seamless-cli init
 ```
 
-You’ll be guided through a short setup process where you can choose:
+You’ll be guided through a short setup process. For a local stack, `init` asks, in order:
 
-- Whether to create a web application
-- Whether to create an API server
-- How to run the auth server (local or Docker)
-- Whether to run everything with Docker
+- **Web example**: the web starter. Full-stack templates such as Next.js are offered here too.
+- **Backend framework**: the api starter. Skipped for a full-stack template, which serves `/auth`
+  itself.
+- **Mobile app**: an optional mobile starter (defaults to none).
+- **Your email**: the owner email, which becomes the admin when you register.
+- **How would you like to run SeamlessAuth?**: the auth server as a Docker container
+  (recommended) or a local dev server.
+- **How would you like to host the admin console?**: served by your API at `/console`
+  (recommended), a separate container from the official image or a cloned repo, or none. Skipped
+  for a full-stack template, which cannot host the console yet.
+- **Which OAuth providers do you want to enable?**: only for a template that sets up OAuth (such as
+  `react-oauth`), followed by each chosen provider's client ID and secret
+  (and directory tenant ID where the provider needs one).
+
+Before these, `init` may ask whether to scaffold into a non-empty directory, and, when you are
+signed in with a managed application, whether to connect to it instead (see below).
 
 ---
 
@@ -132,12 +161,15 @@ seamless templates list
 ```
 
 ```text
-ID           KIND  FRAMEWORK  FLAGS                   STATUS
-react-vite   web     react      --basic, --react-vite   stable
-react-oauth  web     react      --oauth, --react-oauth  stable
-express      api     express    --express               stable
-fastify      api     fastify    --fastify               beta
-expo         mobile  expo       --mobile, --expo        beta
+ID           KIND       FRAMEWORK  FLAGS                   STATUS
+react-vite   web        react      --basic, --react-vite   stable
+react-oauth  web        react      --oauth, --react-oauth  stable
+express      api        express    --express               stable
+fastify      api        fastify    --fastify               beta
+expo         mobile     expo       --mobile, --expo        beta
+nextjs       fullstack  nextjs     --nextjs                beta
+
+Pass a flag to seamless init to skip that layer's prompt, e.g. seamless init --oauth
 ```
 
 Every template answers to `--<id>`; some also declare a shorter `--<alias>`, and the two are
@@ -170,8 +202,8 @@ Each question also has its own flag, honored with or without `--yes`:
 
 | Flag | Question | Default under `--yes` |
 | --- | --- | --- |
-| `--web=<id\|alias>` | Web example | first selectable web template |
-| `--api=<id\|alias>` | Backend framework | first selectable api template |
+| `--web=<id\|alias>` | Web example (also takes a full-stack template) | first selectable web template |
+| `--api=<id\|alias>` | Backend framework (not asked for a full-stack template) | first selectable api template |
 | `--mobile=<id\|alias>` | Mobile app | none |
 | `--email=<address>` | Owner email (becomes the admin) | required |
 | `--auth=<docker\|local>` | How the auth server runs | `docker` |
@@ -210,8 +242,8 @@ Depending on your selections, the CLI generates a project like this:
 ```text
 my-app/
 ├─ auth/                  # Seamless Auth server (local auth mode only)
-├─ web/                   # React web application
-├─ api/                   # Express or Fastify API server
+├─ web/                   # React web application, or a full-stack app (see below)
+├─ api/                   # Express or Fastify API server (not for a full-stack app)
 ├─ mobile/                # Expo mobile app (--mobile only)
 ├─ admin/                 # Admin console source (--admin=source only)
 ├─ docker-compose.yml     # not written for a managed project
@@ -223,6 +255,22 @@ All services are preconfigured to work together.
 - Web calls the API
 - API communicates with the auth server
 - Auth manages sessions and tokens
+
+### Full-stack templates
+
+A full-stack template is the web app and its own backend in one: it serves the `/auth` routes
+itself, so the project has no `api/`. The first is the Next.js App Router starter
+(`seamless init --nextjs`, or pick it at the web prompt):
+
+- `web/` holds the Next.js app, which runs `/auth` through `@seamless-auth/nextjs`. The backend
+  question is skipped, and `--api` is refused alongside it.
+- On the local stack, `docker compose up` runs it in development on port 5173, with the source
+  mounted for reload. One-time codes and sign-in links print in `docker compose logs web`.
+- There is no admin console yet: the Next.js adapter cannot host it
+  ([seamless-auth-server#185](https://github.com/fells-code/seamless-auth-server/issues/185)), so
+  only `--admin=none` applies.
+- `seamless check` expects no API and checks the web app's `/health`. `seamless verify` skips
+  full-stack templates for now (#222).
 
 No manual wiring is required.
 
@@ -327,6 +375,7 @@ need Docker and a sibling `seamless-auth-api` source tree to build the auth serv
 seamless verify                    # everything, against the published SDKs
 seamless verify --api-only         # fast pass: the API layer alone
 seamless verify --no-react         # skip the browser layer, keep the adapters
+seamless verify --dev              # browser specs on dev servers too (Strict Mode)
 seamless verify --local            # build @seamless-auth/* from source first
 seamless verify --filter=passkey   # one flow (the = form only)
 seamless verify --keep-up          # leave the stack running afterwards
@@ -335,8 +384,16 @@ seamless verify --keep-up          # leave the stack running afterwards
 `--local` is the pre-publish check: it builds and packs the local SDK source rather than
 installing from npm, so an SDK regression surfaces before a release rather than after.
 The browser layer runs once per web template in the registry, each scoped to the flows
-its `template.json` declares. Mobile templates are announced and skipped: the harness has no
+its `template.json` declares. Full-stack templates (the Next.js starter) run too, built from
+their own Dockerfile's `runtime` target and driven by specs written for their own screens.
+Mobile templates are announced and skipped: the harness has no
 simulator to drive, so a native app is checked by running it against a `--keep-up` stack.
+
+`--dev` runs every browser template a second time on its development server (`vite`, or
+`next dev`). Production React runs each effect once; Strict Mode in development runs it
+twice, so an effect that is not idempotent (a single-use magic link verified twice, say)
+passes the production pass and fails this one, the way it fails on a developer's first
+`npm run dev`. The conformance workflow passes `--dev` on every pull request.
 
 Sibling repositories are resolved next to this one and can be pointed elsewhere with
 `SEAMLESS_API_DIR`, `SEAMLESS_SERVER_DIR`, `SEAMLESS_REACT_SDK_DIR`, and
@@ -625,7 +682,7 @@ Seamless CLI scaffolds from, and conformance-tests against, these repositories:
 | Repository | What it provides | How the CLI uses it |
 | --- | --- | --- |
 | [seamless-auth-api](https://github.com/fells-code/seamless-auth-api) | The auth server | Run as a pinned image (`--auth=docker`) or cloned into `auth/` (`--auth=local`) |
-| [seamless-templates](https://github.com/fells-code/seamless-templates) | The web, API, and mobile starters | Scaffolded from its registry at a pinned ref |
+| [seamless-templates](https://github.com/fells-code/seamless-templates) | The web, API, mobile, and full-stack starters | Scaffolded from its registry at a pinned ref |
 | [seamless-auth-server](https://github.com/fells-code/seamless-auth-server) | `@seamless-auth/core`, `/express`, `/fastify` | The adapters the scaffolded `api/` runs on |
 | [seamless-auth-react](https://github.com/fells-code/seamless-auth-react) | `@seamless-auth/client`, `/react`, `/react-native` | The client SDKs the scaffolded `web/` and `mobile/` run on |
 
@@ -659,7 +716,7 @@ Seamless CLI exists to make this setup fast and repeatable.
 
 ## Requirements
 
-- Node.js 24 (see `.nvmrc`; the package `engines` requires `>=24 <25`)
+- Node.js 22 or newer (the package `engines` requires `>=22`; `.nvmrc` pins 24 for development)
 - npm or pnpm
 - Docker (optional)
 
@@ -711,7 +768,7 @@ npm --cache /tmp/npm-cache exec -- seamless --version
 
 ## License
 
-AGPL-3.0-only © 2026 Fells Code LLC
+Apache-2.0 © 2026 Fells Code LLC
 
 This license ensures:
 

@@ -64,6 +64,8 @@ NON-INTERACTIVE
 --web=<id|alias>, --api=<id|alias>
   • Choose the web and api starters by name
   • Default to the first selectable template of that kind in the registry
+  • --web also takes a full-stack template (e.g. --nextjs), which serves
+    /auth itself: the project gets no api layer, and --api is refused
 
 --mobile=<id|alias>
   • Include a mobile starter (Expo), placed at mobile/
@@ -80,6 +82,7 @@ NON-INTERACTIVE
 
 --admin=<api|image|source|none>
   • Where the admin console is hosted (default: api)
+  • A full-stack template cannot host the console yet, so only none applies
 
 --force
   • Allow the two destructive steps --yes will not take on its own:
@@ -149,11 +152,11 @@ Every check runs, so one failure does not hide the rest.
   {
     name: "verify",
     usage: [
-      "seamless verify [--local] [--api-only] [--no-react] [--filter=<flow>] [--keep-up]",
+      "seamless verify [--local] [--api-only] [--no-react] [--dev] [--filter=<flow>] [--keep-up]",
     ],
     sections: [
       {
-        heading: "verify [--local] [--api-only] [--filter=<flow>] [--keep-up]",
+        heading: "verify [--local] [--api-only] [--dev] [--filter=<flow>] [--keep-up]",
         body: `Stand up the auth stack and run the conformance suite across the API and
 the cookie (adapter) paths. Requires Docker. Builds the auth server from
 a sibling seamless-auth-api checkout (override with SEAMLESS_API_DIR).
@@ -170,6 +173,10 @@ a sibling seamless-auth-api checkout (override with SEAMLESS_API_DIR).
 --no-react
   • Skip the browser layer but keep the adapter layer
 
+--dev
+  • Also run each browser template on its development server, where React
+    Strict Mode runs every effect twice, after its production build
+
 --filter=<flow>
   • Run only the flows matching <flow> (the = form; a space-separated
     --filter <flow> is not parsed)
@@ -183,6 +190,8 @@ a sibling seamless-auth-api checkout (override with SEAMLESS_API_DIR).
   → Fast pass against the API layer only`,
       `seamless verify --local --filter=passkey
   → Run the passkey flows against locally built SDK source`,
+      `seamless verify --dev
+  → Run the browser specs against production builds and dev servers`,
     ],
   },
   {

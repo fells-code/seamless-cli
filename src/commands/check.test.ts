@@ -341,3 +341,45 @@ describe("runCheck --strict", () => {
     expect(errOutput()).not.toContain("1 checks failed.");
   });
 });
+
+describe("runCheck on a full-stack project", () => {
+  const FULL_STACK = {
+    services: {
+      web: { path: "web", kind: "fullstack" },
+      admin: { mode: "none" },
+    },
+    docker: { composeFile: "docker-compose.yml" },
+  };
+
+  it("expects no api and checks the web app's health instead", async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(FULL_STACK));
+    vi.mocked(execSync).mockImplementation((cmd: string) =>
+      Buffer.from(String(cmd).includes("docker ps") ? "web\nseamless-auth\n" : ""),
+    );
+    vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
+
+    await runCheck();
+
+    const out = output();
+    expect(out).toContain("Backend served by the web app (full-stack)");
+    expect(out).not.toContain("API project missing");
+    expect(out).toContain("Containers running");
+    expect(out).toContain("Web is healthy");
+    expect(fetch).toHaveBeenCalledWith("http://localhost:5173/health");
+    expect(fetch).not.toHaveBeenCalledWith("http://localhost:3000/");
+  });
+
+  it("reports the web container, not an api one, when it is down", async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(FULL_STACK));
+    vi.mocked(execSync).mockImplementation((cmd: string) =>
+      Buffer.from(String(cmd).includes("docker ps") ? "seamless-auth\n" : ""),
+    );
+    vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
+
+    await runCheck();
+
+    expect(output() + errOutput()).toContain("Web container not running");
+  });
+});

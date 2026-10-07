@@ -78,7 +78,7 @@ export async function runCheck(args: string[] = []) {
   } else {
     checkDocker(report);
     checkCompose(root, config, report);
-    checkContainers(report);
+    checkContainers(config, report);
     await checkHealth(config, report);
   }
 
@@ -96,8 +96,11 @@ function checkStructure(root: string, config: any, report: Report) {
     report.fail("Web project missing");
   }
 
+  // A full-stack web app serves /auth itself, so it records no api service.
   const apiPath = services.api?.path;
-  if (apiPath && fs.existsSync(path.join(root, apiPath))) {
+  if (isFullStackProject(config)) {
+    report.ok("Backend served by the web app (full-stack)");
+  } else if (apiPath && fs.existsSync(path.join(root, apiPath))) {
     report.ok("API project detected");
   } else {
     report.fail("API project missing");
@@ -137,12 +140,22 @@ function checkCompose(root: string, config: any, report: Report) {
   }
 }
 
-function checkContainers(report: Report) {
+function isFullStackProject(config: any): boolean {
+  return config?.services?.web?.kind === "fullstack" && !config?.services?.api;
+}
+
+function checkContainers(config: any, report: Report) {
+  // The container that owns /auth: the api service, or the web app when it is
+  // its own backend.
+  const backend = isFullStackProject(config) ? "web" : "api";
   try {
     const output = execSync("docker ps --format '{{.Names}}'").toString();
 
-    if (!output.includes("api")) {
-      report.fail("API container not running", "Run: docker compose up\n");
+    if (!output.includes(backend)) {
+      report.fail(
+        `${backend === "web" ? "Web" : "API"} container not running`,
+        "Run: docker compose up\n",
+      );
     } else {
       report.ok("Containers running");
     }
@@ -168,7 +181,9 @@ function consoleHealthCheck(config: any): { name: string; url: string } | null {
 
 async function checkHealth(config: any, report: Report) {
   const checks = [
-    { name: "API", url: "http://localhost:3000/" },
+    isFullStackProject(config)
+      ? { name: "Web", url: "http://localhost:5173/health" }
+      : { name: "API", url: "http://localhost:3000/" },
     { name: "Auth", url: "http://localhost:5312/health/status" },
   ];
 

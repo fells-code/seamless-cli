@@ -167,3 +167,44 @@ export async function oauthLogin(
   const body = await callback.json();
   return { token: body.token, refreshToken: body.refreshToken, sub: body.sub, email: body.email };
 }
+
+/**
+ * An access token for the tenant owner (OWNER_EMAIL, admin at signup), for the
+ * admin API. Signs the owner in when the account exists (the api layer usually
+ * registered it earlier in the run) and registers it otherwise. An unknown
+ * identifier gets a decoy OTP send that delivers nothing, which is how the two
+ * cases are told apart.
+ */
+export async function ownerAccessToken(ctx: APIRequestContext, ownerEmail: string): Promise<string> {
+  const ephemeral = await login(ctx, ownerEmail);
+  const sent = await ctx.get('/otp/generate-login-email-otp', {
+    headers: { ...bearer(ephemeral), ...EXTERNAL_DELIVERY },
+  });
+  expect(sent.ok(), `generate-login-email-otp -> ${sent.status()}`).toBeTruthy();
+  const code = (await sent.json())?.delivery?.token;
+
+  if (code) {
+    const res = await ctx.post('/otp/verify-login-email-otp', {
+      headers: bearer(ephemeral),
+      data: { verificationToken: String(code) },
+    });
+    expect(res.ok(), `verify-login-email-otp -> ${res.status()} ${await res.text()}`).toBeTruthy();
+    return (await res.json()).token as string;
+  }
+
+  return (await registerAndVerifyEmail(ctx, ownerEmail)).token;
+}
+
+/** Replace a user's roles through the admin API. */
+export async function setUserRoles(
+  ctx: APIRequestContext,
+  adminToken: string,
+  userId: string,
+  roles: string[],
+): Promise<void> {
+  const res = await ctx.patch(`/admin/users/${userId}`, {
+    headers: bearer(adminToken),
+    data: { roles },
+  });
+  expect(res.ok(), `PATCH /admin/users/${userId} -> ${res.status()} ${await res.text()}`).toBeTruthy();
+}

@@ -6,6 +6,18 @@ import fs from "fs";
 import { runCommand } from "../core/exec.js";
 import { runVerify } from "./verify.js";
 
+// Every browser profile, as a clean, a log dump, or a teardown passes them.
+const ALL_PROFILES = [
+  "--profile",
+  "react",
+  "--profile",
+  "react-dev",
+  "--profile",
+  "nextjs",
+  "--profile",
+  "nextjs-dev",
+];
+
 vi.mock("child_process", () => ({ execSync: vi.fn() }));
 vi.mock("../core/exec.js", () => ({ runCommand: vi.fn() }));
 vi.mock("fs", () => {
@@ -32,6 +44,13 @@ const REGISTRY_JSON = JSON.stringify({
     { id: "coming", kind: "web", status: "coming-soon", path: "templates/coming" },
     { id: "an-api", kind: "api", status: "stable", path: "templates/an-api" },
     { id: "expo", kind: "mobile", status: "beta", path: "templates/mobile/expo" },
+    {
+      id: "nextjs",
+      kind: "fullstack",
+      framework: "nextjs",
+      status: "beta",
+      path: "templates/fullstack/nextjs",
+    },
   ],
 });
 
@@ -101,7 +120,7 @@ describe("runVerify — published (default) mode", () => {
     expect(fs.rmSync).toHaveBeenCalledTimes(3);
 
     const tails = dockerTails();
-    expect(tails).toContainEqual(["--profile", "react", "down", "-v"]); // initial clean
+    expect(tails).toContainEqual([...ALL_PROFILES, "down", "-v"]); // initial clean
     expect(tails).toContainEqual([
       "up",
       "-d",
@@ -147,6 +166,55 @@ describe("runVerify — published (default) mode", () => {
     expect(composeArgs.join(" ")).not.toContain("expo");
   });
 
+  it("runs the Next.js full-stack template from its own service against its own specs", async () => {
+    await runVerify([]);
+
+    const out = logSpy.mock.calls.flat().join("\n");
+    expect(out).not.toContain("Skipping full-stack");
+    const tails = dockerTails();
+    expect(tails).toContainEqual(["--profile", "nextjs", "up", "-d", "--build", "nextjs"]);
+    expect(tails).toContainEqual(["--profile", "nextjs", "rm", "-sf", "nextjs"]);
+
+    // The source is handed to compose as SEAMLESS_FULLSTACK_DIR, not as the web dir.
+    const up = vi
+      .mocked(runCommand)
+      .mock.calls.find((c) => c[0] === "docker" && (c[1] as string[]).slice(-1)[0] === "nextjs");
+    const env = up?.[3] as NodeJS.ProcessEnv;
+    expect(env.SEAMLESS_FULLSTACK_DIR).toBe("/fake/templates/templates/fullstack/nextjs");
+
+    const npmTests = callsFor("npm").filter((a) => a[0] === "test");
+    expect(npmTests).toContainEqual(["test", "--", "--project", "nextjs", "--grep", "@oauth"]);
+    // Without --dev, no development-server pass runs.
+    expect(npmTests.some((t) => t.includes("react-dev") || t.includes("nextjs-dev"))).toBe(false);
+  });
+
+  it("skips a full-stack template the harness has no specs for, out loud", async () => {
+    vi.mocked(fs.readFileSync).mockImplementation((p: never) => {
+      const s = String(p);
+      if (s.endsWith("registry.json"))
+        return JSON.stringify({
+          templates: [
+            { id: "web-basic", kind: "web", status: "stable", path: "templates/web-basic" },
+            {
+              id: "remix",
+              kind: "fullstack",
+              framework: "remix",
+              status: "beta",
+              path: "templates/fullstack/remix",
+            },
+          ],
+        }) as never;
+      if (s.endsWith("template.json")) return JSON.stringify({}) as never;
+      return PKG_JSON as never;
+    });
+
+    await runVerify([]);
+
+    const out = logSpy.mock.calls.flat().join("\n");
+    expect(out).toContain('Skipping full-stack template "remix"');
+    expect(dockerTails().flat().join(" ")).not.toContain("remix");
+  });
+
   it("installs harness deps and the browser when node_modules is missing", async () => {
     vi.mocked(fs.existsSync).mockImplementation((p: never) => !String(p).endsWith("node_modules"));
 
@@ -161,7 +229,7 @@ describe("runVerify — published (default) mode", () => {
     await runVerify([]);
     const tails = dockerTails();
     // Final teardown call is the react-profile down -v.
-    expect(tails[tails.length - 1]).toEqual(["--profile", "react", "down", "-v"]);
+    expect(tails[tails.length - 1]).toEqual([...ALL_PROFILES, "down", "-v"]);
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
@@ -180,6 +248,25 @@ describe("runVerify — published (default) mode", () => {
 });
 
 describe("runVerify — flag parsing", () => {
+  it("--dev adds a development-server pass after each production pass", async () => {
+    await runVerify(["--dev"]);
+
+    const tails = dockerTails();
+    expect(tails).toContainEqual(["--profile", "react-dev", "up", "-d", "--build", "react-dev"]);
+    expect(tails).toContainEqual(["--profile", "react-dev", "rm", "-sf", "react-dev"]);
+    expect(tails).toContainEqual(["--profile", "nextjs-dev", "up", "-d", "--build", "nextjs-dev"]);
+
+    const npmTests = callsFor("npm").filter((a) => a[0] === "test");
+    const projects = npmTests.map((t) => t[t.indexOf("--project") + 1]);
+    // Each template: the production build first, then its dev server.
+    expect(projects).toEqual(["api", "react", "react-dev", "nextjs", "nextjs-dev"]);
+    expect(npmTests).toContainEqual(["test", "--", "--project", "react-dev", "--grep", "@oauth"]);
+
+    const out = logSpy.mock.calls.flat().join("\n");
+    expect(out).toContain("Web (dev) · web-basic");
+    expect(out).toContain("Full-stack (dev) · nextjs");
+  });
+
   it("--api-only drops the adapter service and the browser layer", async () => {
     await runVerify(["--api-only"]);
 

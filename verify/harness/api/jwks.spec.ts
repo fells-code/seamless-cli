@@ -8,10 +8,17 @@ test.describe('JWKS (api)', () => {
     const body = await res.json();
     expect(Array.isArray(body.keys), 'has a keys array').toBeTruthy();
 
-    const key = body.keys.find((k: { kid?: string }) => k.kid === 'dev-main');
-    expect(key, 'publishes the dev-main signing key').toBeTruthy();
-    expect(key.kty).toBe('RSA');
-    expect(key.use).toBe('sig');
-    expect(key.alg).toBe('RS256');
+    // The kid is not a contract: older dev images publish the constant `dev-main`,
+    // newer ones derive it from the key's thumbprint, so a regenerated key gets a
+    // new one. Find the signing key by what it is, not by what it is called.
+    const signingKeys = body.keys.filter(
+      (k: { use?: string; alg?: string }) => k.use === 'sig' && k.alg === 'RS256',
+    );
+    expect(signingKeys.length, 'publishes an RS256 signing key').toBeGreaterThan(0);
+
+    for (const key of signingKeys) {
+      expect(key.kty).toBe('RSA');
+      expect(key.kid, 'each signing key has a dev kid').toMatch(/^dev-.+/);
+    }
   });
 });
