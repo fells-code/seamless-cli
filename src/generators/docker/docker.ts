@@ -61,6 +61,7 @@ async function buildCompose(
     oauth,
     adminMode,
     ownerEmail,
+    fullStack,
   );
 
   const includeAdminContainer = adminMode === "image" || adminMode === "source";
@@ -127,6 +128,7 @@ async function authService(
   oauth: CollectedOAuthProvider[] = [],
   adminMode: AdminMode = "api",
   ownerEmail?: string,
+  fullStack = false,
 ) {
   if (mode === "local") {
     // auth/.env was already written by generateAuthServer (with its secrets and any
@@ -159,7 +161,7 @@ async function authService(
     };
   }
 
-  return await authServiceDocker(oauth, adminMode, ownerEmail);
+  return await authServiceDocker(oauth, adminMode, ownerEmail, fullStack);
 }
 
 // The app API's CORS allowlist. The console is same-origin here in API-served
@@ -262,6 +264,7 @@ async function authServiceDocker(
   oauth: CollectedOAuthProvider[] = [],
   adminMode: AdminMode = "api",
   ownerEmail?: string,
+  fullStack = false,
 ) {
   const raw = await fetchEnvExample();
   const parsed = parseEnvString(raw);
@@ -272,6 +275,7 @@ async function authServiceDocker(
     oauth,
     adminMode,
     ownerEmail,
+    fullStack,
   );
 
   const envBlock = envToDockerBlock(env);
@@ -336,9 +340,12 @@ export type AdminMode = "api" | "image" | "source" | "none";
 // WebAuthn allowed origins the auth server accepts passkey ceremonies from. The
 // web app (5173) is always present; the console adds either the app API origin
 // (when the API serves it at /console) or the standalone container origin (5174).
-function adminOrigins(adminMode: AdminMode): string {
+// A full-stack web app serves the console from 5173 itself, which adds nothing.
+function adminOrigins(adminMode: AdminMode, fullStack = false): string {
   const web = "http://localhost:5173";
-  if (adminMode === "api") return `${web},http://localhost:3000`;
+  if (adminMode === "api") {
+    return fullStack ? web : `${web},http://localhost:3000`;
+  }
   if (adminMode === "image" || adminMode === "source") {
     return `${web},http://localhost:5174`;
   }
@@ -351,6 +358,7 @@ export function buildAuthEnv(
   oauth: CollectedOAuthProvider[] = [],
   adminMode: AdminMode = "api",
   ownerEmail?: string,
+  fullStack = false,
 ) {
   const apiToken = generateSecret(32);
   const kid = "dev-main";
@@ -380,10 +388,11 @@ export function buildAuthEnv(
   env.TOTP_SECRET_ENCRYPTION_KEY = generateSecret(32);
 
   env.APP_ORIGINS = "http://localhost:3000";
-  env.ORIGINS = adminOrigins(adminMode);
+  env.ORIGINS = adminOrigins(adminMode, fullStack);
 
-  // Serve the bundled admin dashboard build only when the app API proxies it at
-  // /console; otherwise the console is a standalone container (or omitted).
+  // Serve the bundled admin dashboard build only when the app's backend (the
+  // api template, or a full-stack web app) proxies it at /console; otherwise
+  // the console is a standalone container (or omitted).
   env.SERVE_ADMIN_DASHBOARD = adminMode === "api" ? "true" : "false";
 
   // Enable email OTP so `seamless login` works against a freshly scaffolded stack
@@ -439,6 +448,7 @@ export async function configureAuthLocalEnv(
   oauth: CollectedOAuthProvider[] = [],
   adminMode: AdminMode = "api",
   ownerEmail?: string,
+  fullStack = false,
 ) {
   const authDir = path.join(root, "auth");
   const envExamplePath = path.join(authDir, ".env.example");
@@ -458,6 +468,7 @@ export async function configureAuthLocalEnv(
     oauth,
     adminMode,
     ownerEmail,
+    fullStack,
   );
 
   writeEnvFile(envPath, env);

@@ -105,6 +105,21 @@ describe("buildAuthEnv", () => {
     expect(env.SERVE_ADMIN_DASHBOARD).toBe("false");
   });
 
+  // A full-stack web app serves the console from its own origin (5173), so the
+  // api origin (3000) has no business in ORIGINS.
+  it.each([
+    ["api", "true"],
+    ["none", "false"],
+  ] as const)(
+    "allows only the web origin for a full-stack app (--admin=%s)",
+    (adminMode, serving) => {
+      const { env } = buildAuthEnv({}, "docker", [], adminMode, undefined, true);
+
+      expect(env.ORIGINS).toBe("http://localhost:5173");
+      expect(env.SERVE_ADMIN_DASHBOARD).toBe(serving);
+    },
+  );
+
   it("wires local-mode networking values", () => {
     const { env } = buildAuthEnv({}, "local");
 
@@ -466,6 +481,49 @@ describe("generateDockerCompose for a full-stack web app", () => {
     expect(web).toContain("- /app/.next");
     expect(web).not.toContain("depends_on:\n      - api");
     expect(web).not.toContain("API_URL");
+  });
+
+  it.each([
+    ["api", "true"],
+    ["none", "false"],
+  ] as const)(
+    "has the docker auth server serve the console only for --admin=api (%s)",
+    async (adminMode, serving) => {
+      stubEnvExampleFetch("SOME_VAR=value\n");
+
+      await generateDockerCompose(tmpDir, {
+        authMode: "docker",
+        adminMode,
+        fullStack: true,
+      });
+
+      const compose = fs.readFileSync(
+        path.join(tmpDir, "docker-compose.yml"),
+        "utf-8",
+      );
+      const auth = compose.slice(
+        compose.indexOf("\n  auth:"),
+        compose.indexOf("\n  web:"),
+      );
+
+      expect(auth).toContain(`SERVE_ADMIN_DASHBOARD: "${serving}"`);
+      expect(auth).toContain('ORIGINS: "http://localhost:5173"\n');
+      // The web app proxies the console; nothing else is added for it.
+      expect(compose).not.toContain("\n  api:");
+      expect(compose).not.toContain("\n  admin:");
+      expect(compose).not.toContain("5174");
+    },
+  );
+
+  it("writes a local auth server's origins for a full-stack console", async () => {
+    fs.mkdirSync(path.join(tmpDir, "auth"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "auth", ".env.example"), "A=b\n");
+
+    await configureAuthLocalEnv(tmpDir, [], "api", undefined, true);
+
+    const written = fs.readFileSync(path.join(tmpDir, "auth", ".env"), "utf-8");
+    expect(written).toContain("ORIGINS=http://localhost:5173\n");
+    expect(written).toContain("SERVE_ADMIN_DASHBOARD=true\n");
   });
 
   it("keeps the api and web services for a split stack", async () => {

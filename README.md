@@ -52,8 +52,8 @@ You’ll be guided through a short setup process. For a local stack, `init` asks
 - **How would you like to run SeamlessAuth?**: the auth server as a Docker container
   (recommended) or a local dev server.
 - **How would you like to host the admin console?**: served by your API at `/console`
-  (recommended), a separate container from the official image or a cloned repo, or none. Skipped
-  for a full-stack template, which cannot host the console yet.
+  (recommended), a separate container from the official image or a cloned repo, or none. A
+  full-stack template is offered only served by the web app at `/console` (recommended) or none.
 - **Which OAuth providers do you want to enable?**: only for a template that sets up OAuth (such as
   `react-oauth`), followed by each chosen provider's client ID and secret
   (and directory tenant ID where the provider needs one).
@@ -207,7 +207,7 @@ Each question also has its own flag, honored with or without `--yes`:
 | `--mobile=<id\|alias>` | Mobile app | none |
 | `--email=<address>` | Owner email (becomes the admin) | required |
 | `--auth=<docker\|local>` | How the auth server runs | `docker` |
-| `--admin=<api\|image\|source\|none>` | Where the admin console is hosted | `api` |
+| `--admin=<api\|image\|source\|none>` | Where the admin console is hosted (`api` or `none` for a full-stack template) | `api` |
 
 Two things `--yes` deliberately will not decide for you:
 
@@ -266,9 +266,11 @@ itself, so the project has no `api/`. The first is the Next.js App Router starte
   question is skipped, and `--api` is refused alongside it.
 - On the local stack, `docker compose up` runs it in development on port 5173, with the source
   mounted for reload. One-time codes and sign-in links print in `docker compose logs web`.
-- There is no admin console yet: the Next.js adapter cannot host it
-  ([seamless-auth-server#185](https://github.com/fells-code/seamless-auth-server/issues/185)), so
-  only `--admin=none` applies.
+- `--admin=api` (the default) has the web app serve the admin console at
+  `http://localhost:5173/console`, proxied from the auth server through `@seamless-auth/nextjs`,
+  so it shares the app's origin and session cookies. `--admin=none` leaves it out. The container
+  modes (`image`, `source`) are refused: a dashboard on `:5174` would call the app's `/auth`
+  cross-origin, which its route handler does not allow.
 - `seamless check` expects no API and checks the web app's `/health`. `seamless verify` skips
   full-stack templates for now (#222).
 

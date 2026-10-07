@@ -266,6 +266,9 @@ services:
       COOKIE_SIGNING_KEY: ${API_SERVICE_TOKEN}
       JWKS_KID: ${JWKS_KID}
       SEAMLESS_VERIFY_CAPTURE: 'true'
+      # The admin dashboard at /console, proxied from auth-api (which serves its
+      # bundled build by default). ORIGINS above already allows this origin.
+      SERVE_ADMIN_CONSOLE: 'true'
     depends_on:
       auth-api:
         condition: service_healthy

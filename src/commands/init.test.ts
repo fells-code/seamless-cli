@@ -633,6 +633,7 @@ describe("scaffoldLocal", () => {
       ]),
       "image",
       "dev@example.com",
+      false,
     );
     expect(generateDockerCompose).toHaveBeenCalledWith("/work", {
       ownerEmail: "dev@example.com",
@@ -1911,17 +1912,135 @@ describe("full-stack templates", () => {
     expect(runProjectSetupPrompts).not.toHaveBeenCalled();
   });
 
-  it("rejects an admin console it cannot host, before anything is scaffolded", async () => {
-    await expect(
-      runCLI(undefined, ["nextjs"], { local: true, yes: true, admin: "api" }),
-    ).rejects.toThrow(/--admin=api needs an api template/);
-    expect(runProjectSetupPrompts).not.toHaveBeenCalled();
+  it.each(["image", "source"])(
+    "rejects --admin=%s, a console container it cannot serve, before anything is scaffolded",
+    async (admin) => {
+      await expect(
+        runCLI(undefined, ["nextjs"], { local: true, yes: true, admin }),
+      ).rejects.toThrow(
+        new RegExp(`--admin=${admin} runs the admin console as its own container`),
+      );
+      expect(runProjectSetupPrompts).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["api", "none"])("accepts --admin=%s", async (admin) => {
+    await runCLI(undefined, ["nextjs"], { local: true, yes: true, admin });
+
+    expect(runProjectSetupPrompts).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ webTemplateId: "nextjs", adminMode: admin }),
+      undefined,
+      true,
+    );
   });
 
   it("treats a second web template as a conflict", async () => {
     await expect(
       runCLI(undefined, ["nextjs", "oauth"], { local: true }),
     ).rejects.toThrow(/Conflicting web template flags/);
+  });
+
+  // The env contract of a starter that serves the console at /console.
+  const consoleManifest = {
+    nextjs: {
+      id: "nextjs",
+      targetDir: "web",
+      env: { set: { SERVE_ADMIN_CONSOLE: "{{serveAdminConsole}}" } },
+    },
+  };
+
+  it.each([
+    ["api", "true"],
+    ["none", "false"],
+  ])(
+    "wires --admin=%s through the auth server, the app's env, and the config",
+    async (adminMode, serveAdminConsole) => {
+      vi.mocked(openTemplateSource).mockResolvedValue(
+        makeSource(consoleManifest) as never,
+      );
+      vi.mocked(runProjectSetupPrompts).mockResolvedValue(
+        fullStackAnswers({ adminMode }),
+      );
+
+      await runCLI(undefined, ["nextjs"], {
+        local: true,
+        yes: true,
+        admin: adminMode,
+      });
+
+      expect(generateDockerCompose).toHaveBeenCalledWith(
+        CWD,
+        expect.objectContaining({ fullStack: true, adminMode }),
+      );
+      expect(applyTemplateEnv).toHaveBeenCalledWith(
+        expect.stringMatching(/web$/),
+        consoleManifest.nextjs,
+        expect.objectContaining({ serveAdminConsole }),
+      );
+      expect(generateSeamlessConfig).toHaveBeenCalledWith(
+        CWD,
+        expect.objectContaining({ webFullStack: true, adminMode }),
+      );
+      expect(printSuccessOutput).toHaveBeenCalledWith(
+        expect.objectContaining({ webFullStack: true, adminMode }),
+      );
+    },
+  );
+
+  it("passes full-stack to a local auth server, so its origins skip the api", async () => {
+    vi.mocked(openTemplateSource).mockResolvedValue(
+      makeSource(consoleManifest) as never,
+    );
+    vi.mocked(runProjectSetupPrompts).mockResolvedValue(
+      fullStackAnswers({ authMode: "local", adminMode: "api" }),
+    );
+    vi.mocked(generateAuthServer).mockResolvedValue({
+      apiToken: "t",
+      kid: "k",
+    } as never);
+
+    await runCLI(undefined, ["nextjs"], { local: true, yes: true });
+
+    expect(generateAuthServer).toHaveBeenCalledWith(
+      CWD,
+      [],
+      "api",
+      "dev@example.com",
+      true,
+    );
+  });
+
+  it("drops the default console for a starter release that cannot serve it", async () => {
+    vi.mocked(runProjectSetupPrompts).mockResolvedValue(
+      fullStackAnswers({ adminMode: "api" }),
+    );
+
+    await runCLI(undefined, ["nextjs"], { local: true, yes: true });
+
+    expect(out()).toMatch(
+      /Next\.js in this templates release cannot serve the admin console, so none is included/,
+    );
+    expect(generateDockerCompose).toHaveBeenCalledWith(
+      CWD,
+      expect.objectContaining({ adminMode: "none" }),
+    );
+    expect(applyTemplateEnv).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ serveAdminConsole: "false" }),
+    );
+  });
+
+  it("refuses an explicit --admin=api for a starter release that cannot serve it", async () => {
+    vi.mocked(runProjectSetupPrompts).mockResolvedValue(
+      fullStackAnswers({ adminMode: "api" }),
+    );
+
+    await expect(
+      runCLI(undefined, ["nextjs"], { local: true, yes: true, admin: "api" }),
+    ).rejects.toThrow(/cannot serve the admin console\. Use --admin=none/);
+    expect(generateDockerCompose).not.toHaveBeenCalled();
   });
 
   it("scaffolds the full-stack compose stack and config, with no api", async () => {

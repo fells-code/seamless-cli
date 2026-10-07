@@ -82,7 +82,8 @@ NON-INTERACTIVE
 
 --admin=<api|image|source|none>
   • Where the admin console is hosted (default: api)
-  • A full-stack template cannot host the console yet, so only none applies
+  • With a full-stack template, api serves it from the web app at
+    /console; image and source do not apply
 
 --force
   • Allow the two destructive steps --yes will not take on its own:

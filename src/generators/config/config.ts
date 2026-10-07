@@ -49,15 +49,20 @@ export function generateSeamlessConfig(
     ? { mode: "hosted" as const, image: null, path: null, url: null }
     : {
         mode: options.adminMode,
-        // API-served: the app API proxies the console at /console (no separate
-        // image or checkout). Container modes carry an image or a source path.
+        // API-served: the app's backend (the api template, or a full-stack web
+        // app) proxies the console at /console (no separate image or
+        // checkout). Container modes carry an image or a source path.
         image:
           options.adminMode === "image"
             ? SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE
             : null,
         path: options.adminMode === "source" ? "./admin" : null,
         url:
-          options.adminMode === "api" ? "http://localhost:3000/console" : null,
+          options.adminMode === "api"
+            ? options.webFullStack
+              ? "http://localhost:5173/console"
+              : "http://localhost:3000/console"
+            : null,
       };
 
   const config = {
