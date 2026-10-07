@@ -271,8 +271,9 @@ itself, so the project has no `api/`. The first is the Next.js App Router starte
   so it shares the app's origin and session cookies. `--admin=none` leaves it out. The container
   modes (`image`, `source`) are refused: a dashboard on `:5174` would call the app's `/auth`
   cross-origin, which its route handler does not allow.
-- `seamless check` expects no API and checks the web app's `/health`. `seamless verify` skips
-  full-stack templates for now (#222).
+- `seamless check` expects no API and checks the web app's `/health`. `seamless verify` runs the
+  starter from its own Dockerfile's `runtime` target against specs written for its screens, and
+  `--dev` adds a second pass on `next dev` (see [`seamless verify`](#seamless-verify)).
 
 No manual wiring is required.
 
