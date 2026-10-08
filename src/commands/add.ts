@@ -26,8 +26,11 @@ import {
 import { listApplications } from "../core/portal.js";
 import { generateSecret } from "../core/secrets.js";
 import {
-  backendPackages,
+  backendInstalls,
   backendSnippet,
+  envLoadingHint,
+  frameworkName,
+  type PackageInstall,
   WEB_PACKAGES,
   webApiUrlVariable,
   webSnippet,
@@ -117,7 +120,7 @@ export async function addSeamlessAuth(opts: AddOptions) {
   const { backend, web } = project;
   if (!backend) {
     throw new Error(
-      "Found no Express or Fastify backend to add Seamless Auth to. seamless add looks for one in package.json at the project root and in api/, server/, backend/, apps/* and packages/*. To start a new project instead, run seamless init.",
+      "Found no backend to add Seamless Auth to. seamless add wires Express or Fastify (package.json), Go with net/http, Gin, chi or Echo (go.mod), Axum (Cargo.toml), and FastAPI or Django (pyproject.toml or requirements.txt), at the project root or in api/, server/, backend/, apps/* and packages/*. To start a new project instead, run seamless init.",
     );
   }
 
@@ -179,7 +182,7 @@ export async function addSeamlessAuth(opts: AddOptions) {
 
   const installs = installCommands(root, backend, web);
   if (opts.install !== false) {
-    for (const install of installs) {
+    for (const install of installs.filter((i) => i.run)) {
       console.log(kleur.dim(`\n$ ${install.display}`));
       try {
         await runCommand(install.command, install.args, install.cwd);
@@ -195,7 +198,7 @@ export async function addSeamlessAuth(opts: AddOptions) {
     web,
     webOrigin,
     serveConsole,
-    installs: opts.install === false ? installs.map((i) => i.display) : [],
+    installs: installs.filter((i) => opts.install === false || !i.run).map((i) => i.display),
   });
 }
 
@@ -224,10 +227,6 @@ function reportDetection(project: DetectedProject) {
       ),
     );
   }
-}
-
-function frameworkName(framework: DetectedBackend["framework"]) {
-  return framework === "express" ? "Express" : "Fastify";
 }
 
 async function resolveMode(opts: AddOptions): Promise<"local" | "managed"> {
@@ -378,6 +377,7 @@ interface Install {
   args: string[];
   cwd: string;
   display: string;
+  run: boolean;
 }
 
 function installCommands(
@@ -385,17 +385,18 @@ function installCommands(
   backend: DetectedBackend,
   web: DetectedWeb | undefined,
 ): Install[] {
-  const out: Install[] = [];
-  const add = (dir: string, manager: DetectedBackend["packageManager"], packages: string[], dev = false) => {
-    if (packages.length === 0) return;
-    const { command, args } = addPackagesCommand(manager, packages, dev);
-    const prefix = dir === "." ? "" : `cd ${dir} && `;
-    out.push({ command, args, cwd: path.join(root, dir), display: `${prefix}${command} ${args.join(" ")}` });
-  };
-  const packages = backendPackages(backend);
-  add(backend.dir, backend.packageManager, packages.deps);
-  add(backend.dir, backend.packageManager, packages.dev, true);
-  if (web) add(web.dir, web.packageManager, WEB_PACKAGES);
+  const located = (dir: string, i: PackageInstall): Install => ({
+    command: i.command,
+    args: i.args,
+    run: i.run,
+    cwd: path.join(root, dir),
+    display: `${dir === "." ? "" : `cd ${dir} && `}${i.display}`,
+  });
+  const out = backendInstalls(backend).map((i) => located(backend.dir, i));
+  if (web) {
+    const { command, args } = addPackagesCommand(web.packageManager, WEB_PACKAGES);
+    out.push(located(web.dir, { command, args, display: `${command} ${args.join(" ")}`, run: true }));
+  }
   return out;
 }
 
@@ -414,6 +415,9 @@ function printNextSteps(ctx: {
   if (ctx.installs.length > 0) {
     heading("Install the packages");
     for (const install of ctx.installs) console.log(`   ${install}`);
+    if (backend.packageManager === "pip") {
+      console.log(kleur.dim("   Install it into your project's environment, and add it to requirements.txt."));
+    }
   }
 
   if (mode === "local") {
@@ -427,7 +431,7 @@ function printNextSteps(ctx: {
   );
   console.log(
     kleur.dim(
-      `   After you create the app and before your routes. It reads the values written to ${path.join(backend.dir, ".env")}:\n   if your app does not load .env yet, start it with node --env-file=.env (Node 20.6+) or import "dotenv/config" first.\n`,
+      `   After you create the app and before your routes. Merge the imports with your own. It reads the\n   values written to ${path.join(backend.dir, ".env")}: ${envLoadingHint(backend)}\n`,
     ),
   );
   console.log(indent(backendSnippet(backend, { webOrigin: ctx.webOrigin, serveConsole: ctx.serveConsole && mode === "local" })));

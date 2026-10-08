@@ -146,7 +146,7 @@ describe("seamless add --local", () => {
 
   it("explains when there is no backend to add to", async () => {
     fs.rmSync(path.join(root, "api"), { recursive: true });
-    await expect(addSeamlessAuth({ dir: root, local: true, yes: true })).rejects.toThrow(/no Express or Fastify backend/);
+    await expect(addSeamlessAuth({ dir: root, local: true, yes: true })).rejects.toThrow(/no backend to add/);
   });
 });
 
@@ -236,10 +236,9 @@ describe("seamless add, edge cases", () => {
   });
 
   it("says which stacks it does not wire yet", async () => {
-    write("worker/go.mod", "module x");
-    write("go.mod", "module x");
+    write("server/requirements.txt", "flask==3\n");
     await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
-    expect(logs.join("\n")).toContain("Also found Go, which seamless add does not wire yet");
+    expect(logs.join("\n")).toContain("Also found Python without FastAPI or Django, which seamless add does not wire yet");
   });
 
   it("wires a Create React App web app on its own port and variable", async () => {
@@ -272,5 +271,37 @@ describe("seamless add, edge cases", () => {
     const { runAdd } = await import("./add.js");
     await runAdd([root, "--local", "--yes", "--email=owner@x.test", "--skip-install"]);
     expect(fs.existsSync(path.join(root, "seamless", "docker-compose.yml"))).toBe(true);
+  });
+});
+
+describe("seamless add for a Go or Python backend", () => {
+  it("runs go get and prints Go", async () => {
+    fs.rmSync(path.join(root, "api"), { recursive: true });
+    write("server/go.mod", "module example.com/app\nrequire github.com/gin-gonic/gin v1.12.0\n");
+    write("server/main.go", "package main");
+    await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test" });
+
+    expect(vi.mocked(runCommand).mock.calls[0]).toEqual([
+      "go",
+      ["get", "github.com/fells-code/seamless-auth-go@latest"],
+      path.join(root, "server"),
+    ]);
+    expect(parseEnv(path.join(root, "server", ".env")).AUTH_SERVER_URL).toBe("http://localhost:5312");
+    const out = logs.join("\n");
+    expect(out).toContain("Backend: Gin in server");
+    expect(out).toContain("Add Seamless Auth to your Gin app (server/main.go)");
+    expect(out).toContain("godotenv");
+  });
+
+  it("prints a pip install rather than guessing the environment", async () => {
+    fs.rmSync(path.join(root, "api"), { recursive: true });
+    write("requirements.txt", "fastapi\n");
+    write("main.py", "");
+    await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test" });
+
+    expect(vi.mocked(runCommand).mock.calls.map(([cmd]) => cmd)).toEqual(["npm"]);
+    const out = logs.join("\n");
+    expect(out).toContain('pip install "seamless-auth[fastapi]>=0.2"');
+    expect(out).toContain("add it to requirements.txt");
   });
 });

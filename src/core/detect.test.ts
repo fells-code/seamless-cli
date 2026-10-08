@@ -60,14 +60,14 @@ describe("detectProject", () => {
   });
 
   it("reports stacks it does not wire yet", () => {
-    write("go.mod", "module x");
+    write("Cargo.toml", '[dependencies]\nactix-web = "4"\n');
     write("web/package.json", { dependencies: { next: "^15", react: "^19" } });
 
     const project = detectProject(root);
 
     expect(project.backend).toBeUndefined();
     expect(project.web).toBeUndefined();
-    expect(project.unsupported).toEqual(["Go", "Next.js"]);
+    expect(project.unsupported).toEqual(["Rust without Axum", "Next.js"]);
   });
 
   it("reads a Create React App build as react-scripts", () => {
@@ -96,5 +96,95 @@ describe("addPackagesCommand", () => {
     expect(addPackagesCommand("pnpm", ["a"], true)).toEqual({ command: "pnpm", args: ["add", "-D", "a"] });
     expect(addPackagesCommand("yarn", ["a", "b"])).toEqual({ command: "yarn", args: ["add", "a", "b"] });
     expect(addPackagesCommand("bun", ["a"])).toEqual({ command: "bun", args: ["add", "a"] });
+  });
+});
+
+describe("detectProject, Go, Rust and Python", () => {
+  it.each([
+    ["github.com/gin-gonic/gin v1.12.0", "gin"],
+    ["github.com/go-chi/chi/v5 v5.2.0", "chi"],
+    ["github.com/labstack/echo/v4 v4.13.0", "echo"],
+    ["github.com/jackc/pgx/v5 v5.7.0", "nethttp"],
+  ] as const)("reads %s from go.mod as %s", (requirement, framework) => {
+    write("go.mod", `module example.com/app\n\ngo 1.26\n\nrequire ${requirement}\n`);
+    write("cmd/server/main.go", "package main");
+    expect(detectProject(root).backend).toEqual({
+      framework,
+      ecosystem: "go",
+      dir: ".",
+      typescript: false,
+      entry: path.join("cmd", "server", "main.go"),
+      packageManager: "go",
+    });
+  });
+
+  it("finds a Go entry in any cmd/ folder, or none", () => {
+    write("api/go.mod", "module x");
+    write("api/cmd/worker/main.go", "package main");
+    expect(detectProject(root).backend?.entry).toBe(path.join("cmd", "worker", "main.go"));
+    fs.rmSync(path.join(root, "api", "cmd"), { recursive: true });
+    expect(detectProject(root).backend?.entry).toBeUndefined();
+  });
+
+  it("reads Axum from Cargo.toml", () => {
+    write("server/Cargo.toml", '[dependencies]\naxum = "0.8"\ntokio = { version = "1" }\n');
+    write("server/src/main.rs", "fn main() {}");
+    expect(detectProject(root).backend).toMatchObject({
+      framework: "axum",
+      ecosystem: "rust",
+      dir: "server",
+      entry: "src/main.rs",
+      packageManager: "cargo",
+    });
+  });
+
+  it("reads FastAPI from pyproject.toml, with uv when it has a uv.lock", () => {
+    write("pyproject.toml", '[project]\ndependencies = ["fastapi>=0.115", "uvicorn"]\n');
+    write("uv.lock", "");
+    write("app/main.py", "");
+    expect(detectProject(root).backend).toMatchObject({
+      framework: "fastapi",
+      ecosystem: "python",
+      entry: "app/main.py",
+      packageManager: "uv",
+    });
+    fs.rmSync(path.join(root, "uv.lock"));
+    expect(detectProject(root).backend?.packageManager).toBe("pip");
+  });
+
+  it("reads Django from requirements.txt and points at its settings module", () => {
+    write("backend/requirements.txt", "Django==5.2\npsycopg[binary]\n");
+    write(
+      "backend/manage.py",
+      'os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")\n',
+    );
+    write("backend/config/settings.py", "");
+    expect(detectProject(root).backend).toMatchObject({
+      framework: "django",
+      dir: "backend",
+      entry: path.join("config", "settings.py"),
+      packageManager: "pip",
+    });
+  });
+
+  it("falls back to manage.py when the settings module is not there, and reads poetry", () => {
+    write("pyproject.toml", '[tool.poetry.dependencies]\ndjango = "^5"\n');
+    write("manage.py", "no settings module named here\n");
+    expect(detectProject(root).backend).toMatchObject({ entry: "manage.py", packageManager: "poetry" });
+    fs.rmSync(path.join(root, "manage.py"));
+    expect(detectProject(root).backend?.entry).toBeUndefined();
+  });
+
+  it("reports Python and Rust stacks it has no adapter for", () => {
+    write("pyproject.toml", '[project]\ndependencies = ["flask"]\n');
+    write("server/Cargo.toml", '[dependencies]\nactix-web = "4"\n');
+    expect(detectProject(root)).toEqual({
+      unsupported: ["Python without FastAPI or Django", "Rust without Axum"],
+    });
+  });
+
+  it("does not take a package that only mentions a framework's name", () => {
+    write("requirements.txt", "fastapi-users==13\n");
+    expect(detectProject(root).backend).toBeUndefined();
   });
 });

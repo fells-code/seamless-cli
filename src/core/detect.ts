@@ -1,17 +1,31 @@
 import fs from "fs";
 import path from "path";
 
-export type BackendFramework = "express" | "fastify";
+export type BackendFramework =
+  | "express"
+  | "fastify"
+  | "nethttp"
+  | "gin"
+  | "chi"
+  | "echo"
+  | "axum"
+  | "fastapi"
+  | "django";
+export type Ecosystem = "node" | "go" | "rust" | "python";
 export type JsPackageManager = "npm" | "pnpm" | "yarn" | "bun";
+export type PythonPackageManager = "uv" | "poetry" | "pip";
+export type BackendPackageManager = JsPackageManager | PythonPackageManager | "go" | "cargo";
 
 export interface DetectedBackend {
   framework: BackendFramework;
+  ecosystem: Ecosystem;
   dir: string;
+  // Node only: whether to print TypeScript.
   typescript: boolean;
   // The file the app is most likely started from, when one can be read off
-  // package.json or found at a conventional path.
+  // the project's manifest or found at a conventional path.
   entry?: string;
-  packageManager: JsPackageManager;
+  packageManager: BackendPackageManager;
 }
 
 export interface DetectedWeb {
@@ -153,26 +167,24 @@ export function detectProject(root: string): DetectedProject {
   };
 
   for (const dir of candidateDirs(root)) {
-    if (fs.existsSync(path.join(dir, "go.mod"))) note("Go");
-    if (fs.existsSync(path.join(dir, "Cargo.toml"))) note("Rust");
-    if (
-      fs.existsSync(path.join(dir, "pyproject.toml")) ||
-      fs.existsSync(path.join(dir, "requirements.txt"))
-    ) {
-      note("Python");
-    }
+    const rel = path.relative(root, dir) || ".";
     if (fs.existsSync(path.join(dir, "angular.json"))) note("Angular");
+
+    // Every folder is read, so a stack that is not wired yet is reported even
+    // after a backend has been found; the first backend found is the one used.
+    const native = detectNativeBackend(dir, rel, note);
+    if (native && !result.backend) result.backend = native;
 
     const pkg = readPackageJson(dir);
     if (!pkg) continue;
     const deps = dependencies(pkg);
     const typescript =
       fs.existsSync(path.join(dir, "tsconfig.json")) || "typescript" in deps;
-    const rel = path.relative(root, dir) || ".";
 
     if (!result.backend && ("express" in deps || "fastify" in deps)) {
       result.backend = {
         framework: "express" in deps ? "express" : "fastify",
+        ecosystem: "node",
         dir: rel,
         typescript,
         entry: findEntry(dir, pkg, BACKEND_ENTRIES),
@@ -197,6 +209,102 @@ export function detectProject(root: string): DetectedProject {
     }
   }
   return result;
+}
+
+function readText(file: string): string | undefined {
+  try {
+    return fs.readFileSync(file, "utf-8");
+  } catch {
+    return undefined;
+  }
+}
+
+function firstExisting(dir: string, candidates: string[]): string | undefined {
+  return candidates.find((candidate) => fs.existsSync(path.join(dir, candidate)));
+}
+
+// Go, Rust and Python backends, read from go.mod, Cargo.toml, pyproject.toml or
+// requirements.txt. A manifest for a framework seamless add has no adapter for is
+// reported rather than guessed at.
+function detectNativeBackend(
+  dir: string,
+  rel: string,
+  note: (name: string) => void,
+): DetectedBackend | undefined {
+  const goMod = readText(path.join(dir, "go.mod"));
+  if (goMod !== undefined) {
+    const framework: BackendFramework = /github\.com\/gin-gonic\/gin\b/.test(goMod)
+      ? "gin"
+      : /github\.com\/go-chi\/chi\b/.test(goMod)
+        ? "chi"
+        : /github\.com\/labstack\/echo\b/.test(goMod)
+          ? "echo"
+          : "nethttp";
+    let entry = firstExisting(dir, ["main.go", "server.go", "cmd/server/main.go", "cmd/api/main.go"]);
+    if (!entry) {
+      try {
+        const cmd = fs.readdirSync(path.join(dir, "cmd")).find((name) =>
+          fs.existsSync(path.join(dir, "cmd", name, "main.go")),
+        );
+        if (cmd) entry = path.join("cmd", cmd, "main.go");
+      } catch {
+        // no cmd/ directory
+      }
+    }
+    return { framework, ecosystem: "go", dir: rel, typescript: false, entry, packageManager: "go" };
+  }
+
+  const cargo = readText(path.join(dir, "Cargo.toml"));
+  if (cargo !== undefined) {
+    if (!/^\s*axum\s*=/m.test(cargo)) {
+      note("Rust without Axum");
+      return undefined;
+    }
+    return {
+      framework: "axum",
+      ecosystem: "rust",
+      dir: rel,
+      typescript: false,
+      entry: firstExisting(dir, ["src/main.rs"]),
+      packageManager: "cargo",
+    };
+  }
+
+  const pyproject = readText(path.join(dir, "pyproject.toml"));
+  const requirements = readText(path.join(dir, "requirements.txt"));
+  if (pyproject === undefined && requirements === undefined) return undefined;
+  const manifest = `${pyproject ?? ""}\n${requirements ?? ""}`.toLowerCase();
+  const declares = (name: string) => new RegExp(`(^|["'\\s])${name}(\\[|[<>=~!;"'\\s]|$)`, "m").test(manifest);
+  const framework: BackendFramework | undefined = declares("django")
+    ? "django"
+    : declares("fastapi")
+      ? "fastapi"
+      : undefined;
+  if (!framework) {
+    note("Python without FastAPI or Django");
+    return undefined;
+  }
+  const packageManager: PythonPackageManager = fs.existsSync(path.join(dir, "uv.lock"))
+    ? "uv"
+    : fs.existsSync(path.join(dir, "poetry.lock")) || /\[tool\.poetry[\].]/.test(pyproject ?? "")
+      ? "poetry"
+      : "pip";
+  const entry =
+    framework === "django"
+      ? djangoSettings(dir)
+      : firstExisting(dir, ["main.py", "app/main.py", "app.py", "src/main.py", "api/main.py"]);
+  return { framework, ecosystem: "python", dir: rel, typescript: false, entry, packageManager };
+}
+
+// The settings file manage.py points at, which is where the configuration goes.
+function djangoSettings(dir: string): string | undefined {
+  const manage = readText(path.join(dir, "manage.py"));
+  const module = manage?.match(/DJANGO_SETTINGS_MODULE["']\s*,\s*["']([\w.]+)["']/)?.[1];
+  if (module) {
+    const file = `${module.replace(/\./g, "/")}.py`;
+    if (fs.existsSync(path.join(dir, file))) return file;
+  }
+  return manage === undefined ? undefined : "manage.py";
 }
 
 /** The command that adds packages with a project's own package manager. */
