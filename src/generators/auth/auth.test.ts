@@ -71,7 +71,7 @@ describe("generateAuthServer local mode", () => {
     expect(spawn).toHaveBeenCalledWith(
       "git",
       ["clone", AUTH_REPO, "auth"],
-      { stdio: "inherit", cwd: tmpDir, shell: true, env: process.env },
+      { stdio: "inherit", cwd: tmpDir, shell: process.platform === "win32", env: process.env },
     );
 
     expect(shared.kid).toBe("dev-main");
