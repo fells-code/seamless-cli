@@ -22,18 +22,30 @@ interface VerifyOptions {
   // Also run every browser template on its development server (React Strict Mode).
   dev: boolean;
   grep?: string;
+  // Runs only the adapter conformance specs against a reference app the caller
+  // started, for adapters this repository does not build (Go, Rust, Python).
+  adapterUrl?: string;
 }
 
 function parseArgs(args: string[]): VerifyOptions {
   const apiOnly = args.includes("--api-only");
+  const adapterUrl = args
+    .find((a) => a.startsWith("--adapter-url="))
+    ?.slice("--adapter-url=".length)
+    .replace(/\/+$/, "");
+  if (adapterUrl !== undefined && !/^https?:\/\/[^/]+/.test(adapterUrl)) {
+    throw new Error(`--adapter-url must be an http(s) URL, got "${adapterUrl}".`);
+  }
   return {
     local: args.includes("--local"),
     keepUp: args.includes("--keep-up"),
     apiOnly,
-    // The browser layer runs by default; --no-react (or --api-only) skips it.
-    react: !apiOnly && !args.includes("--no-react"),
+    // The browser layer runs by default; --no-react (or --api-only) skips it, and so
+    // does --adapter-url, which tests one adapter and nothing else.
+    react: !apiOnly && !adapterUrl && !args.includes("--no-react"),
     dev: args.includes("--dev"),
     grep: args.find((a) => a.startsWith("--filter="))?.split("=")[1],
+    adapterUrl,
   };
 }
 
@@ -568,8 +580,9 @@ export async function runVerify(args: string[] = []): Promise<void> {
   };
 
   // The base stack (no browser layer). The react service is added per template below.
+  // An external adapter brings its own reference app, so only the API is started.
   const baseServices = ["postgres", "auth-api"];
-  if (!opts.apiOnly) baseServices.push("adapter", "adapter-fastify");
+  if (!opts.apiOnly && !opts.adapterUrl) baseServices.push("adapter", "adapter-fastify");
 
   let failed = false;
   let setupError: Error | undefined;
@@ -578,7 +591,7 @@ export async function runVerify(args: string[] = []): Promise<void> {
   try {
     // The adapter / react images install local @seamless-auth/* tarballs when present.
     cleanVendor();
-    if (opts.local) await packLocalSdks(baseEnv);
+    if (opts.local && !opts.adapterUrl) await packLocalSdks(baseEnv);
     if (opts.local && opts.react) await packLocalReactSdk(baseEnv);
 
     // Fresh volumes each run → deterministic system_config seed (e.g. LOGIN_METHODS).
@@ -597,20 +610,36 @@ export async function runVerify(args: string[] = []): Promise<void> {
       await runCommand("npx", ["playwright", "install", "chromium"], HARNESS_DIR, baseEnv);
     }
 
-    // API and adapter layers are template-independent, so they run once.
-    const apiEnv: NodeJS.ProcessEnv = {
-      ...baseEnv,
-      ...(opts.apiOnly
-        ? {}
-        : { SEAMLESS_VERIFY_ADAPTER: "1", SEAMLESS_VERIFY_ADAPTER_FASTIFY: "1" }),
-    };
-    const apiProjects = ["api"];
-    // The adapter suite runs once per adopter framework, against the same specs.
-    if (!opts.apiOnly) apiProjects.push("adapter", "adapter-fastify");
-    const apiLabel = opts.apiOnly ? "API" : "API / adapter";
-    console.log(kleur.cyan("→ Running the API / adapter conformance…\n"));
-    if (!(await runLayer(results, apiLabel, () => runProjects(apiEnv, apiProjects, opts.grep)))) {
-      failed = true;
+    if (opts.adapterUrl) {
+      const conformanceEnv: NodeJS.ProcessEnv = {
+        ...baseEnv,
+        SEAMLESS_CONFORMANCE_ADAPTER_URL: opts.adapterUrl,
+        SEAMLESS_VERIFY_CONFORMANCE: "1",
+      };
+      console.log(kleur.cyan(`→ Running adapter conformance against ${opts.adapterUrl}…\n`));
+      if (
+        !(await runLayer(results, `Adapter conformance · ${opts.adapterUrl}`, () =>
+          runProjects(conformanceEnv, ["conformance"], opts.grep),
+        ))
+      ) {
+        failed = true;
+      }
+    } else {
+      // API and adapter layers are template-independent, so they run once.
+      const apiEnv: NodeJS.ProcessEnv = {
+        ...baseEnv,
+        ...(opts.apiOnly
+          ? {}
+          : { SEAMLESS_VERIFY_ADAPTER: "1", SEAMLESS_VERIFY_ADAPTER_FASTIFY: "1" }),
+      };
+      const apiProjects = ["api"];
+      // The adapter suite runs once per adopter framework, against the same specs.
+      if (!opts.apiOnly) apiProjects.push("adapter", "adapter-fastify");
+      const apiLabel = opts.apiOnly ? "API" : "API / adapter";
+      console.log(kleur.cyan("→ Running the API / adapter conformance…\n"));
+      if (!(await runLayer(results, apiLabel, () => runProjects(apiEnv, apiProjects, opts.grep)))) {
+        failed = true;
+      }
     }
 
     // The browser layer runs once per browser template, each pointed at its own

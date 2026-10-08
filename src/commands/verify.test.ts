@@ -345,6 +345,49 @@ describe("runVerify — flag parsing", () => {
   });
 });
 
+describe("runVerify — --adapter-url (an external reference app)", () => {
+  it("starts only the API and runs the conformance project against the URL", async () => {
+    await runVerify(["--adapter-url=http://localhost:8080/"]);
+
+    const tails = dockerTails();
+    expect(tails).toContainEqual(["up", "-d", "--build", "postgres", "auth-api"]);
+    expect(tails.some((t) => t.includes("adapter") && t.includes("up"))).toBe(false);
+    expect(tails.some((t) => t.includes("react") && t.includes("up"))).toBe(false);
+
+    const tests = vi
+      .mocked(runCommand)
+      .mock.calls.filter((c) => c[0] === "npm" && (c[1] as string[])[0] === "test");
+    expect(tests.map((c) => c[1])).toEqual([["test", "--", "--project", "conformance"]]);
+
+    const env = tests[0][3] as NodeJS.ProcessEnv;
+    expect(env.SEAMLESS_CONFORMANCE_ADAPTER_URL).toBe("http://localhost:8080");
+    expect(env.SEAMLESS_VERIFY_CONFORMANCE).toBe("1");
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not pack the Node adapters, even with --local", async () => {
+    await runVerify(["--local", "--adapter-url=http://localhost:8080"]);
+
+    expect(callsFor("pnpm")).toHaveLength(0);
+  });
+
+  it("exits 1 when the reference app fails conformance", async () => {
+    vi.mocked(runCommand).mockImplementation(async (cmd, args) => {
+      if (cmd === "npm" && (args as string[])[0] === "test") throw new Error("failed");
+    });
+
+    await runVerify(["--adapter-url=http://localhost:8080"]);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("refuses a value that is not an http(s) URL", async () => {
+    await expect(runVerify(["--adapter-url=localhost:8080"])).rejects.toThrow(
+      /must be an http\(s\) URL/,
+    );
+  });
+});
+
 describe("runVerify — local mode", () => {
   it("packs local server and react SDKs before starting the stack", async () => {
     await runVerify(["--local"]);

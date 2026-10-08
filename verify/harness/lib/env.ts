@@ -8,6 +8,10 @@ export const ADAPTER_URL = process.env.SEAMLESS_ADAPTER_URL ?? 'http://localhost
 // both, so a regression in one framework is visible on its own row of the matrix.
 export const FASTIFY_ADAPTER_URL =
   process.env.SEAMLESS_FASTIFY_ADAPTER_URL ?? 'http://localhost:3001';
+// A reference app outside this repository (`seamless verify --adapter-url`), run
+// against the same adapter specs as the in-repo Express and Fastify apps.
+export const CONFORMANCE_ADAPTER_URL =
+  process.env.SEAMLESS_CONFORMANCE_ADAPTER_URL ?? ADAPTER_URL;
 export const REACT_URL = process.env.SEAMLESS_REACT_URL ?? 'http://localhost:5173';
 export const MOCK_OIDC_PORT = Number(process.env.SEAMLESS_MOCK_OIDC_PORT ?? 9000);
 
