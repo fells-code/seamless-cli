@@ -1,5 +1,25 @@
 # seamless-cli
 
+## 0.21.0
+
+### Minor Changes
+
+- 64a9907: Add an adapter conformance suite that any server adapter can be held to (#246).
+
+  - `seamless verify --adapter-url=<url>` starts Postgres and the auth API and runs the adapter specs against a reference app you started at that URL, for adapters this repository does not build (Go, Rust, Python). `verify/CONFORMANCE.md` documents what the reference app must serve.
+  - The adapter specs, run against the Express and Fastify reference apps on every `seamless verify`, now cover cookie attributes and clearing, refresh rotation, concurrent refresh and refresh-token reuse, bearer transport, the adapter's own guard on an app route, error passthrough, the absence of tokens in cookie-transport bodies, and forwarding of the client's address and user agent to the auth API.
+  - The reference apps trust one proxy hop, so each virtual user gets its own client address and rate-limit bucket on the auth API, and pin the current adapter releases (`@seamless-auth/express` 0.19, `@seamless-auth/fastify` 0.10).
+
+- b051bff: `seamless config set` and `config apply` accept `prompt_passkey_enrollment` and `phishing_resistant_only`, which need auth server v0.17.0 or later. `prompt_passkey_enrollment` makes email code, phone code and magic link sign-ins ask a user with no passkey to enroll one. `phishing_resistant_only` limits sign-in to passkeys. An older instance rejects a patch that includes either key.
+
+### Patch Changes
+
+- 4385906: `seamless users` and `seamless org` now read admin responses with the shared `@seamless-auth/types` schemas. `users credentials` names each passkey by the name its owner gave it (`friendlyName`), then by the device the auth server recorded, where it used to print "credential" for every one because it looked for fields the API never sends. A response missing a field the CLI needs now fails with a message naming the field, where it used to print placeholders such as `(no id)`. Fields an instance sends that this CLI version does not know about are kept, so `--json` output still carries them.
+- f13e646: `seamless login --local` now works for a phone number. The auth server sends an SMS code as a number in the delivery block, and the CLI only accepted a string, so every local phone login failed saying the instance had not returned the code. Login responses are now read with the shared `@seamless-auth/types` schemas, and a login method the instance offers that this CLI version does not know no longer gets in the way of an OTP login. `seamless profile add --identifier-type` is validated with the same schema.
+- d3708b2: `seamless sessions` now reads the session list with the shared `@seamless-auth/types` schema. A session the instance sends malformed fails the command with a message naming the field, where it used to be dropped from the list without a word. `sessions list --json` now carries every field the API sends, including `deviceName`, `ipAddress` and `userAgent` as `null` when the API has none, where it used to leave them out.
+- 062630f: `seamless config set` and `config apply` now accept `flow_rate_limits`, which the auth server has read from system config since v0.14.0; `config apply` used to drop it from a config file without a word. `config apply` now tells read-only keys from unknown ones, and `config diff` flags a key no config has, which is usually a typo. The writable keys are checked against the shared `@seamless-auth/types` patch schema. `config get` and `oauth-providers list` still show exactly what the instance stores: they check the response's shape but never fill in schema defaults or reject a stored value.
+- 4569033: `seamless init` now downloads the starter templates by the commit their release tag pointed at when the CLI was published, rather than by the tag, so a moved tag cannot change what a scaffold extracts. Template extraction also fails with a clear error on an archive entry that would write outside the project, as the `--admin=source` dashboard download already did. `SEAMLESS_TEMPLATES_REF` and `SEAMLESS_TEMPLATES_DIR` still override the source as before.
+
 ## 0.20.0
 
 ### Minor Changes
