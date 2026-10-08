@@ -11,14 +11,16 @@ import {
   getRoles,
   getSystemConfig,
   listOAuthProviders,
+  isKnownKey,
   isWritableKey,
   parseValue,
   patchSystemConfig,
   PermissionError,
   updateOAuthProvider,
   type ConfigChange,
-  type OAuthProvider,
+  type OAuthProviderInput,
   type SystemConfig,
+  type SystemConfigInput,
   WRITABLE_KEYS,
 } from "../core/systemConfig.js";
 import {
@@ -150,6 +152,7 @@ async function configDiff(client: AuthClient, rest: string[]): Promise<void> {
   }
 
   const local = readConfigFile(file);
+  reportUnknownKeys(local);
   const remote = await getSystemConfig(client);
   const changes = diffConfig(local, remote);
 
@@ -169,11 +172,12 @@ async function configApply(client: AuthClient, rest: string[]): Promise<void> {
   }
 
   const local = readConfigFile(file);
-  const { patch, dropped } = filterWritable(local);
-  if (dropped.length) {
-    console.log(
-      kleur.dim(`Ignoring read-only or unknown keys: ${dropped.join(", ")}`),
-    );
+  const { patch, readOnly, unknown } = filterWritable(local);
+  if (readOnly.length) {
+    console.log(kleur.dim(`Ignoring read-only keys: ${readOnly.join(", ")}`));
+  }
+  if (unknown.length) {
+    console.log(kleur.yellow(`Ignoring unknown keys: ${unknown.join(", ")}`));
   }
 
   const remote = await getSystemConfig(client);
@@ -262,13 +266,12 @@ async function oauthProvidersList(
     return;
   }
   for (const provider of providers) {
-    const id = String(provider.id ?? "?");
-    const name = String(provider.name ?? "");
+    const name = provider.name ?? "";
     const status =
       provider.enabled === false
         ? kleur.yellow("disabled")
         : kleur.green("enabled");
-    console.log(`  ${kleur.bold(id)}  ${kleur.dim(name)}  ${status}`);
+    console.log(`  ${kleur.bold(provider.id)}  ${kleur.dim(name)}  ${status}`);
   }
 }
 
@@ -283,9 +286,7 @@ async function oauthProvidersAdd(
   );
 
   const provider = await createOAuthProvider(client, input);
-  console.log(
-    kleur.green(`Added OAuth provider: ${String(provider.id ?? input.id ?? "")}`),
-  );
+  console.log(kleur.green(`Added OAuth provider: ${String(provider.id ?? "")}`));
 }
 
 async function oauthProvidersUpdate(
@@ -343,7 +344,7 @@ async function oauthProvidersRemove(
 function readProviderInput(
   file: string | undefined,
   inlineJson: string,
-): OAuthProvider {
+): OAuthProviderInput {
   let raw: string;
   if (file) {
     try {
@@ -366,10 +367,10 @@ function readProviderInput(
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new ConfigApiError("Provider input must be a JSON object.");
   }
-  return parsed as OAuthProvider;
+  return parsed as OAuthProviderInput;
 }
 
-function readConfigFile(file: string): SystemConfig {
+function readConfigFile(file: string): SystemConfigInput {
   let raw: string;
   try {
     raw = fs.readFileSync(file, "utf-8");
@@ -387,7 +388,16 @@ function readConfigFile(file: string): SystemConfig {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new ConfigApiError(`${file} must contain a JSON object.`);
   }
-  return parsed as SystemConfig;
+  return parsed as SystemConfigInput;
+}
+
+// A key no version of the config this CLI knows has is most often a typo, which
+// would otherwise read as a value the instance simply has not set.
+function reportUnknownKeys(local: SystemConfigInput): void {
+  const unknown = Object.keys(local).filter((key) => !isKnownKey(key));
+  if (unknown.length) {
+    console.log(kleur.yellow(`Not a config key this CLI knows: ${unknown.join(", ")}`));
+  }
 }
 
 function inline(value: unknown): string {

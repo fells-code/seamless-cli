@@ -343,6 +343,19 @@ describe("runConfig diff", () => {
     expect(errOutput()).toContain("Usage: seamless config diff <file>");
   });
 
+  // A misspelt key otherwise shows up as a value the instance has not set.
+  it("flags a key no config this CLI knows has", async () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify({ app_name: "Acme", acess_token_ttl: "15m" }),
+    );
+    const { client } = fakeClient(() => response(200, { app_name: "Acme" }));
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["diff", "local.json"]);
+
+    expect(output()).toContain("Not a config key this CLI knows: acess_token_ttl");
+  });
+
   it("propagates a ConfigApiError and exits 1 when the file cannot be read", async () => {
     const { client } = fakeClient(() => response(200, {}));
     vi.mocked(createAuthClient).mockResolvedValue(client);
@@ -414,14 +427,22 @@ describe("runConfig apply", () => {
     expect(errOutput()).toContain("Usage: seamless config apply <file> [--dry-run]");
   });
 
-  it("reports dropped read-only or unknown keys", async () => {
+  it("reports read-only and unknown keys separately", async () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify({
+        app_name: "Acme",
+        frontend_url: "https://app.example.com",
+        bogus: 1,
+      }),
+    );
     const { client } = fakeClient(() => response(200, { app_name: "Old" }));
     vi.mocked(createAuthClient).mockResolvedValue(client);
     vi.mocked(confirm).mockResolvedValue(true);
 
     await runConfig(["apply", "local.json"]);
 
-    expect(output()).toContain("Ignoring read-only or unknown keys: bogus");
+    expect(output()).toContain("Ignoring read-only keys: frontend_url");
+    expect(output()).toContain("Ignoring unknown keys: bogus");
   });
 
   it("prints 'Already in sync' when there is nothing to apply", async () => {
