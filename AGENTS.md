@@ -268,7 +268,13 @@ since the generated compose pins both the ports and the container names.
   ([src/generators/auth/auth.ts](src/generators/auth/auth.ts)) while `--auth=docker` runs the pinned
   image, so the two auth modes can scaffold different servers from the same CLI version.
 - **Config keys ahead of the API**: `WRITABLE_KEYS` in
-  [src/core/systemConfig.ts](src/core/systemConfig.ts) mirrors the instance's strict patch schema.
-  `magic_link_redirect_uris` is currently ahead of it (defined in `@seamless-auth/types`, not yet
-  released there, and not yet read by the auth API), so an instance rejects that key today. Adding a
-  key here before the API accepts it makes `config set` fail against every live instance.
+  [src/core/systemConfig.ts](src/core/systemConfig.ts) is what `config set` and `config apply` send,
+  and the instance's patch schema is strict, so adding a key before a released API accepts it makes
+  `config set` fail against every live instance. A `@seamless-auth/types` bump often adds such keys
+  first. Every key in `SystemConfigPatchSchema` must be in either `WRITABLE_KEYS` or
+  `NOT_YET_WRITABLE` (with the ticket that tracks it), and a unit test fails when a bump adds one that
+  is in neither. Move a key across once an API release accepts it.
+- **Config reads are not parsed with the config schemas.** `SystemConfigSchema` and
+  `OAuthProviderConfigSchema` carry defaults, so parsing a read would report keys and settings an
+  older instance never stored, and their value rules would make `config get` fail on a value the
+  instance accepted. Reads check the shape and are typed with the schemas' input side.

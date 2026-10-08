@@ -1,17 +1,35 @@
+import {
+  AvailableRolesResponseSchema,
+  OAuthProviderConfigSchema,
+  SystemConfigPatchSchema,
+  SystemConfigSchema,
+  UpdateSystemConfigResponseSchema,
+  type OAuthProviderConfig,
+  type SystemConfigPatch,
+  type UpdateSystemConfigResponse,
+} from "@seamless-auth/types";
+import { z } from "zod";
 import type { AuthClient } from "./authClient.js";
 import { scrubTokens } from "./redact.js";
 
-export type SystemConfig = Record<string, unknown>;
+// What an instance stores, typed with the shared schema's input side but every key
+// optional and others allowed: the instance may be older or newer than this CLI's
+// types. Reads are deliberately not parsed with SystemConfigSchema. Its defaults
+// would invent keys an older instance does not have, and its value rules (which can
+// tighten between versions) would make `config get` fail on a value the instance
+// accepted. Only the shape is checked.
+export type SystemConfig = Partial<z.input<typeof SystemConfigSchema>> &
+  Record<string, unknown>;
 
-// Mirrors the instance's patch schema, which is strict: a key missing here is one
-// `config apply` silently drops and `config set` refuses, so the two lists have to
-// stay in step.
-//
-// `magic_link_redirect_uris` is the one entry ahead of it. The key is defined in
-// @seamless-auth/types but not yet released there, and the auth API still treats the
-// configured origins as the magic-link allowlist, so an instance rejects it today.
-// Leave it listed (a released API accepts it without a CLI change) but expect the
-// rejection until that release lands.
+// What a config file or `config set` supplies, before the instance validates it.
+export type SystemConfigInput = Record<string, unknown>;
+
+// The keys `config set` and `config apply` send. The instance's patch schema is
+// strict and rejects the whole patch over one key it does not know, so a key goes
+// here only once a released auth API accepts it, never on a types bump alone (see
+// "Config keys ahead of the API" in AGENTS.md). `satisfies` ties each entry to the
+// shared patch schema, and a test fails when that schema gains a key that is in
+// neither this list nor NOT_YET_WRITABLE, so a bump cannot add one unnoticed.
 export const WRITABLE_KEYS = [
   "app_name",
   "default_roles",
@@ -27,12 +45,22 @@ export const WRITABLE_KEYS = [
   "max_concurrent_sessions",
   "rate_limit",
   "delay_after",
+  "flow_rate_limits",
   "rpid",
   "origins",
   "magic_link_redirect_uris",
-] as const;
+] as const satisfies readonly (keyof SystemConfigPatch)[];
+
+// In the shared patch schema but not yet accepted by a released auth API this CLI
+// can rely on. Move a key to WRITABLE_KEYS once it is.
+export const NOT_YET_WRITABLE = {
+  prompt_passkey_enrollment: "#221",
+  phishing_resistant_only: "#221",
+} as const satisfies Partial<Record<keyof SystemConfigPatch, string>>;
 
 const WRITABLE = new Set<string>(WRITABLE_KEYS);
+
+const KNOWN = new Set<string>(Object.keys(SystemConfigSchema.shape));
 
 export class PermissionError extends Error {
   constructor(
@@ -50,36 +78,43 @@ export class ConfigApiError extends Error {
   }
 }
 
+const ConfigObjectSchema = z.record(z.string(), z.unknown());
+
 export async function getSystemConfig(
   client: AuthClient,
 ): Promise<SystemConfig> {
-  const res = await client.get<SystemConfig>("/system-config/admin");
+  const res = await client.get<unknown>("/system-config/admin");
   if (res.status === 403) throw new PermissionError();
-  if (!res.ok || !res.data) {
+  if (!res.ok) {
     throw new ConfigApiError(`Could not read system config (${res.status}).`);
   }
-  return res.data;
+  const parsed = ConfigObjectSchema.safeParse(res.data);
+  if (!parsed.success) {
+    throw new ConfigApiError(
+      "The instance returned a system config this CLI cannot read.",
+    );
+  }
+  return parsed.data as SystemConfig;
 }
 
 export async function getRoles(client: AuthClient): Promise<string[]> {
-  const res = await client.get<{ roles?: unknown[] }>("/system-config/roles");
+  const res = await client.get<unknown>("/system-config/roles");
   if (res.status === 403) throw new PermissionError();
   if (!res.ok) {
     throw new ConfigApiError(`Could not read roles (${res.status}).`);
   }
-  return Array.isArray(res.data?.roles)
-    ? res.data.roles.filter((role): role is string => typeof role === "string")
-    : [];
+  const parsed = AvailableRolesResponseSchema.safeParse(res.data);
+  if (!parsed.success) {
+    throw new ConfigApiError("The instance returned a role list this CLI cannot read.");
+  }
+  return parsed.data.roles;
 }
 
-export interface PatchResult {
-  success: boolean;
-  updatedKeys: string[];
-}
+export type PatchResult = UpdateSystemConfigResponse;
 
 export async function patchSystemConfig(
   client: AuthClient,
-  patch: SystemConfig,
+  patch: SystemConfigInput,
 ): Promise<PatchResult> {
   const res = await client.request<{
     success?: boolean;
@@ -104,15 +139,28 @@ export async function patchSystemConfig(
     throw new ConfigApiError(`Could not update system config (${res.status}).`);
   }
 
-  return {
-    success: res.data?.success ?? true,
-    updatedKeys: Array.isArray(res.data?.updatedKeys)
-      ? res.data.updatedKeys
-      : [],
-  };
+  // The patch has been applied by now, so an answer this CLI cannot read is reported
+  // as no keys listed rather than as a failure.
+  const parsed = UpdateSystemConfigResponseSchema.safeParse(res.data);
+  return parsed.success ? parsed.data : { success: true, updatedKeys: [] };
 }
 
-export type OAuthProvider = Record<string, unknown>;
+// A provider as the instance stores it. As with SystemConfig, reads are not parsed
+// with OAuthProviderConfigSchema, whose defaults would invent settings; only the id
+// every provider has is checked.
+export type OAuthProvider = Partial<z.input<typeof OAuthProviderConfigSchema>> &
+  Pick<OAuthProviderConfig, "id"> &
+  Record<string, unknown>;
+
+// What `oauth-providers add` and `update` read from the developer, before the
+// instance validates it.
+export type OAuthProviderInput = Record<string, unknown>;
+
+const StoredProviderSchema = OAuthProviderConfigSchema.pick({ id: true }).loose();
+
+const ProviderListSchema = z.object({ providers: z.array(StoredProviderSchema) });
+
+const ProviderEnvelopeSchema = z.object({ provider: StoredProviderSchema });
 
 const OAUTH_PROVIDERS_PATH = "/system-config/oauth-providers";
 
@@ -145,50 +193,59 @@ function providerMutationError(
 export async function listOAuthProviders(
   client: AuthClient,
 ): Promise<OAuthProvider[]> {
-  const res = await client.get<{ providers?: unknown }>(OAUTH_PROVIDERS_PATH);
+  const res = await client.get<unknown>(OAUTH_PROVIDERS_PATH);
   if (res.status === 403) throw new PermissionError();
   if (!res.ok) {
     throw new ConfigApiError(`Could not list OAuth providers (${res.status}).`);
   }
-  return Array.isArray(res.data?.providers)
-    ? (res.data.providers as OAuthProvider[])
-    : [];
+  const parsed = ProviderListSchema.safeParse(res.data);
+  if (!parsed.success) {
+    throw new ConfigApiError(
+      "The instance returned an OAuth provider list this CLI cannot read.",
+    );
+  }
+  return parsed.data.providers as OAuthProvider[];
+}
+
+// Like a config patch, a provider change has been applied by the time this reads
+// the answer, so one it cannot read falls back to what was sent.
+function providerFrom(data: unknown): OAuthProvider | undefined {
+  const parsed = ProviderEnvelopeSchema.safeParse(data);
+  return parsed.success ? (parsed.data.provider as OAuthProvider) : undefined;
 }
 
 export async function createOAuthProvider(
   client: AuthClient,
-  provider: OAuthProvider,
-): Promise<OAuthProvider> {
-  const res = await client.request<{
-    provider?: OAuthProvider;
-    error?: string;
-    details?: unknown;
-  }>(OAUTH_PROVIDERS_PATH, {
+  provider: OAuthProviderInput,
+): Promise<OAuthProviderInput> {
+  const res = await client.request<{ error?: string; details?: unknown }>(
+    OAUTH_PROVIDERS_PATH,
+    {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(provider),
-  });
+      body: JSON.stringify(provider),
+    },
+  );
 
-  if (res.ok) return res.data?.provider ?? provider;
+  if (res.ok) return providerFrom(res.data) ?? provider;
   throw providerMutationError(res, "add", provider.id);
 }
 
 export async function updateOAuthProvider(
   client: AuthClient,
   id: string,
-  updates: OAuthProvider,
-): Promise<OAuthProvider> {
-  const res = await client.request<{
-    provider?: OAuthProvider;
-    error?: string;
-    details?: unknown;
-  }>(`${OAUTH_PROVIDERS_PATH}/${encodeURIComponent(id)}`, {
+  updates: OAuthProviderInput,
+): Promise<OAuthProviderInput> {
+  const res = await client.request<{ error?: string; details?: unknown }>(
+    `${OAUTH_PROVIDERS_PATH}/${encodeURIComponent(id)}`,
+    {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(updates),
-  });
+      body: JSON.stringify(updates),
+    },
+  );
 
-  if (res.ok) return res.data?.provider ?? updates;
+  if (res.ok) return providerFrom(res.data) ?? updates;
   throw providerMutationError(res, "update", id);
 }
 
@@ -205,18 +262,17 @@ export async function deleteOAuthProvider(
   throw providerMutationError(res, "remove", id);
 }
 
-// The writable keys the instance types as a plain string. Their values are never
-// JSON-parsed, so `config set app_name 123` sends the string "123" rather than the
-// number 123, and `config set rpid true` sends "true". Everything else is parsed as
-// JSON, falling back to the raw string, which is what makes `access_token_ttl 15m`
+// The writable keys the shared patch schema types as a plain string. Their values are
+// never JSON-parsed, so `config set app_name 123` sends the string "123" rather than
+// the number 123, and `config set rpid true` sends "true". Everything else is parsed
+// as JSON, falling back to the raw string, which is what makes `access_token_ttl 15m`
 // work: a TTL is string-typed, but the fallback would have carried it anyway.
-const STRING_KEYS = new Set<string>([
-  "app_name",
-  "access_token_ttl",
-  "session_idle_ttl",
-  "refresh_token_ttl",
-  "rpid",
-]);
+const STRING_KEYS = new Set<string>(
+  WRITABLE_KEYS.filter((key) => {
+    const field = SystemConfigPatchSchema.shape[key];
+    return field instanceof z.ZodOptional && field.unwrap() instanceof z.ZodString;
+  }),
+);
 
 export function isStringKey(key: string): boolean {
   return STRING_KEYS.has(key);
@@ -236,17 +292,26 @@ export function isWritableKey(key: string): boolean {
   return WRITABLE.has(key);
 }
 
-export function filterWritable(config: SystemConfig): {
-  patch: SystemConfig;
-  dropped: string[];
+// Whether the shared config schema has this key at all, as opposed to a key the
+// instance has but does not let a patch change.
+export function isKnownKey(key: string): boolean {
+  return KNOWN.has(key);
+}
+
+export function filterWritable(config: SystemConfigInput): {
+  patch: SystemConfigInput;
+  readOnly: string[];
+  unknown: string[];
 } {
-  const patch: SystemConfig = {};
-  const dropped: string[] = [];
+  const patch: SystemConfigInput = {};
+  const readOnly: string[] = [];
+  const unknown: string[] = [];
   for (const [key, value] of Object.entries(config)) {
     if (WRITABLE.has(key)) patch[key] = value;
-    else dropped.push(key);
+    else if (KNOWN.has(key)) readOnly.push(key);
+    else unknown.push(key);
   }
-  return { patch, dropped };
+  return { patch, readOnly, unknown };
 }
 
 export function deepEqual(a: unknown, b: unknown): boolean {
@@ -285,7 +350,7 @@ export interface ConfigChange {
 }
 
 export function diffConfig(
-  local: SystemConfig,
+  local: SystemConfigInput,
   remote: SystemConfig,
 ): ConfigChange[] {
   const changes: ConfigChange[] = [];

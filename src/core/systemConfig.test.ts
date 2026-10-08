@@ -1,3 +1,4 @@
+import { SystemConfigPatchSchema } from "@seamless-auth/types";
 import { describe, expect, it } from "vitest";
 import type { AuthClient } from "./authClient.js";
 import type { ApiResponse } from "./http.js";
@@ -11,7 +12,10 @@ import {
   getRoles,
   getSystemConfig,
   listOAuthProviders,
+  isKnownKey,
+  isStringKey,
   isWritableKey,
+  NOT_YET_WRITABLE,
   parseValue,
   patchSystemConfig,
   PermissionError,
@@ -64,6 +68,22 @@ describe("getSystemConfig", () => {
       app_name: "Acme",
       rate_limit: 100,
     });
+  });
+
+  // `config get` shows what the instance holds. A value its own version accepted
+  // must not make the read fail because this CLI's types have since tightened the
+  // rule (app_name now needs three characters), nor gain keys it does not have.
+  it("returns the config as stored, unvalidated and without defaults", async () => {
+    const stored = { app_name: "ab", addedLater: { on: true } };
+    const { client } = fakeClient(() => response(200, stored));
+    expect(await getSystemConfig(client)).toEqual(stored);
+  });
+
+  it("fails on a response that is not a config object", async () => {
+    const { client } = fakeClient(() => response(200, ["not", "an", "object"]));
+    await expect(getSystemConfig(client)).rejects.toThrow(
+      "The instance returned a system config this CLI cannot read.",
+    );
   });
 
   it("maps 403 to a PermissionError", async () => {
@@ -155,9 +175,11 @@ describe("getRoles", () => {
     expect(await getRoles(client)).toEqual(["admin", "user"]);
   });
 
-  it("returns an empty array when roles is missing", async () => {
+  it("fails on a response with no role list", async () => {
     const { client } = fakeClient(() => response(200, {}));
-    expect(await getRoles(client)).toEqual([]);
+    await expect(getRoles(client)).rejects.toThrow(
+      "The instance returned a role list this CLI cannot read.",
+    );
   });
 
   it("maps 403 to a PermissionError", async () => {
@@ -183,9 +205,19 @@ describe("listOAuthProviders", () => {
     ]);
   });
 
-  it("returns an empty array when providers is missing", async () => {
+  it("fails on a response with no provider list", async () => {
     const { client } = fakeClient(() => response(200, {}));
-    expect(await listOAuthProviders(client)).toEqual([]);
+    await expect(listOAuthProviders(client)).rejects.toThrow(
+      "The instance returned an OAuth provider list this CLI cannot read.",
+    );
+  });
+
+  // The shared schema defaults `enabled`, `scopes`, `allowSignup` and more. Parsing
+  // with it would report settings the instance never stored.
+  it("returns a provider as stored, without filling in schema defaults", async () => {
+    const stored = { id: "github", name: "GitHub", addedLater: true };
+    const { client } = fakeClient(() => response(200, { providers: [stored] }));
+    expect(await listOAuthProviders(client)).toEqual([stored]);
   });
 
   it("maps 403 to a PermissionError", async () => {
@@ -420,16 +452,49 @@ describe("isWritableKey", () => {
   });
 });
 
+// The instance's patch schema is strict, so the CLI must not send a key a released
+// API does not accept. A types bump that adds one fails here until it is placed in
+// WRITABLE_KEYS (once released) or NOT_YET_WRITABLE (until then).
+describe("WRITABLE_KEYS against the shared patch schema", () => {
+  it("places every patch key in exactly one list", () => {
+    const patchKeys = Object.keys(SystemConfigPatchSchema.shape).sort();
+    const placed = [...WRITABLE_KEYS, ...Object.keys(NOT_YET_WRITABLE)];
+    expect([...placed].sort()).toEqual(patchKeys);
+    expect(new Set(placed).size).toBe(placed.length);
+  });
+
+  it("accepts flow_rate_limits, which the API has read since v0.14.0", () => {
+    expect(isWritableKey("flow_rate_limits")).toBe(true);
+  });
+
+  it("derives the string-typed keys from the schema", () => {
+    expect(WRITABLE_KEYS.filter(isStringKey)).toEqual([
+      "app_name",
+      "access_token_ttl",
+      "session_idle_ttl",
+      "refresh_token_ttl",
+      "rpid",
+    ]);
+  });
+});
+
 describe("filterWritable", () => {
-  it("keeps writable keys and reports the rest", () => {
-    const { patch, dropped } = filterWritable({
+  it("keeps writable keys and tells read-only keys from unknown ones", () => {
+    const { patch, readOnly, unknown } = filterWritable({
       app_name: "Acme",
       rpid: "auth.example.com",
       frontend_url: "https://app.example.com",
       bogus: 1,
     });
     expect(patch).toEqual({ app_name: "Acme", rpid: "auth.example.com" });
-    expect(dropped.sort()).toEqual(["bogus", "frontend_url"]);
+    expect(readOnly).toEqual(["frontend_url"]);
+    expect(unknown).toEqual(["bogus"]);
+  });
+
+  it("knows a key from the shared config schema, writable or not", () => {
+    expect(isKnownKey("frontend_url")).toBe(true);
+    expect(isKnownKey("app_name")).toBe(true);
+    expect(isKnownKey("acess_token_ttl")).toBe(false);
   });
 });
 
