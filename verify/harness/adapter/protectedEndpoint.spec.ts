@@ -1,6 +1,7 @@
 import { request as playwrightRequest } from '@playwright/test';
 
 import { cookieSignup, currentUserId } from '../lib/conformanceFlows';
+import { cookieNamed } from '../lib/cookies';
 import { expect, test } from '../lib/fixtures';
 
 // GET /api/me is the reference app's own route behind the adapter's guard, so these
@@ -32,6 +33,31 @@ test.describe('protected app endpoint (adapter, cookies)', () => {
       storageState: { cookies: [{ ...access!, value: tampered }], origins: [] },
     });
 
+    try {
+      expect((await browser.get('/api/me')).status()).toBe(401);
+    } finally {
+      await browser.dispose();
+    }
+  });
+
+  // Every adapter cookie can be signed with the same secret, and the sign-in flow
+  // hands out the ephemeral cookie before any factor is proven. It must never pass
+  // for a session.
+  test('refuses the sign-in flow cookie presented as the session cookie', async ({
+    adapterActor,
+    adapterUrl,
+  }) => {
+    await cookieSignup(adapterActor.ctx, adapterActor.email);
+    const login = await adapterActor.ctx.post('/auth/login', {
+      data: { identifier: adapterActor.email },
+    });
+    const ephemeral = cookieNamed(login, 'seamless-ephemeral');
+    expect(ephemeral, 'login set the ephemeral cookie').toBeDefined();
+
+    const browser = await playwrightRequest.newContext({
+      baseURL: adapterUrl,
+      extraHTTPHeaders: { cookie: `seamless-access=${ephemeral!.value}` },
+    });
     try {
       expect((await browser.get('/api/me')).status()).toBe(401);
     } finally {
