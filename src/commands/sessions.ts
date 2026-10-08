@@ -1,3 +1,4 @@
+import type { Session } from "@seamless-auth/types";
 import kleur from "kleur";
 import { extractFlag } from "../core/args.js";
 import { createAuthClient, ReauthRequiredError, type AuthClient } from "../core/authClient.js";
@@ -7,7 +8,6 @@ import {
   listSessions,
   revokeAllSessions,
   revokeSessionById,
-  type SessionInfo,
 } from "../core/sessions.js";
 import {
   confirmDestructive,
@@ -129,12 +129,13 @@ async function revoke(client: AuthClient, positional: string[]): Promise<void> {
   }
 }
 
-function printSession(session: SessionInfo): void {
+function printSession(session: Session): void {
   const marker = session.current ? kleur.green("* ") : "  ";
+  // `||` rather than `??`: a blank device name or ip is as unhelpful as a missing one.
   const device =
-    session.deviceName ?? shortUserAgent(session.userAgent) ?? "unknown device";
-  const ip = session.ipAddress ?? "unknown ip";
-  const when = session.lastUsedAt ? formatWhen(session.lastUsedAt) : "unknown";
+    session.deviceName || shortUserAgent(session.userAgent) || "unknown device";
+  const ip = session.ipAddress || "unknown ip";
+  const when = formatWhen(session.lastUsedAt);
 
   console.log(marker + kleur.bold(session.id));
   console.log(`    ${device}  ${kleur.dim(ip)}`);
@@ -143,7 +144,7 @@ function printSession(session: SessionInfo): void {
   );
 }
 
-function shortUserAgent(userAgent?: string): string | undefined {
+function shortUserAgent(userAgent?: string | null): string | undefined {
   if (!userAgent) return undefined;
   return userAgent.length > 48 ? `${userAgent.slice(0, 45)}...` : userAgent;
 }
