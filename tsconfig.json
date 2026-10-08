@@ -13,5 +13,5 @@
     "sourceMap": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "templates", "src/**/*.test.ts"]
+  "exclude": ["node_modules", "templates", "src/**/*.test.ts", "src/**/*.fixtures.ts"]
 }

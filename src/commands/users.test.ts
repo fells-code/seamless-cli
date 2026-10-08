@@ -7,6 +7,11 @@ import {
   listUsers,
   prepareDeviceReplacement,
 } from "../core/admin.js";
+import {
+  apiCredential,
+  apiUser,
+  apiUserDetail,
+} from "../core/admin.fixtures.js";
 import { runUsers } from "./users.js";
 
 vi.mock("@clack/prompts", () => ({
@@ -115,7 +120,7 @@ describe("runUsers — top-level routing", () => {
 
 describe("runUsers list", () => {
   it("asks the server for the default page", async () => {
-    vi.mocked(listUsers).mockResolvedValue({ users: [{ id: "u1" }], total: 1 });
+    vi.mocked(listUsers).mockResolvedValue({ users: [apiUser({ id: "u1" })], total: 1 });
     await runUsers(["list"]);
     expect(vi.mocked(listUsers)).toHaveBeenCalledWith(fakeClient, {
       limit: 50,
@@ -124,13 +129,13 @@ describe("runUsers list", () => {
   });
 
   it("prints the requested page as JSON, honouring the pagination flags", async () => {
-    vi.mocked(listUsers).mockResolvedValue({ users: [{ id: "u2" }], total: 2 });
+    vi.mocked(listUsers).mockResolvedValue({ users: [apiUser({ id: "u2" })], total: 2 });
     await runUsers(["list", "--json", "--limit", "1", "--offset", "1"]);
     expect(vi.mocked(listUsers)).toHaveBeenCalledWith(fakeClient, {
       limit: 1,
       offset: 1,
     });
-    expect(logs()).toContain(JSON.stringify([{ id: "u2" }], null, 2));
+    expect(logs()).toContain(JSON.stringify([apiUser({ id: "u2" })], null, 2));
   });
 
   it("prints an empty message when the page is empty", async () => {
@@ -142,8 +147,8 @@ describe("runUsers list", () => {
   it("prints user rows, roles, and revoked state, with a plural summary", async () => {
     vi.mocked(listUsers).mockResolvedValue({
       users: [
-        { id: "u1", email: "a@example.com", roles: ["admin"], revoked: true },
-        { id: "u2", email: "b@example.com" },
+        apiUser({ email: "a@example.com", roles: ["admin"], revoked: true }),
+        apiUser({ id: "u2", email: "b@example.com" }),
       ],
       total: 2,
     });
@@ -155,16 +160,8 @@ describe("runUsers list", () => {
     expect(logs()).toContain("Showing 1-2 of 2 users.");
   });
 
-  it("falls back to '(no id)'/'(no email)' for missing fields", async () => {
-    vi.mocked(listUsers).mockResolvedValue({ users: [{}], total: 1 });
-    await runUsers(["list"]);
-    expect(logs()).toContain("(no id)");
-    expect(logs()).toContain("(no email)");
-    expect(logs()).toContain("Showing 1-1 of 1 user.");
-  });
-
   it("sends --limit and --offset to the server and reports the page position", async () => {
-    vi.mocked(listUsers).mockResolvedValue({ users: [{ id: "u2" }], total: 3 });
+    vi.mocked(listUsers).mockResolvedValue({ users: [apiUser({ id: "u2" })], total: 3 });
     await runUsers(["list", "--limit", "1", "--offset", "1"]);
     expect(vi.mocked(listUsers)).toHaveBeenCalledWith(fakeClient, {
       limit: 1,
@@ -206,7 +203,7 @@ describe("runUsers list", () => {
   );
 
   it("still accepts an offset of zero", async () => {
-    vi.mocked(listUsers).mockResolvedValue({ users: [{ id: "u1" }], total: 1 });
+    vi.mocked(listUsers).mockResolvedValue({ users: [apiUser({ id: "u1" })], total: 1 });
     await runUsers(["list", "--offset", "0"]);
     expect(vi.mocked(listUsers)).toHaveBeenCalledWith(fakeClient, {
       limit: 50,
@@ -215,7 +212,7 @@ describe("runUsers list", () => {
   });
 
   it("accepts the largest window the API allows", async () => {
-    vi.mocked(listUsers).mockResolvedValue({ users: [{ id: "u1" }], total: 1 });
+    vi.mocked(listUsers).mockResolvedValue({ users: [apiUser({ id: "u1" })], total: 1 });
     await runUsers(["list", "--limit", "100"]);
     expect(vi.mocked(listUsers)).toHaveBeenCalledWith(fakeClient, {
       limit: 100,
@@ -267,50 +264,52 @@ describe("runUsers credentials", () => {
   });
 
   it("prints JSON when --json is passed", async () => {
-    vi.mocked(getUserDetail).mockResolvedValue({
-      user: null,
-      sessions: [],
-      events: [],
-      credentials: [{ id: "c1" }],
-    });
+    const credential = apiCredential({ id: "c1" });
+    vi.mocked(getUserDetail).mockResolvedValue(apiUserDetail([credential]));
     await runUsers(["credentials", "u1", "--json"]);
     expect(vi.mocked(getUserDetail)).toHaveBeenCalledWith(fakeClient, "u1");
-    expect(logs()).toContain(JSON.stringify([{ id: "c1" }], null, 2));
+    expect(logs()).toContain(JSON.stringify([credential], null, 2));
   });
 
-  it("prints a singular header and full field fallback chain for one credential", async () => {
-    vi.mocked(getUserDetail).mockResolvedValue({
-      user: null,
-      sessions: [],
-      events: [],
-      credentials: [
-        { deviceName: "iPhone", id: "c1", createdAt: "2024-01-01" },
-      ],
-    });
+  it("prints a singular header and the passkey's own name", async () => {
+    vi.mocked(getUserDetail).mockResolvedValue(
+      apiUserDetail([
+        apiCredential({
+          id: "c1",
+          friendlyName: "Work laptop",
+          deviceInfo: "MacBook Pro",
+          createdAt: "2024-01-01T00:00:00.000Z",
+        }),
+      ]),
+    );
     await runUsers(["credentials", "u1"]);
     expect(logs()).toContain("1 credential for user u1");
-    expect(logs()).toContain("iPhone");
+    expect(logs()).toContain("Work laptop");
+    expect(logs()).not.toContain("MacBook Pro");
     expect(logs()).toContain("c1");
-    expect(logs()).toContain("added 2024-01-01");
+    expect(logs()).toContain("added 2024-01-01T00:00:00.000Z");
   });
 
-  it("prints a plural header and falls back through name/type/credentialId when deviceName is absent", async () => {
-    vi.mocked(getUserDetail).mockResolvedValue({
-      user: null,
-      sessions: [],
-      events: [],
-      credentials: [
-        { name: "Named", credentialId: "cred-2" },
-        { type: "passkey" },
-        {},
-      ],
-    });
+  // The API records friendlyName, deviceInfo, platform and browser. The command
+  // used to look for deviceName, name and type, which it never sends, so every
+  // passkey printed as "credential".
+  it("falls back from the passkey's name to what the API recorded about the device", async () => {
+    vi.mocked(getUserDetail).mockResolvedValue(
+      apiUserDetail([
+        apiCredential({ id: "c1", friendlyName: "", deviceInfo: "Pixel 9" }),
+        apiCredential({ id: "c2", platform: "macOS", browser: "Safari" }),
+        apiCredential({ id: "c3", platform: "Windows", browser: null }),
+        apiCredential({ id: "c4" }),
+      ]),
+    );
     await runUsers(["credentials", "u1"]);
-    expect(logs()).toContain("3 credentials for user u1");
-    expect(logs()).toContain("Named");
-    expect(logs()).toContain("cred-2");
-    expect(logs()).toContain("passkey");
-    expect(logs()).toContain("credential");
+    const lines = logs().split("\n");
+    expect(lines[0]).toContain("4 credentials for user u1");
+    expect(lines[1]).toContain("Pixel 9");
+    expect(lines[2]).toContain("macOS Safari");
+    expect(lines[3]).toContain("Windows");
+    expect(lines[4]).toContain("passkey");
+    expect(lines[4]).toContain("c4");
   });
 });
 
@@ -340,6 +339,7 @@ describe("runUsers prepare-device-replacement", () => {
 
   it("confirms with the default action list and reports stats on success", async () => {
     vi.mocked(prepareDeviceReplacement).mockResolvedValue({
+      userId: "u1",
       revokedSessions: 2,
       removedCredentials: 1,
       disabledTotpCredentials: 1,
@@ -359,8 +359,13 @@ describe("runUsers prepare-device-replacement", () => {
     expect(logs()).toContain("Revoked sessions: 2, removed credentials: 1, disabled TOTP: 1");
   });
 
-  it("honors --keep-* flags and falls back stats to 0 when fields are missing", async () => {
-    vi.mocked(prepareDeviceReplacement).mockResolvedValue({});
+  it("honors --keep-* flags", async () => {
+    vi.mocked(prepareDeviceReplacement).mockResolvedValue({
+      userId: "u1",
+      revokedSessions: 0,
+      removedCredentials: 0,
+      disabledTotpCredentials: 0,
+    });
     await runUsers([
       "prepare-device-replacement",
       "u1",

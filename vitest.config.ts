@@ -9,7 +9,12 @@ export default defineConfig({
       reporter: ["text", "html", "json-summary"],
       reportsDirectory: "./coverage",
       include: ["src/**/*.ts"],
-      exclude: ["src/**/*.d.ts", "src/**/*.test.ts", "src/testSetup.ts"],
+      exclude: [
+        "src/**/*.d.ts",
+        "src/**/*.test.ts",
+        "src/**/*.fixtures.ts",
+        "src/testSetup.ts",
+      ],
       // Regression floor, set just below the current numbers (lines ~99.2%,
       // statements ~98.5%, functions ~98.7%, branches ~95.1%). Vitest 5's v8
       // provider counts statements and functions per AST node rather than per

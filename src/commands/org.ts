@@ -1,3 +1,9 @@
+import type {
+  AddOrganizationMemberRequest,
+  CreateOrganizationRequest,
+  UpdateOrganizationMemberRequest,
+  UpdateOrganizationRequest,
+} from "@seamless-auth/types";
 import kleur from "kleur";
 import { extractFlag } from "../core/args.js";
 import { createAuthClient, type AuthClient } from "../core/authClient.js";
@@ -10,7 +16,8 @@ import {
   removeMember,
   updateMember,
   updateOrg,
-  type Json,
+  type AdminMembership,
+  type AdminOrganization,
 } from "../core/admin.js";
 import {
   pagePosition,
@@ -124,11 +131,11 @@ async function orgCreate(client: AuthClient, rest: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const body: Json = { name };
+  const body: CreateOrganizationRequest = { name };
   if (slugFlag.value) body.slug = slugFlag.value;
 
   const org = await createOrg(client, body);
-  console.log(kleur.green(`Created organization ${str(org, "id") ?? ""}.`));
+  console.log(kleur.green(`Created organization ${org.id}.`));
   printOrg(org);
 }
 
@@ -158,7 +165,7 @@ async function orgUpdate(client: AuthClient, rest: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const body: Json = {};
+  const body: UpdateOrganizationRequest = {};
   if (nameFlag.value) body.name = nameFlag.value;
   if (slugFlag.value) body.slug = slugFlag.value;
   if (Object.keys(body).length === 0) {
@@ -210,7 +217,7 @@ async function membersAdd(client: AuthClient, rest: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const body: Json = {};
+  const body: AddOrganizationMemberRequest = {};
   if (userFlag.value) body.userId = userFlag.value;
   if (emailFlag.value) body.email = emailFlag.value;
   const roles = parseList(rolesFlag.value);
@@ -238,7 +245,7 @@ async function membersUpdate(client: AuthClient, rest: string[]): Promise<void> 
     process.exit(1);
   }
 
-  const body: Json = {};
+  const body: UpdateOrganizationMemberRequest = {};
   const roles = parseList(rolesFlag.value);
   const scopes = parseList(scopesFlag.value);
   if (roles) body.roles = roles;
@@ -277,39 +284,26 @@ async function membersRemove(client: AuthClient, rest: string[]): Promise<void> 
   console.log(kleur.green(`Removed user ${userId} from ${orgId}.`));
 }
 
-function printOrgRow(org: Json): void {
-  const id = str(org, "id") ?? "(no id)";
-  const name = str(org, "name") ?? "(no name)";
-  const slug = str(org, "slug");
+function printOrgRow(org: AdminOrganization): void {
   console.log(
-    kleur.bold(name) + kleur.dim(`  ${id}`) + (slug ? kleur.dim(`  (${slug})`) : ""),
+    kleur.bold(org.name) +
+      kleur.dim(`  ${org.id}`) +
+      (org.slug ? kleur.dim(`  (${org.slug})`) : ""),
   );
 }
 
-function printOrg(org: Json): void {
+function printOrg(org: AdminOrganization): void {
   const line = (label: string, value: string) =>
     console.log(kleur.dim(`${label}:`.padEnd(8)) + value);
-  line("Id", str(org, "id") ?? "(unknown)");
-  line("Name", str(org, "name") ?? "(unknown)");
-  line("Slug", str(org, "slug") ?? "(none)");
+  line("Id", org.id);
+  line("Name", org.name);
+  line("Slug", org.slug || "(none)");
 }
 
-function printMemberRow(member: Json): void {
-  const userId = str(member, "userId") ?? "(no user)";
-  const roles = Array.isArray(member.roles)
-    ? (member.roles as unknown[]).filter((r): r is string => typeof r === "string")
-    : [];
-  const scopes = Array.isArray(member.scopes)
-    ? (member.scopes as unknown[]).filter((s): s is string => typeof s === "string")
-    : [];
+function printMemberRow(member: AdminMembership): void {
   console.log(
-    kleur.bold(userId) +
-      (roles.length ? kleur.dim(`  roles: ${roles.join(", ")}`) : "") +
-      (scopes.length ? kleur.dim(`  scopes: ${scopes.join(", ")}`) : ""),
+    kleur.bold(member.userId) +
+      (member.roles.length ? kleur.dim(`  roles: ${member.roles.join(", ")}`) : "") +
+      (member.scopes.length ? kleur.dim(`  scopes: ${member.scopes.join(", ")}`) : ""),
   );
-}
-
-function str(record: Json, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" && value ? value : undefined;
 }

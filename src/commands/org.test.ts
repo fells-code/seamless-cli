@@ -11,6 +11,7 @@ import {
   updateMember,
   updateOrg,
 } from "../core/admin.js";
+import { apiMembership, apiOrg } from "../core/admin.fixtures.js";
 import { runOrg } from "./org.js";
 
 vi.mock("@clack/prompts", () => ({
@@ -124,7 +125,7 @@ describe("runOrg — top-level routing", () => {
 describe("runOrg list", () => {
   it("prints JSON when --json is passed", async () => {
     vi.mocked(listOrgs).mockResolvedValue({
-      organizations: [{ id: "o1", name: "Acme" }],
+      organizations: [apiOrg()],
       total: 1,
     });
     await runOrg(["list", "--json"]);
@@ -132,7 +133,7 @@ describe("runOrg list", () => {
       limit: 50,
       offset: 0,
     });
-    expect(logs()).toContain(JSON.stringify([{ id: "o1", name: "Acme" }], null, 2));
+    expect(logs()).toContain(JSON.stringify([apiOrg()], null, 2));
   });
 
   it("prints an empty message when there are no organizations", async () => {
@@ -143,7 +144,7 @@ describe("runOrg list", () => {
 
   it("prints each org row and a singular summary for one organization", async () => {
     vi.mocked(listOrgs).mockResolvedValue({
-      organizations: [{ id: "o1", name: "Acme", slug: "acme" }],
+      organizations: [apiOrg()],
       total: 1,
     });
     await runOrg(["list"]);
@@ -153,14 +154,14 @@ describe("runOrg list", () => {
     expect(logs()).toContain("1 organization.");
   });
 
-  it("prints a plural summary and handles missing fields for multiple organizations", async () => {
+  it("prints a plural summary for multiple organizations", async () => {
     vi.mocked(listOrgs).mockResolvedValue({
-      organizations: [{}, { id: "o2", name: "Beta" }],
+      organizations: [apiOrg(), apiOrg({ id: "o2", name: "Beta", slug: "" })],
       total: 2,
     });
     await runOrg(["list"]);
-    expect(logs()).toContain("(no id)");
-    expect(logs()).toContain("(no name)");
+    expect(logs()).toContain("Beta  o2");
+    expect(logs()).not.toContain("()");
     expect(logs()).toContain("2 organizations.");
   });
 
@@ -168,7 +169,7 @@ describe("runOrg list", () => {
   // count alone claimed rows that were never shown.
   it("reports where the page sits in the result set", async () => {
     vi.mocked(listOrgs).mockResolvedValue({
-      organizations: [{ id: "o1", name: "Acme" }],
+      organizations: [apiOrg()],
       total: 140,
     });
     await runOrg(["list", "--limit", "1", "--offset", "50"]);
@@ -181,7 +182,7 @@ describe("runOrg list", () => {
 
   it("sends a search term when one is given", async () => {
     vi.mocked(listOrgs).mockResolvedValue({
-      organizations: [{ id: "o1", name: "Acme" }],
+      organizations: [apiOrg()],
       total: 1,
     });
     await runOrg(["list", "--search", "acme"]);
@@ -207,7 +208,7 @@ describe("runOrg create", () => {
   });
 
   it("creates an org from a positional name and --slug flag", async () => {
-    vi.mocked(createOrg).mockResolvedValue({ id: "o1", name: "Acme", slug: "acme" });
+    vi.mocked(createOrg).mockResolvedValue(apiOrg());
     await runOrg(["create", "Acme", "--slug", "acme"]);
     expect(vi.mocked(createOrg)).toHaveBeenCalledWith(fakeClient, {
       name: "Acme",
@@ -218,15 +219,14 @@ describe("runOrg create", () => {
   });
 
   it("creates an org from a --name flag without a slug", async () => {
-    vi.mocked(createOrg).mockResolvedValue({ id: "o2", name: "Beta" });
+    vi.mocked(createOrg).mockResolvedValue(apiOrg({ id: "o2", name: "Beta" }));
     await runOrg(["create", "--name", "Beta"]);
     expect(vi.mocked(createOrg)).toHaveBeenCalledWith(fakeClient, { name: "Beta" });
   });
 
-  it("prints '(unknown)' fallbacks when the created org lacks fields", async () => {
-    vi.mocked(createOrg).mockResolvedValue({});
+  it("prints '(none)' for a blank slug", async () => {
+    vi.mocked(createOrg).mockResolvedValue(apiOrg({ slug: "" }));
     await runOrg(["create", "Acme"]);
-    expect(logs()).toContain("(unknown)");
     expect(logs()).toContain("(none)");
   });
 });
@@ -240,14 +240,14 @@ describe("runOrg get", () => {
   });
 
   it("prints JSON when --json is passed", async () => {
-    vi.mocked(getOrg).mockResolvedValue({ id: "o1", name: "Acme" });
+    vi.mocked(getOrg).mockResolvedValue(apiOrg());
     await runOrg(["get", "o1", "--json"]);
     expect(vi.mocked(getOrg)).toHaveBeenCalledWith(fakeClient, "o1");
-    expect(logs()).toContain(JSON.stringify({ id: "o1", name: "Acme" }, null, 2));
+    expect(logs()).toContain(JSON.stringify(apiOrg(), null, 2));
   });
 
   it("prints the org details by default", async () => {
-    vi.mocked(getOrg).mockResolvedValue({ id: "o1", name: "Acme", slug: "acme" });
+    vi.mocked(getOrg).mockResolvedValue(apiOrg());
     await runOrg(["get", "o1"]);
     expect(logs()).toContain("Acme");
     expect(logs()).toContain("acme");
@@ -269,7 +269,7 @@ describe("runOrg update", () => {
   });
 
   it("updates the org name and slug", async () => {
-    vi.mocked(updateOrg).mockResolvedValue({ id: "o1", name: "New", slug: "new" });
+    vi.mocked(updateOrg).mockResolvedValue(apiOrg({ id: "o1", name: "New", slug: "new" }));
     await runOrg(["update", "o1", "--name", "New", "--slug", "new"]);
     expect(vi.mocked(updateOrg)).toHaveBeenCalledWith(fakeClient, "o1", {
       name: "New",
@@ -317,10 +317,10 @@ describe("runOrg members list", () => {
   });
 
   it("prints JSON when --json is passed", async () => {
-    vi.mocked(listMembers).mockResolvedValue({ members: [{ userId: "u1" }], total: 1 });
+    vi.mocked(listMembers).mockResolvedValue({ members: [apiMembership()], total: 1 });
     await runOrg(["members", "list", "o1", "--json"]);
     expect(vi.mocked(listMembers)).toHaveBeenCalledWith(fakeClient, "o1");
-    expect(logs()).toContain(JSON.stringify([{ userId: "u1" }], null, 2));
+    expect(logs()).toContain(JSON.stringify([apiMembership()], null, 2));
   });
 
   it("prints an empty message when there are no members", async () => {
@@ -332,8 +332,8 @@ describe("runOrg members list", () => {
   it("prints member rows with roles and scopes and a plural summary", async () => {
     vi.mocked(listMembers).mockResolvedValue({
       members: [
-        { userId: "u1", roles: ["admin"], scopes: ["read", "write"] },
-        {},
+        apiMembership({ roles: ["admin"], scopes: ["read", "write"] }),
+        apiMembership({ id: "m2", userId: "u2" }),
       ],
       total: 2,
     });
@@ -341,12 +341,12 @@ describe("runOrg members list", () => {
     expect(logs()).toContain("u1");
     expect(logs()).toContain("roles: admin");
     expect(logs()).toContain("scopes: read, write");
-    expect(logs()).toContain("(no user)");
+    expect(logs()).toMatch(/^u2$/m);
     expect(logs()).toContain("2 members.");
   });
 
   it("prints a singular summary for one member", async () => {
-    vi.mocked(listMembers).mockResolvedValue({ members: [{ userId: "u1" }], total: 1 });
+    vi.mocked(listMembers).mockResolvedValue({ members: [apiMembership()], total: 1 });
     await runOrg(["members", "list", "o1"]);
     expect(logs()).toContain("1 member.");
   });
@@ -366,7 +366,7 @@ describe("runOrg members add", () => {
   });
 
   it("adds a member by --user with roles and scopes", async () => {
-    vi.mocked(addMember).mockResolvedValue({ userId: "u1", roles: ["admin"] });
+    vi.mocked(addMember).mockResolvedValue(apiMembership({ roles: ["admin"] }));
     await runOrg([
       "members",
       "add",
@@ -387,7 +387,7 @@ describe("runOrg members add", () => {
   });
 
   it("adds a member by --email without roles or scopes", async () => {
-    vi.mocked(addMember).mockResolvedValue({ userId: "u2" });
+    vi.mocked(addMember).mockResolvedValue(apiMembership({ userId: "u2" }));
     await runOrg(["members", "add", "o1", "--email", "x@example.com"]);
     expect(vi.mocked(addMember)).toHaveBeenCalledWith(fakeClient, "o1", {
       email: "x@example.com",
@@ -411,7 +411,7 @@ describe("runOrg members update", () => {
   });
 
   it("updates a member's roles and scopes", async () => {
-    vi.mocked(updateMember).mockResolvedValue({ userId: "u1", roles: ["owner"] });
+    vi.mocked(updateMember).mockResolvedValue(apiMembership({ roles: ["owner"] }));
     await runOrg(["members", "update", "o1", "u1", "--roles", "owner", "--scopes", "admin"]);
     expect(vi.mocked(updateMember)).toHaveBeenCalledWith(fakeClient, "o1", "u1", {
       roles: ["owner"],

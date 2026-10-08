@@ -6,7 +6,8 @@ import {
   getUserDetail,
   listUsers,
   prepareDeviceReplacement,
-  type Json,
+  type AdminCredential,
+  type AdminUser,
 } from "../core/admin.js";
 import {
   pagePosition,
@@ -116,18 +117,11 @@ async function usersCredentials(
     } for user ${id}`,
   );
   for (const credential of credentials) {
-    const name =
-      str(credential, "deviceName") ??
-      str(credential, "name") ??
-      str(credential, "type") ??
-      "credential";
-    const id = str(credential, "id") ?? str(credential, "credentialId") ?? "";
-    const created = str(credential, "createdAt");
     console.log(
       "  " +
-        kleur.bold(name) +
-        (id ? kleur.dim(`  ${id}`) : "") +
-        (created ? kleur.dim(`  added ${created}`) : ""),
+        kleur.bold(credentialName(credential)) +
+        kleur.dim(`  ${credential.id}`) +
+        kleur.dim(`  added ${credential.createdAt}`),
     );
   }
 }
@@ -170,35 +164,26 @@ async function usersPrepareDeviceReplacement(
   console.log(kleur.green(`Prepared device replacement for ${id}.`));
   console.log(
     kleur.dim(
-      `Revoked sessions: ${num(result, "revokedSessions")}, removed credentials: ${num(
-        result,
-        "removedCredentials",
-      )}, disabled TOTP: ${num(result, "disabledTotpCredentials")}`,
+      `Revoked sessions: ${result.revokedSessions}, ` +
+        `removed credentials: ${result.removedCredentials}, ` +
+        `disabled TOTP: ${result.disabledTotpCredentials}`,
     ),
   );
 }
 
-function printUserRow(user: Json): void {
-  const id = str(user, "id") ?? "(no id)";
-  const email = str(user, "email") ?? "(no email)";
-  const roles = Array.isArray(user.roles)
-    ? (user.roles as unknown[]).filter((r): r is string => typeof r === "string")
-    : [];
-  const revoked = user.revoked === true ? kleur.red("  revoked") : "";
+function printUserRow(user: AdminUser): void {
+  const revoked = user.revoked ? kleur.red("  revoked") : "";
   console.log(
-    kleur.bold(email) +
-      kleur.dim(`  ${id}`) +
-      (roles.length ? kleur.dim(`  [${roles.join(", ")}]`) : "") +
+    kleur.bold(user.email) +
+      kleur.dim(`  ${user.id}`) +
+      (user.roles.length ? kleur.dim(`  [${user.roles.join(", ")}]`) : "") +
       revoked,
   );
 }
 
-function str(record: Json, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" && value ? value : undefined;
-}
-
-function num(record: Json, key: string): number {
-  const value = record[key];
-  return typeof value === "number" ? value : 0;
+// The name the user gave the passkey, then what the API recorded about the device.
+// `||` rather than `??`, since a blank name is no more use than a missing one.
+function credentialName(credential: AdminCredential): string {
+  const device = [credential.platform, credential.browser].filter(Boolean).join(" ");
+  return credential.friendlyName || credential.deviceInfo || device || "passkey";
 }
