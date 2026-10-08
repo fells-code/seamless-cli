@@ -1,3 +1,22 @@
+import {
+  AdminOrganizationListResponseSchema,
+  AdminUserDetailResponseSchema,
+  ApiUserSchema,
+  AuthEventSchema,
+  CredentialResponseSchema,
+  DeviceReplacementRecoveryResponseSchema,
+  OrganizationMembersResponseSchema,
+  OrganizationMembershipSchema,
+  OrganizationSchema,
+  SessionSchema,
+  UsersListResponseSchema,
+  type AddOrganizationMemberRequest,
+  type CreateOrganizationRequest,
+  type DeviceReplacementRecoveryResponse,
+  type UpdateOrganizationMemberRequest,
+  type UpdateOrganizationRequest,
+} from "@seamless-auth/types";
+import { z } from "zod";
 import type { AuthClient } from "./authClient.js";
 import type { ApiResponse } from "./http.js";
 import { PermissionError } from "./systemConfig.js";
@@ -11,10 +30,54 @@ export class AdminApiError extends Error {
   }
 }
 
-export type Json = Record<string, unknown>;
+// Responses are parsed with the shared schemas, loosened so a key the schema does
+// not know is kept rather than stripped or, for the strict user schema, rejected.
+// An instance newer than this CLI's types then still lists, and `--json` prints
+// everything the instance sent.
+const UserSchema = ApiUserSchema.loose();
 
-function arr(value: unknown): Json[] {
-  return Array.isArray(value) ? (value as Json[]) : [];
+const MembershipSchema = OrganizationMembershipSchema.extend({
+  user: OrganizationMembershipSchema.shape.user.unwrap().loose().optional(),
+}).loose();
+
+const OrgSchema = OrganizationSchema.extend({
+  membership: MembershipSchema.optional(),
+}).loose();
+
+const UserListSchema = UsersListResponseSchema.extend({
+  users: z.array(UserSchema),
+});
+
+const UserDetailSchema = AdminUserDetailResponseSchema.extend({
+  user: UserSchema,
+  sessions: z.array(SessionSchema.loose()),
+  credentials: z.array(CredentialResponseSchema.loose()),
+  events: z.array(AuthEventSchema.loose()),
+});
+
+const OrgListSchema = AdminOrganizationListResponseSchema.extend({
+  organizations: z.array(OrgSchema),
+});
+
+const MemberListSchema = OrganizationMembersResponseSchema.extend({
+  members: z.array(MembershipSchema),
+});
+
+export type AdminUser = z.infer<typeof UserSchema>;
+export type AdminCredential = z.infer<typeof CredentialResponseSchema>;
+export type AdminOrganization = z.infer<typeof OrgSchema>;
+export type AdminMembership = z.infer<typeof MembershipSchema>;
+
+function parse<T>(schema: z.ZodType<T>, data: unknown, what: string): T {
+  const parsed = schema.safeParse(data);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const where = issue.path.join(".") || "response";
+    throw new AdminApiError(
+      `The instance returned ${what} this CLI cannot read (${where}: ${issue.message}).`,
+    );
+  }
+  return parsed.data;
 }
 
 async function call<T>(
@@ -40,10 +103,7 @@ async function call<T>(
 
 // Users
 
-export interface UserList {
-  users: Json[];
-  total: number;
-}
+export type UserList = z.infer<typeof UserListSchema>;
 
 export interface ListUsersOptions {
   limit?: number;
@@ -59,14 +119,10 @@ export async function listUsers(
   if (opts.offset !== undefined) query.set("offset", String(opts.offset));
   const suffix = query.size ? `?${query}` : "";
 
-  const res = await call<{ users?: unknown; total?: number }>(
-    client,
-    "GET",
-    `/admin/users${suffix}`,
-  );
+  const res = await call<unknown>(client, "GET", `/admin/users${suffix}`);
   if (!res.ok) throw new AdminApiError(`Could not list users (${res.status}).`);
   // `total` counts every user, not just this page, so callers can report position.
-  return { users: arr(res.data?.users), total: res.data?.total ?? 0 };
+  return parse(UserListSchema, res.data, "a user list");
 }
 
 export async function deleteUser(client: AuthClient, id: string): Promise<void> {
@@ -75,31 +131,20 @@ export async function deleteUser(client: AuthClient, id: string): Promise<void> 
   if (!res.ok) throw new AdminApiError(`Could not delete user (${res.status}).`);
 }
 
-export interface UserDetail {
-  user: Json | null;
-  sessions: Json[];
-  credentials: Json[];
-  events: Json[];
-}
+export type UserDetail = z.infer<typeof UserDetailSchema>;
 
 export async function getUserDetail(
   client: AuthClient,
   id: string,
 ): Promise<UserDetail> {
-  const res = await call<Json>(
+  const res = await call<unknown>(
     client,
     "GET",
     `/admin/users/${encodeURIComponent(id)}`,
   );
   if (res.status === 404) throw new AdminApiError(`No user found with id ${id}.`);
   if (!res.ok) throw new AdminApiError(`Could not load user (${res.status}).`);
-  const data = res.data ?? {};
-  return {
-    user: (data.user as Json) ?? null,
-    sessions: arr(data.sessions),
-    credentials: arr(data.credentials),
-    events: arr(data.events),
-  };
+  return parse(UserDetailSchema, res.data, "a user");
 }
 
 export interface DeviceReplacementOptions {
@@ -112,8 +157,8 @@ export async function prepareDeviceReplacement(
   client: AuthClient,
   id: string,
   opts: DeviceReplacementOptions,
-): Promise<Json> {
-  const res = await client.request<Json>(
+): Promise<DeviceReplacementRecoveryResponse> {
+  const res = await client.request<unknown>(
     `/admin/users/${encodeURIComponent(id)}/recovery/device-replacement`,
     {
       method: "POST",
@@ -132,15 +177,16 @@ export async function prepareDeviceReplacement(
       `Could not prepare device replacement (${res.status}).`,
     );
   }
-  return res.data ?? {};
+  return parse(
+    DeviceReplacementRecoveryResponseSchema,
+    res.data,
+    "a device replacement result",
+  );
 }
 
 // Organizations
 
-export interface OrgList {
-  organizations: Json[];
-  total: number;
-}
+export type OrgList = z.infer<typeof OrgListSchema>;
 
 export interface ListOrgsOptions {
   limit?: number;
@@ -158,31 +204,26 @@ export async function listOrgs(
   if (opts.search) query.set("search", opts.search);
   const suffix = query.size ? `?${query}` : "";
 
-  const res = await call<{ organizations?: unknown; total?: number }>(
-    client,
-    "GET",
-    `/admin/organizations${suffix}`,
-  );
+  const res = await call<unknown>(client, "GET", `/admin/organizations${suffix}`);
   if (!res.ok) throw new AdminApiError(`Could not list organizations (${res.status}).`);
   // `total` counts every match, not just this page, so callers can report position.
-  return {
-    organizations: arr(res.data?.organizations),
-    total: res.data?.total ?? 0,
-  };
+  return parse(OrgListSchema, res.data, "an organization list");
 }
 
-function orgEnvelope(res: ApiResponse<{ organization?: Json }>): Json {
-  if (!res.ok || !res.data?.organization) {
-    throw new AdminApiError(`Request failed (${res.status}).`);
-  }
-  return res.data.organization;
+function orgEnvelope(res: ApiResponse<unknown>): AdminOrganization {
+  if (!res.ok) throw new AdminApiError(`Request failed (${res.status}).`);
+  return parse(
+    z.object({ organization: OrgSchema }),
+    res.data,
+    "an organization",
+  ).organization;
 }
 
 export async function createOrg(
   client: AuthClient,
-  body: Json,
-): Promise<Json> {
-  const res = await call<{ organization?: Json }>(
+  body: CreateOrganizationRequest,
+): Promise<AdminOrganization> {
+  const res = await call<unknown>(
     client,
     "POST",
     "/admin/organizations",
@@ -191,8 +232,11 @@ export async function createOrg(
   return orgEnvelope(res);
 }
 
-export async function getOrg(client: AuthClient, id: string): Promise<Json> {
-  const res = await call<{ organization?: Json }>(
+export async function getOrg(
+  client: AuthClient,
+  id: string,
+): Promise<AdminOrganization> {
+  const res = await call<unknown>(
     client,
     "GET",
     `/admin/organizations/${encodeURIComponent(id)}`,
@@ -206,9 +250,9 @@ export async function getOrg(client: AuthClient, id: string): Promise<Json> {
 export async function updateOrg(
   client: AuthClient,
   id: string,
-  body: Json,
-): Promise<Json> {
-  const res = await call<{ organization?: Json }>(
+  body: UpdateOrganizationRequest,
+): Promise<AdminOrganization> {
+  const res = await call<unknown>(
     client,
     "PATCH",
     `/admin/organizations/${encodeURIComponent(id)}`,
@@ -220,16 +264,13 @@ export async function updateOrg(
   return orgEnvelope(res);
 }
 
-export interface MemberList {
-  members: Json[];
-  total: number;
-}
+export type MemberList = z.infer<typeof MemberListSchema>;
 
 export async function listMembers(
   client: AuthClient,
   orgId: string,
 ): Promise<MemberList> {
-  const res = await call<{ members?: unknown; total?: number }>(
+  const res = await call<unknown>(
     client,
     "GET",
     `/admin/organizations/${encodeURIComponent(orgId)}/members`,
@@ -238,22 +279,24 @@ export async function listMembers(
     throw new AdminApiError(`No organization found with id ${orgId}.`);
   }
   if (!res.ok) throw new AdminApiError(`Could not list members (${res.status}).`);
-  return { members: arr(res.data?.members), total: res.data?.total ?? 0 };
+  return parse(MemberListSchema, res.data, "a member list");
 }
 
-function membershipEnvelope(res: ApiResponse<{ membership?: Json }>): Json {
-  if (!res.ok || !res.data?.membership) {
-    throw new AdminApiError(`Request failed (${res.status}).`);
-  }
-  return res.data.membership;
+function membershipEnvelope(res: ApiResponse<unknown>): AdminMembership {
+  if (!res.ok) throw new AdminApiError(`Request failed (${res.status}).`);
+  return parse(
+    z.object({ membership: MembershipSchema }),
+    res.data,
+    "a membership",
+  ).membership;
 }
 
 export async function addMember(
   client: AuthClient,
   orgId: string,
-  body: Json,
-): Promise<Json> {
-  const res = await call<{ membership?: Json }>(
+  body: AddOrganizationMemberRequest,
+): Promise<AdminMembership> {
+  const res = await call<unknown>(
     client,
     "POST",
     `/admin/organizations/${encodeURIComponent(orgId)}/members`,
@@ -269,9 +312,9 @@ export async function updateMember(
   client: AuthClient,
   orgId: string,
   userId: string,
-  body: Json,
-): Promise<Json> {
-  const res = await call<{ membership?: Json }>(
+  body: UpdateOrganizationMemberRequest,
+): Promise<AdminMembership> {
+  const res = await call<unknown>(
     client,
     "PATCH",
     `/admin/organizations/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`,

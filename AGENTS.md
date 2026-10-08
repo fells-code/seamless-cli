@@ -197,6 +197,14 @@ Templates are not in this repo — they live in the `seamless-templates` monorep
 ## Conventions
 
 - **TypeScript, ESM** (`"type": "module"`). Local imports use `.js` extensions (NodeNext resolution).
+- **Auth API responses are parsed with `@seamless-auth/types` schemas** (#144), not probed field by
+  field. The CLI talks to instances older and newer than its types, so object schemas are
+  `.loose()`d: a key the schema does not know is kept (and reaches `--json` output) rather than
+  stripped, or rejected by a strict schema such as `ApiUserSchema`. A response missing a required
+  field fails with the path that tripped it. See [src/core/admin.ts](src/core/admin.ts).
+- **Shared test fixtures** live in `src/**/*.fixtures.ts` (for example
+  [src/core/admin.fixtures.ts](src/core/admin.fixtures.ts)). That suffix is excluded from the build
+  and from coverage; a `*.test.ts` helper would instead run as an empty test file.
 - Commit, comment, TODO, and attribution rules live in Working Standards above.
 - **Releases use Changesets.** A user-facing change needs a changeset (`npm run changeset`). A push to
   `main` opens a "version packages" PR that bumps the version and writes `CHANGELOG.md`; merging that
