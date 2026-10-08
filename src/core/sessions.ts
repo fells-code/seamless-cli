@@ -1,46 +1,22 @@
+import { SessionListResponseSchema, type Session } from "@seamless-auth/types";
 import type { AuthClient } from "./authClient.js";
 
-export interface SessionInfo {
-  id: string;
-  deviceName?: string;
-  ipAddress?: string;
-  userAgent?: string;
-  lastUsedAt?: string;
-  expiresAt?: string;
-  current: boolean;
-}
-
-function str(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === "string" && value ? value : undefined;
-}
-
-function toSessionInfo(raw: unknown): SessionInfo | null {
-  if (!raw || typeof raw !== "object") return null;
-  const record = raw as Record<string, unknown>;
-  if (typeof record.id !== "string") return null;
-
-  return {
-    id: record.id,
-    deviceName: str(record, "deviceName"),
-    ipAddress: str(record, "ipAddress"),
-    userAgent: str(record, "userAgent"),
-    lastUsedAt: str(record, "lastUsedAt"),
-    expiresAt: str(record, "expiresAt"),
-    current: record.current === true,
-  };
-}
-
-export async function listSessions(client: AuthClient): Promise<SessionInfo[]> {
-  const res = await client.get<{ sessions?: unknown[] }>("/sessions");
+export async function listSessions(client: AuthClient): Promise<Session[]> {
+  const res = await client.get<unknown>("/sessions");
   if (!res.ok) {
     throw new Error(`Could not list sessions (${res.status}).`);
   }
 
-  const raw = Array.isArray(res.data?.sessions) ? res.data.sessions : [];
-  return raw
-    .map(toSessionInfo)
-    .filter((session): session is SessionInfo => session !== null);
+  // Parsed rather than probed field by field, so a row the instance sends malformed
+  // fails the command instead of vanishing from the list.
+  const parsed = SessionListResponseSchema.safeParse(res.data);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new Error(
+      `The instance returned a session list this CLI cannot read (${issue.path.join(".") || "response"}: ${issue.message}).`,
+    );
+  }
+  return parsed.data.sessions;
 }
 
 export interface RevokeResult {

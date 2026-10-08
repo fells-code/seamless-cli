@@ -23,8 +23,15 @@ function fakeClient(
   };
 }
 
+const minimal = {
+  id: "s2",
+  lastUsedAt: "2026-07-13T09:00:00.000Z",
+  expiresAt: "2026-07-20T09:00:00.000Z",
+  current: false,
+};
+
 describe("listSessions", () => {
-  it("maps the session list and the current marker", async () => {
+  it("parses the session list and the current marker", async () => {
     const client = fakeClient((method, path) => {
       expect(`${method} ${path}`).toBe("GET /sessions");
       return response(200, {
@@ -39,30 +46,47 @@ describe("listSessions", () => {
             expiresAt: "2026-07-20T10:00:00.000Z",
             current: true,
           },
-          { id: "s2", current: false },
+          { ...minimal, deviceName: null },
         ],
       });
     });
 
     const sessions = await listSessions(client);
-    expect(sessions).toHaveLength(2);
-    expect(sessions[0]).toMatchObject({
-      id: "s1",
-      deviceName: "MacBook",
-      ipAddress: "203.0.113.4",
-      current: true,
-    });
-    expect(sessions[1]).toEqual({ id: "s2", current: false });
+    expect(sessions).toEqual([
+      {
+        id: "s1",
+        deviceName: "MacBook",
+        ipAddress: "203.0.113.4",
+        userAgent: "curl/8",
+        lastUsedAt: "2026-07-13T10:00:00.000Z",
+        expiresAt: "2026-07-20T10:00:00.000Z",
+        current: true,
+      },
+      { ...minimal, deviceName: null },
+    ]);
   });
 
-  it("drops malformed entries and throws on a non-ok response", async () => {
+  // The old hand-rolled parser dropped a row it could not read, so a malformed
+  // session disappeared from the list with no warning (#145).
+  it("fails on a malformed row, naming where, instead of dropping it", async () => {
     const withJunk = fakeClient(() =>
-      response(200, { sessions: [{ id: "ok", current: false }, {}, 42, null] }),
+      response(200, { total: 2, sessions: [minimal, { id: "s3", current: false }] }),
     );
-    expect(await listSessions(withJunk)).toEqual([{ id: "ok", current: false }]);
+    await expect(listSessions(withJunk)).rejects.toThrow(
+      /cannot read \(sessions\.1\.lastUsedAt: /,
+    );
+  });
 
+  it("fails on a response with no session list", async () => {
+    const empty = fakeClient(() => response(200, null));
+    await expect(listSessions(empty)).rejects.toThrow(
+      /session list this CLI cannot read \(response: /,
+    );
+  });
+
+  it("throws with the status on a non-ok response", async () => {
     const bad = fakeClient(() => response(500, null));
-    await expect(listSessions(bad)).rejects.toThrow(/could not list/i);
+    await expect(listSessions(bad)).rejects.toThrow("Could not list sessions (500).");
   });
 });
 
