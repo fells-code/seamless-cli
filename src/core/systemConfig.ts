@@ -36,6 +36,8 @@ export const WRITABLE_KEYS = [
   "available_roles",
   "login_methods",
   "passkey_login_fallback_enabled",
+  "prompt_passkey_enrollment",
+  "phishing_resistant_only",
   "oauth_providers",
   "lockout_policy",
   "authenticator_policy",
@@ -52,11 +54,11 @@ export const WRITABLE_KEYS = [
 ] as const satisfies readonly (keyof SystemConfigPatch)[];
 
 // In the shared patch schema but not yet accepted by a released auth API this CLI
-// can rely on. Move a key to WRITABLE_KEYS once it is.
-export const NOT_YET_WRITABLE = {
-  prompt_passkey_enrollment: "#221",
-  phishing_resistant_only: "#221",
-} as const satisfies Partial<Record<keyof SystemConfigPatch, string>>;
+// can rely on, each with the ticket that tracks it. Move a key to WRITABLE_KEYS
+// once it is.
+export const NOT_YET_WRITABLE = {} as const satisfies Partial<
+  Record<keyof SystemConfigPatch, string>
+>;
 
 const WRITABLE = new Set<string>(WRITABLE_KEYS);
 

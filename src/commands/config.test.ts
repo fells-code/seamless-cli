@@ -254,6 +254,23 @@ describe("runConfig set", () => {
     expect(calls[0].body).toEqual({ rate_limit: 100 });
   });
 
+  // Both arrived in auth API v0.17.0 (#221). They are booleans on the instance, so
+  // the value has to reach it as one, not as the string "true".
+  it.each(["prompt_passkey_enrollment", "phishing_resistant_only"])(
+    "sets %s as a boolean",
+    async (key) => {
+      const { client, calls } = fakeClient(() =>
+        response(200, { success: true, updatedKeys: [key] }),
+      );
+      vi.mocked(createAuthClient).mockResolvedValue(client);
+
+      await runConfig(["set", key, "true"]);
+
+      expect(calls[0].body).toEqual({ [key]: true });
+      expect(output()).toContain(`Updated: ${key}`);
+    },
+  );
+
   it("prints 'No changes.' when nothing was updated", async () => {
     const { client } = fakeClient(() => response(200, { success: true, updatedKeys: [] }));
     vi.mocked(createAuthClient).mockResolvedValue(client);
