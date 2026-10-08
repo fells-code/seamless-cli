@@ -1,4 +1,5 @@
-import type { DetectedBackend, DetectedWeb } from "./detect.js";
+import { addPackagesCommand, type DetectedBackend, type DetectedWeb } from "./detect.js";
+import { nativeBackendSnippet } from "./nativeSnippets.js";
 
 // What `seamless add` prints for the adopter to paste. It never edits their files:
 // these follow the reference apps the conformance suite runs (verify/adapter-app,
@@ -44,6 +45,7 @@ export function backendSnippet(
   backend: DetectedBackend,
   opts: { webOrigin: string; serveConsole: boolean },
 ): string {
+  if (backend.ecosystem !== "node") return nativeBackendSnippet(backend, opts);
   const ts = backend.typescript;
   if (backend.framework === "express") {
     const typing = ts
@@ -139,6 +141,77 @@ export function webSnippet(web: DetectedWeb): string {
 
 // Anywhere below it:
 const { isAuthenticated, user, logout } = useAuth();`;
+}
+
+const FRAMEWORK_NAMES: Record<DetectedBackend["framework"], string> = {
+  express: "Express",
+  fastify: "Fastify",
+  nethttp: "Go (net/http)",
+  gin: "Gin",
+  chi: "chi",
+  echo: "Echo",
+  axum: "Axum",
+  fastapi: "FastAPI",
+  django: "Django",
+};
+
+export function frameworkName(framework: DetectedBackend["framework"]): string {
+  return FRAMEWORK_NAMES[framework];
+}
+
+/** How the backend gets the values written to its .env, when it does not already. */
+export function envLoadingHint(backend: DetectedBackend): string {
+  switch (backend.ecosystem) {
+    case "node":
+      return 'if your app does not load .env yet, start it with node --env-file=.env (Node 20.6+) or import "dotenv/config" first.';
+    case "go":
+      return "Go does not read .env on its own: export the values, or load them with github.com/joho/godotenv at startup.";
+    case "rust":
+      return "Rust does not read .env on its own: call dotenvy::dotenv() at startup (the dotenvy crate).";
+    default:
+      return backend.framework === "django"
+        ? "load it at the top of settings.py with python-dotenv (from dotenv import load_dotenv; load_dotenv())."
+        : "load it at startup with python-dotenv (load_dotenv()), or run uvicorn with --env-file .env.";
+  }
+}
+
+export interface PackageInstall {
+  command: string;
+  args: string[];
+  // How it is shown, quoted for a shell.
+  display: string;
+  // False when seamless add cannot know it would install into the right place
+  // (pip, with no project tool to say which environment), so it only prints it.
+  run: boolean;
+}
+
+function install(command: string, args: string[], run = true): PackageInstall {
+  const display = [command, ...args.map((a) => (/[[\]\s]/.test(a) ? `"${a}"` : a))].join(" ");
+  return { command, args, display, run };
+}
+
+/** The backend's own install commands, for its ecosystem's tool. */
+export function backendInstalls(backend: DetectedBackend): PackageInstall[] {
+  switch (backend.ecosystem) {
+    case "node": {
+      const { deps, dev } = backendPackages(backend);
+      const manager = backend.packageManager as Parameters<typeof addPackagesCommand>[0];
+      return [
+        ...(deps.length ? [addPackagesCommand(manager, deps)] : []),
+        ...(dev.length ? [addPackagesCommand(manager, dev, true)] : []),
+      ].map(({ command, args }) => install(command, args));
+    }
+    case "go":
+      return [install("go", ["get", "github.com/fells-code/seamless-auth-go@latest"])];
+    case "rust":
+      return [install("cargo", ["add", "seamless-auth"])];
+    default: {
+      const pkg = `seamless-auth[${backend.framework === "django" ? "django" : "fastapi"}]>=0.2`;
+      if (backend.packageManager === "uv") return [install("uv", ["add", pkg])];
+      if (backend.packageManager === "poetry") return [install("poetry", ["add", pkg])];
+      return [install("pip", ["install", pkg], false)];
+    }
+  }
 }
 
 /** What to install in each half, with dev dependencies listed apart. */

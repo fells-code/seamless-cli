@@ -113,14 +113,16 @@ NON-INTERACTIVE
         heading: "add [path]",
         body: `Add Seamless Auth to an existing project
 
-Finds an Express or Fastify backend and a React web app (at the project root, or in
-api/, server/, backend/, web/, client/, frontend/, apps/* or packages/*), then:
+Finds a backend (Express, Fastify, Go net/http, Gin, chi, Echo, Axum, FastAPI or
+Django) and a React web app (at the project root, or in api/, server/, backend/,
+web/, client/, frontend/, apps/* or packages/*), then:
   • Connects an auth server: a local one in Docker, written to seamless/, or a
     managed application
   • Writes the backend's .env (auth server URL, service token, signing key id, a
     cookie secret), keeping every value you already have, and the web app's API
     URL in .env.local
-  • Installs the adapter and SDK with the project's own package manager
+  • Installs the adapter and SDK with the project's own tool (npm, pnpm, yarn,
+    bun, go get, cargo add, uv or poetry; a pip install is printed instead)
   • Prints the lines of code to add. It never edits your source files
 
 --local

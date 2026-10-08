@@ -288,16 +288,18 @@ seamless add --local --email=you@example.com   # an auth server on this machine
 seamless add --app <id>                        # or a managed application (needs seamless login)
 ```
 
-It finds an Express or Fastify backend and a React web app, at the project root or in `api/`, `server/`, `backend/`, `web/`, `client/`, `frontend/`, `apps/*` or `packages/*`, then:
+It finds a backend and a React web app, at the project root or in `api/`, `server/`, `backend/`, `web/`, `client/`, `frontend/`, `apps/*` or `packages/*`, then:
+
+The backend can be Express or Fastify, Go (net/http, Gin, chi or Echo), Rust (Axum), or Python (FastAPI or Django).
 
 - connects an auth server. `--local` writes `seamless/docker-compose.yml` (the auth server and its Postgres) with its secrets in `seamless/.env`, which is gitignored. `--app` connects a managed application instead.
 - writes the backend's `.env` (auth server URL, service token, signing key id, and a cookie secret if you have none) and the web app's API URL in `.env.local`. It keeps every value you already have and every comment.
-- installs the adapter and the React SDK with your own package manager (`--skip-install` prints the commands instead).
-- prints the lines to add to your server and to your React root, in TypeScript or JavaScript to match your project. It never edits your source files.
+- installs the adapter and the React SDK with your own tool: npm, pnpm, yarn or bun, `go get`, `cargo add`, `uv add` or `poetry add`. A plain pip project gets the `pip install` printed, since only you know which environment it belongs in. `--skip-install` prints every command instead.
+- prints the lines to add to your server and to your React root, in your backend's language (TypeScript or JavaScript to match a Node project). It never edits your source files.
 
 Then start the auth server (`docker compose -f seamless/docker-compose.yml up -d`), add the printed lines, and sign in. In development the one-time codes print in your backend's console. `seamless add --help` lists every option.
 
-Go, Rust, Python, Angular, Vue and Svelte projects are tracked in [#248](https://github.com/fells-code/seamless-cli/issues/248).
+Angular, Vue and Svelte web apps are tracked in [#248](https://github.com/fells-code/seamless-cli/issues/248).
 
 ## Running your project
 
