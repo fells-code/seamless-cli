@@ -75,8 +75,9 @@ the `Authorization` header, and no cookies are set. The access token is accepted
 the pair, and a used refresh token answers `401` after the reuse window. Logout ends the
 session.
 
-**Guard.** `/api/me` answers `401` with no session or an altered access cookie, and the
-signed-in user's id with a valid one.
+**Guard.** `/api/me` answers `401` with no session, an altered access cookie, or the
+sign-in flow's ephemeral cookie presented as the access cookie, and the signed-in user's
+id with a valid one.
 
 **Errors.** An API validation failure keeps its `400` and body (`error:
 "invalid_request"` with `details.issues`). No session answers `401` with an `error`
