@@ -20,9 +20,14 @@ export const SEAMLESS_AUTH_ADMIN_DASHBOARD_REPO =
 
 export const SEAMLESS_AUTH_ADMIN_DASHBOARD_REF = SEAMLESS_AUTH_ADMIN_DASHBOARD_VERSION;
 
-// The starter templates monorepo the CLI scaffolds from. Pinned to a tag so a given
-// CLI version always produces the same project. Override the ref with
-// SEAMLESS_TEMPLATES_REF, or point at a local checkout with SEAMLESS_TEMPLATES_DIR.
+// The starter templates monorepo the CLI scaffolds from. The tag names the release;
+// the download is pinned to the commit it resolved to when bumped, because a tag can
+// be moved and the extracted code is then installed and built on the developer's
+// machine. Bump both together: `npm run check:templates-pin` (run in CI) fails when
+// they disagree. Override with SEAMLESS_TEMPLATES_REF (used as given, unpinned), or
+// point at a local checkout with SEAMLESS_TEMPLATES_DIR.
 export const SEAMLESS_TEMPLATES_REPO = "fells-code/seamless-templates";
 
 export const SEAMLESS_TEMPLATES_REF = "v0.17.0";
+
+export const SEAMLESS_TEMPLATES_COMMIT = "c7bde96b32dc214b533cf17932c11ea34a2e244a";

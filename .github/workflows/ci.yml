@@ -41,6 +41,9 @@ jobs:
       - name: Check @seamless-auth/types is current
         run: npm run check:types-current
 
+      - name: Check the templates commit matches its tag
+        run: npm run check:templates-pin
+
       - name: Build
         run: npm run build
 
