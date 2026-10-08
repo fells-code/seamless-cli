@@ -25,6 +25,7 @@
     "clean": "rm -rf dist",
     "test": "vitest run",
     "check:types-current": "node scripts/check-types-current.mjs",
+    "check:templates-pin": "node scripts/check-templates-pin.mjs",
     "coverage": "vitest run --coverage --fileParallelism=false",
     "coverage:badge": "node ./scripts/updateCoverageBadge.mjs",
     "prepare": "husky",

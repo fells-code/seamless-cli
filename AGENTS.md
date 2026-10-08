@@ -67,11 +67,16 @@ The entry point is [src/index.ts](src/index.ts), which dispatches to a command m
 - **init** ([src/commands/init.ts](src/commands/init.ts)) scaffolds a project, driven by
   `src/prompts/`. The web and api starters come from the registry-driven template source
   ([src/core/templates.ts](src/core/templates.ts)): it reads `registry.json` from the
-  `fells-code/seamless-templates` monorepo (pinned by `SEAMLESS_TEMPLATES_REF` in
-  [src/core/images.ts](src/core/images.ts)), downloads the selected templates, and applies each
+  `fells-code/seamless-templates` monorepo (pinned by `SEAMLESS_TEMPLATES_COMMIT`, the commit
+  `SEAMLESS_TEMPLATES_REF` resolved to, in [src/core/images.ts](src/core/images.ts)), downloads the
+  selected templates, and applies each
   template's `template.json` env contract. The auth, docker, and config pieces are still generated
   locally in `src/generators/*`. Override the template source for development with
-  `SEAMLESS_TEMPLATES_DIR` (a local checkout) or `SEAMLESS_TEMPLATES_REF` (a different ref).
+  `SEAMLESS_TEMPLATES_DIR` (a local checkout) or `SEAMLESS_TEMPLATES_REF` (a different ref, used
+  as given).
+  - Every archive entry is resolved through `containedPath`
+    ([src/core/archive.ts](src/core/archive.ts)), which fails the scaffold on a `../` that would
+    write outside the project. The admin dashboard download (`--admin=source`) uses it too.
   - A `--<id>` or `--<alias>` flag (e.g. `seamless init --react-oauth`, `seamless init --oauth`)
     preselects the matching template and skips that layer's prompt. Both spellings live in the
     registry, so no per-flag code. `resolveTemplateAliases` runs in `runCLI` before the project
@@ -202,7 +207,10 @@ Templates are not in this repo — they live in the `seamless-templates` monorep
   publish it and the registry returns a confusing `E404` on the `PUT`.
 - **Templates ref bump.** Shipping a change that depends on a new templates release is a two-step,
   cross-repo dance: release `seamless-templates` first, then bump `SEAMLESS_TEMPLATES_REF`
-  ([src/core/images.ts](src/core/images.ts)) to that tag.
+  ([src/core/images.ts](src/core/images.ts)) to that tag and `SEAMLESS_TEMPLATES_COMMIT` to the
+  commit it points at (`git ls-remote https://github.com/fells-code/seamless-templates
+  'refs/tags/<tag>^{}'`). Scaffolds download by the commit, so a moved tag cannot change what they
+  get. `npm run check:templates-pin` (a CI step) fails when the two disagree.
 - **Coverage badge.** `README.md` shows a line-coverage badge (`resources/coverage-badge.svg`)
   regenerated locally by a Husky `pre-commit` hook ([.husky/pre-commit](.husky/pre-commit)): it runs
   `npm run coverage` (`src/**/*.test.ts` only, so it never sweeps the Playwright specs under
@@ -254,7 +262,7 @@ since the generated compose pins both the ports and the container names.
   web template pins `@seamless-auth/react`. Bump these when new versions publish.
 - **The four pins in [src/core/images.ts](src/core/images.ts)** are what a scaffold gets, and each
   drifts on its own: `SEAMLESS_AUTH_API_VERSION` (the auth server image), the admin dashboard image
-  and ref, and `SEAMLESS_TEMPLATES_REF`. Check them against the sibling repos' latest tags before a
+  and ref, and `SEAMLESS_TEMPLATES_REF` (with its `SEAMLESS_TEMPLATES_COMMIT`). Check them against the sibling repos' latest tags before a
   release; nothing fails when they lag, the scaffold just quietly ships an older stack.
 - **`--auth=local` is not pinned**: it `git clone`s `seamless-auth-api` at its default branch
   ([src/generators/auth/auth.ts](src/generators/auth/auth.ts)) while `--auth=docker` runs the pinned

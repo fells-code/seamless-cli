@@ -4,10 +4,11 @@ import path from "path";
 import AdmZip from "adm-zip";
 
 import { VERSION } from "../index.js";
+import { containedPath } from "./archive.js";
 import { parseEnvString, writeEnv } from "./env.js";
 import { fetchRemote } from "./fetch.js";
 import { generateSecret } from "./secrets.js";
-import { SEAMLESS_TEMPLATES_REF, SEAMLESS_TEMPLATES_REPO } from "./images.js";
+import { SEAMLESS_TEMPLATES_COMMIT, SEAMLESS_TEMPLATES_REPO } from "./images.js";
 
 export type TemplateKind = "web" | "api" | "mobile" | "fullstack";
 
@@ -123,7 +124,7 @@ const IGNORED_NAMES = new Set([
 ]);
 
 // A resolved place to read templates from: either a local checkout (for development,
-// via SEAMLESS_TEMPLATES_DIR) or the published monorepo at a pinned ref.
+// via SEAMLESS_TEMPLATES_DIR) or the published monorepo at a pinned commit.
 export interface TemplateSource {
   registry: Registry;
   readManifest(entry: RegistryEntry): Promise<TemplateManifest>;
@@ -137,7 +138,7 @@ export async function openTemplateSource(): Promise<TemplateSource> {
   }
   return openRemoteSource(
     SEAMLESS_TEMPLATES_REPO,
-    process.env.SEAMLESS_TEMPLATES_REF ?? SEAMLESS_TEMPLATES_REF,
+    process.env.SEAMLESS_TEMPLATES_REF ?? SEAMLESS_TEMPLATES_COMMIT,
   );
 }
 
@@ -219,7 +220,7 @@ async function openRemoteSource(repo: string, ref: string): Promise<TemplateSour
         if (e.isDirectory || !e.entryName.startsWith(prefix)) continue;
         const rel = e.entryName.slice(prefix.length);
         if (rel.split("/").some((seg) => IGNORED_NAMES.has(seg))) continue;
-        const out = path.join(destDir, rel);
+        const out = containedPath(destDir, rel, "project templates");
         fs.mkdirSync(path.dirname(out), { recursive: true });
         fs.writeFileSync(out, e.getData());
       }

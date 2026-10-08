@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // import time. Mock it so importing templates.ts never dispatches the CLI.
 vi.mock("../index.js", () => ({ VERSION: "0.0.0-test" }));
 
-import { SEAMLESS_TEMPLATES_REF, SEAMLESS_TEMPLATES_REPO } from "./images.js";
+import { SEAMLESS_TEMPLATES_COMMIT, SEAMLESS_TEMPLATES_REPO } from "./images.js";
 import {
   applyTemplateEnv,
   assertCliSupports,
@@ -224,7 +224,7 @@ describe("openTemplateSource (remote)", () => {
     expect(url).toContain(`/${SEAMLESS_TEMPLATES_REPO}/custom-ref/registry.json`);
   });
 
-  it("falls back to the default ref when SEAMLESS_TEMPLATES_REF is unset", async () => {
+  it("downloads the pinned commit, not the tag, when SEAMLESS_TEMPLATES_REF is unset", async () => {
     const fetchMock = mockFetchByUrl({
       "registry.json": () => ({
         ok: true,
@@ -235,7 +235,7 @@ describe("openTemplateSource (remote)", () => {
     await openTemplateSource();
 
     const url = fetchMock.mock.calls[0][0] as string;
-    expect(url).toContain(`/${SEAMLESS_TEMPLATES_REPO}/${SEAMLESS_TEMPLATES_REF}/registry.json`);
+    expect(url).toContain(`/${SEAMLESS_TEMPLATES_REPO}/${SEAMLESS_TEMPLATES_COMMIT}/registry.json`);
   });
 
   it("throws with the status code when the registry fetch fails", async () => {
@@ -256,7 +256,7 @@ describe("openTemplateSource (remote)", () => {
     });
 
     await expect(openTemplateSource()).rejects.toThrow(
-      `Could not reach https://raw.githubusercontent.com/${SEAMLESS_TEMPLATES_REPO}/${SEAMLESS_TEMPLATES_REF}/registry.json to read the template registry. Check your network connection.`,
+      `Could not reach https://raw.githubusercontent.com/${SEAMLESS_TEMPLATES_REPO}/${SEAMLESS_TEMPLATES_COMMIT}/registry.json to read the template registry. Check your network connection.`,
     );
   });
 
@@ -298,7 +298,7 @@ describe("openTemplateSource (remote)", () => {
     await expect(
       source.readManifest(registryPayload.templates[0] as RegistryEntry),
     ).rejects.toThrow(
-      `Could not reach https://github.com/${SEAMLESS_TEMPLATES_REPO}/archive/${SEAMLESS_TEMPLATES_REF}.zip to download the project templates. Check your network connection.`,
+      `Could not reach https://github.com/${SEAMLESS_TEMPLATES_REPO}/archive/${SEAMLESS_TEMPLATES_COMMIT}.zip to download the project templates. Check your network connection.`,
     );
   });
 
@@ -378,6 +378,40 @@ describe("openTemplateSource (remote)", () => {
 
     // Registry fetch + one archive fetch, shared across readManifest and copyInto.
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses an entry that would write outside the project", async () => {
+    const root = "seamless-templates-abc123";
+    const zip = new AdmZip();
+    zip.addFile(`${root}/templates/web-a/template.json`, Buffer.from("{}"));
+    zip.addFile(`${root}/templates/web-a/placeholder.txt`, Buffer.from("pwned"));
+    // addFile normalizes the name it is given, so the traversal is set afterwards.
+    // A real archive can carry one: AdmZip returns `../` in entryName verbatim.
+    zip.getEntries()[1].entryName = `${root}/templates/web-a/../../escaped.txt`;
+    const zipBuffer = zip.toBuffer();
+    mockFetchByUrl({
+      "registry.json": () => ({
+        ok: true,
+        text: () => JSON.stringify(registryPayload),
+      }),
+      ".zip": () => ({ ok: true, arrayBuffer: () => zipBuffer }),
+    });
+
+    // A box around the destination, so the escape target is somewhere this test owns.
+    const box = mkTmpDir("seamless-templates-slip-");
+    const destDir = path.join(box, "project", "web");
+    fs.mkdirSync(destDir, { recursive: true });
+    try {
+      const source = await openTemplateSource();
+      await expect(
+        source.copyInto(registryPayload.templates[0] as RegistryEntry, destDir),
+      ).rejects.toThrow(
+        "The project templates archive contains an entry that would write outside the project: ../../escaped.txt",
+      );
+      expect(fs.existsSync(path.join(box, "escaped.txt"))).toBe(false);
+    } finally {
+      rmDir(box);
+    }
   });
 });
 
