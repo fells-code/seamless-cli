@@ -3,7 +3,7 @@
 // scaffolded with, and never has its data directory pulled out from under it.
 export const POSTGRES_IMAGE = "postgres:18";
 
-export const SEAMLESS_AUTH_API_VERSION = "v0.16.0";
+export const SEAMLESS_AUTH_API_VERSION = "v0.17.0";
 
 export const SEAMLESS_AUTH_API_IMAGE = `ghcr.io/fells-code/seamless-auth-api:${SEAMLESS_AUTH_API_VERSION}`;
 
@@ -25,4 +25,4 @@ export const SEAMLESS_AUTH_ADMIN_DASHBOARD_REF = SEAMLESS_AUTH_ADMIN_DASHBOARD_V
 // SEAMLESS_TEMPLATES_REF, or point at a local checkout with SEAMLESS_TEMPLATES_DIR.
 export const SEAMLESS_TEMPLATES_REPO = "fells-code/seamless-templates";
 
-export const SEAMLESS_TEMPLATES_REF = "v0.16.0";
+export const SEAMLESS_TEMPLATES_REF = "v0.17.0";
