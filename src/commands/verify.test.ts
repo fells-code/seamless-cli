@@ -13,6 +13,10 @@ const ALL_PROFILES = [
   "--profile",
   "react-dev",
   "--profile",
+  "angular",
+  "--profile",
+  "angular-dev",
+  "--profile",
   "nextjs",
   "--profile",
   "nextjs-dev",
@@ -104,6 +108,7 @@ beforeEach(() => {
   process.env.SEAMLESS_REACT_SDK_DIR = "/fake/reactsdk";
   process.env.SEAMLESS_TEMPLATES_DIR = "/fake/templates";
   delete process.env.SEAMLESS_REACT_DIR;
+  delete process.env.SEAMLESS_ANGULAR_DIR;
 });
 
 afterEach(() => {
@@ -117,7 +122,7 @@ describe("runVerify — published (default) mode", () => {
     await runVerify([]);
 
     // Stale tarballs are removed from every vendor dir; non-tgz files are left.
-    expect(fs.rmSync).toHaveBeenCalledTimes(3);
+    expect(fs.rmSync).toHaveBeenCalledTimes(4);
 
     const tails = dockerTails();
     expect(tails).toContainEqual([...ALL_PROFILES, "down", "-v"]); // initial clean
@@ -150,6 +155,11 @@ describe("runVerify — published (default) mode", () => {
     ]);
     // The web template declares verify.flows ["oauth"] ⇒ Playwright grep "@oauth".
     expect(npmTests).toContainEqual(["test", "--", "--project", "react", "--grep", "@oauth"]);
+
+    // The Angular reference app runs the same browser specs, every flow.
+    expect(tails).toContainEqual(["--profile", "angular", "up", "-d", "--build", "angular"]);
+    expect(tails).toContainEqual(["--profile", "angular", "rm", "-sf", "angular"]);
+    expect(npmTests).toContainEqual(["test", "--", "--project", "angular"]);
 
     // A successful run does not exit non-zero.
     expect(exitSpy).not.toHaveBeenCalled();
@@ -247,6 +257,52 @@ describe("runVerify — published (default) mode", () => {
   });
 });
 
+describe("runVerify with an Angular app", () => {
+  it("routes an Angular web template to the Angular runtime instead of the reference app", async () => {
+    vi.mocked(fs.readFileSync).mockImplementation((p: never) => {
+      const s = String(p);
+      if (s.endsWith("registry.json"))
+        return JSON.stringify({
+          templates: [
+            { id: "web-basic", kind: "web", status: "stable", path: "templates/web-basic" },
+            {
+              id: "angular-web",
+              kind: "web",
+              framework: "angular",
+              status: "beta",
+              path: "templates/web/angular",
+            },
+          ],
+        }) as never;
+      if (s.endsWith("template.json")) return JSON.stringify({}) as never;
+      return PKG_JSON as never;
+    });
+
+    await runVerify([]);
+
+    const up = vi
+      .mocked(runCommand)
+      .mock.calls.filter((c) => c[0] === "docker" && (c[1] as string[]).includes("angular"))
+      .find((c) => (c[1] as string[]).includes("up"));
+    const env = up?.[3] as NodeJS.ProcessEnv;
+    expect(env.SEAMLESS_ANGULAR_DIR).toBe("/fake/templates/templates/web/angular");
+    expect(env.SEAMLESS_VERIFY_TEMPLATE_ID).toBe("angular-web");
+    expect(logSpy.mock.calls.flat().join("\n")).not.toContain("angular-reference");
+  });
+
+  it("points the reference pass at SEAMLESS_ANGULAR_DIR when set", async () => {
+    process.env.SEAMLESS_ANGULAR_DIR = "/fake/my-angular-app";
+
+    await runVerify([]);
+
+    const up = vi
+      .mocked(runCommand)
+      .mock.calls.filter((c) => c[0] === "docker" && (c[1] as string[]).includes("angular"))
+      .find((c) => (c[1] as string[]).includes("up"));
+    expect((up?.[3] as NodeJS.ProcessEnv).SEAMLESS_ANGULAR_DIR).toBe("/fake/my-angular-app");
+  });
+});
+
 describe("runVerify — flag parsing", () => {
   it("--dev adds a development-server pass after each production pass", async () => {
     await runVerify(["--dev"]);
@@ -259,11 +315,20 @@ describe("runVerify — flag parsing", () => {
     const npmTests = callsFor("npm").filter((a) => a[0] === "test");
     const projects = npmTests.map((t) => t[t.indexOf("--project") + 1]);
     // Each template: the production build first, then its dev server.
-    expect(projects).toEqual(["api", "react", "react-dev", "nextjs", "nextjs-dev"]);
+    expect(projects).toEqual([
+      "api",
+      "react",
+      "react-dev",
+      "angular",
+      "angular-dev",
+      "nextjs",
+      "nextjs-dev",
+    ]);
     expect(npmTests).toContainEqual(["test", "--", "--project", "react-dev", "--grep", "@oauth"]);
 
     const out = logSpy.mock.calls.flat().join("\n");
     expect(out).toContain("Web (dev) · web-basic");
+    expect(out).toContain("Web (dev) · angular-reference");
     expect(out).toContain("Full-stack (dev) · nextjs");
   });
 
@@ -424,13 +489,41 @@ describe("runVerify — local mode", () => {
   });
 
   it("packs the react SDK as a single package when the checkout has no workspaces", async () => {
+    // A checkout that predates the Angular package has no packages/angular/dist.
+    vi.mocked(fs.existsSync).mockImplementation(
+      (p: never) => !String(p).includes("packages/angular/dist"),
+    );
+
     await runVerify(["--local"]);
 
     const packs = callsFor("npm").filter((a) => a[0] === "pack");
     expect(packs).toEqual([["pack", "--pack-destination", expect.stringContaining("react-vendor")]]);
   });
 
+  it("packs the built Angular package and its client core for the Angular app", async () => {
+    await runVerify(["--local"]);
+
+    const packs = callsFor("npm").filter((a) => a[0] === "pack");
+    expect(packs).toContainEqual([
+      "pack",
+      "-w",
+      "@seamless-auth/client",
+      "--pack-destination",
+      expect.stringContaining("angular-vendor"),
+    ]);
+    // From the folder ng-packagr builds, which is what npm publishes.
+    expect(packs).toContainEqual([
+      "pack",
+      "/fake/reactsdk/packages/angular/dist",
+      "--pack-destination",
+      expect.stringContaining("angular-vendor"),
+    ]);
+  });
+
   it("packs the client core alongside react when the checkout is a workspace", async () => {
+    vi.mocked(fs.existsSync).mockImplementation(
+      (p: never) => !String(p).includes("packages/angular/dist"),
+    );
     vi.mocked(fs.readFileSync).mockImplementation((p: never) => {
       const s = String(p);
       if (s.endsWith("registry.json")) return REGISTRY_JSON as never;

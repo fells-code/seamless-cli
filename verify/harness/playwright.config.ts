@@ -56,6 +56,11 @@ export default defineConfig<AdapterOptions>({
     // Strict Mode runs every effect twice. Same URL: `seamless verify --dev`
     // serves the dev build on the port the production build just left.
     { name: 'react-dev', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
+    // The same browser specs against an Angular app on @seamless-auth/angular,
+    // whose screens keep the React screens' accessible names. Its dev pass runs
+    // on `ng serve`.
+    { name: 'angular', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
+    { name: 'angular-dev', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
     // The Next.js full-stack starter renders its own screens, so it has its own
     // specs; its dev pass runs them on `next dev`.
     { name: 'nextjs', testDir: './nextjs', use: { ...browser, baseURL: REACT_URL } },
