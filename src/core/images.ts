@@ -3,7 +3,7 @@
 // scaffolded with, and never has its data directory pulled out from under it.
 export const POSTGRES_IMAGE = "postgres:18";
 
-export const SEAMLESS_AUTH_API_VERSION = "v0.17.0";
+export const SEAMLESS_AUTH_API_VERSION = "v0.18.0";
 
 export const SEAMLESS_AUTH_API_IMAGE = `ghcr.io/fells-code/seamless-auth-api:${SEAMLESS_AUTH_API_VERSION}`;
 

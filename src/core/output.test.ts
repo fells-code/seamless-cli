@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  apiDevCommand,
   maskDatabaseUrl,
   printManagedSuccessOutput,
   printSuccessOutput,
@@ -351,3 +352,31 @@ describe("output for a full-stack web app", () => {
     expect(out).not.toContain("# Database");
   });
 });
+
+describe("apiDevCommand", () => {
+  it("starts each api starter with its own toolchain", () => {
+    expect(apiDevCommand("express")).toBe("cd api && npm install && npm run dev");
+    expect(apiDevCommand("fastify")).toBe("cd api && npm install && npm run dev");
+    expect(apiDevCommand("gin")).toBe("cd api && go run .");
+    expect(apiDevCommand("axum")).toBe("cd api && cargo run");
+    expect(apiDevCommand("fastapi")).toBe(
+      "cd api && uv run uvicorn app.main:build --factory --reload --port 3000",
+    );
+  });
+
+  it("prints the api starter's own command in the managed next steps", () => {
+    printManagedSuccessOutput({
+      projectName: "my-app",
+      webFramework: "react",
+      apiFramework: "axum",
+      authServerUrl: "https://auth.example.com",
+      appName: "Acme App",
+    });
+
+    const out = allLogs();
+    expect(out).toContain("(Axum)");
+    expect(out).toContain("cd api && cargo run");
+    expect(out).not.toContain("cd api && npm install");
+  });
+});
+
