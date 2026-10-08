@@ -1,5 +1,23 @@
 # seamless-cli
 
+## 0.20.0
+
+### Minor Changes
+
+- 25a267b: `seamless init` can now include the admin console with a full-stack template such as the Next.js starter.
+
+  - `--admin=api` (the default, and the recommended prompt option) has the web app serve the dashboard at `http://localhost:5173/console`. The auth server gets `SERVE_ADMIN_DASHBOARD=true`, the app's `.env` gets `SERVE_ADMIN_CONSOLE=true` from the starter's `{{serveAdminConsole}}`, and `ORIGINS` stays the web origin alone, since the console shares it. `seamless.config.json`, `seamless check`, and the closing summary point at that URL.
+  - `--admin=none` still leaves the console out. `--admin=image` and `--admin=source` are refused with an explanation: a dashboard container on `:5174` would call the app's `/auth` cross-origin, which the Next.js route handler does not allow.
+  - A starter from a templates release without the `/console` route is scaffolded without the console, with a warning, rather than with an auth server serving a dashboard nothing proxies. An explicit `--admin=api` for such a release is an error.
+  - `seamless verify` checks the Next.js starter's console: `/console` serves the dashboard and its assets from the app's origin, and an admin signed in on the app loads the console's admin API calls through it.
+
+### Patch Changes
+
+- 63ac8f9: Map the standalone admin console (`--admin=image` and `--admin=source`) to container port 8080, where the dashboard's unprivileged nginx listens. The generated compose published `5174:80`, so nothing answered on `http://localhost:5174`.
+- da190d7: `seamless init --mobile` with no value now selects the Expo template, whose registry alias is `mobile`. A trailing `--mobile` used to be dropped silently, and `seamless init --mobile my-app` took `my-app` as the template id and lost the project name; it now scaffolds `my-app` with Expo. `--mobile=expo` and `--mobile expo` are unchanged, and a bare `--web` or `--api` (neither is an alias) now says it needs a value instead of being ignored.
+- bb94d5b: New projects scaffold the auth server at `v0.16.0` (was `v0.13.1`) and the admin dashboard at `v0.9.1` (was `v0.7.0`). The auth server now links or creates an account through OAuth only when the provider asserts a verified email, and adds user import and OpenID Connect provider support. The dashboard's new Passkey enrollment page needs `/admin/enrollment` routes that ship in the next auth server release, so it reports an error against `v0.16.0`. `adm-zip`, which unpacks the downloaded templates and dashboard, moves to `0.6.1` to clear its security advisories.
+- 0f49e6b: New projects scaffold the auth server at `v0.17.0` (was `v0.16.0`) and the starters from `seamless-templates` `v0.17.0` (was `v0.16.0`). The auth server now serves the passkey enrollment, authentication coverage, store review account and audit integrity routes the bundled admin dashboard `v0.9.1` calls, and the Express, Fastify and Next.js starters move to adapters (`@seamless-auth/express` `^0.19.1`, `@seamless-auth/fastify` `^0.10.1`, `@seamless-auth/nextjs` `^0.3.1`) that pass them through, so the console's Enrollment, Coverage and Audit Trail pages work on a fresh local stack. The starters also read `AUTH_SERVER_ISSUER`, so a starter run on the host signs in against the Docker stack, and the Next.js starter serves the console at `/console`.
+
 ## 0.19.0
 
 ### Minor Changes
