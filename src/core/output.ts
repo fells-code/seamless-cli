@@ -283,7 +283,7 @@ export function printManagedSuccessOutput(config: {
 
   if (apiFramework) {
     console.log(kleur.dim("  # API server"));
-    console.log("  cd api && npm install && npm run dev\n");
+    console.log(`  ${apiDevCommand(apiFramework)}\n`);
   }
   if (webFramework) {
     console.log(kleur.dim("  # Web app"));
@@ -329,6 +329,21 @@ export function maskDatabaseUrl(url: string): string {
   return url.replace(/\/\/[^@/]*@/, "//****:****@");
 }
 
+// The Go, Rust and Python api starters are not npm projects; each README gives
+// the same command for running it on the host.
+export function apiDevCommand(framework: string): string {
+  switch (framework) {
+    case "gin":
+      return "cd api && go run .";
+    case "axum":
+      return "cd api && cargo run";
+    case "fastapi":
+      return "cd api && uv run uvicorn app.main:build --factory --reload --port 3000";
+    default:
+      return "cd api && npm install && npm run dev";
+  }
+}
+
 function formatFramework(name: string) {
   const map: Record<string, string> = {
     react: "React",
@@ -338,6 +353,8 @@ function formatFramework(name: string) {
     nextjs: "Next.js",
     fastapi: "FastAPI",
     fastify: "Fastify",
+    gin: "Gin",
+    axum: "Axum",
     vue: "Vue",
     expo: "Expo",
   };
