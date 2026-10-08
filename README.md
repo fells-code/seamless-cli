@@ -382,6 +382,7 @@ seamless verify --dev              # browser specs on dev servers too (Strict Mo
 seamless verify --local            # build @seamless-auth/* from source first
 seamless verify --filter=passkey   # one flow (the = form only)
 seamless verify --keep-up          # leave the stack running afterwards
+seamless verify --adapter-url=http://localhost:8080  # one external adapter
 ```
 
 `--local` is the pre-publish check: it builds and packs the local SDK source rather than
@@ -391,6 +392,12 @@ its `template.json` declares. Full-stack templates (the Next.js starter) run too
 their own Dockerfile's `runtime` target and driven by specs written for their own screens.
 Mobile templates are announced and skipped: the harness has no
 simulator to drive, so a native app is checked by running it against a `--keep-up` stack.
+
+`--adapter-url` holds a server adapter this repository does not build (Go, Rust, Python)
+to the same contract as the Express and Fastify adapters. It starts only Postgres and the
+auth API and runs the adapter specs against a reference app you started at that URL. What
+the reference app must serve, and how it reaches the API, is in
+[verify/CONFORMANCE.md](verify/CONFORMANCE.md).
 
 `--dev` runs every browser template a second time on its development server (`vite`, or
 `next dev`). Production React runs each effect once; Strict Mode in development runs it

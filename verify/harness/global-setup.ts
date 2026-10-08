@@ -1,6 +1,13 @@
 import { request as playwrightRequest } from '@playwright/test';
 
-import { ADAPTER_URL, API_URL, FASTIFY_ADAPTER_URL, MOCK_OIDC_PORT, REACT_URL } from './lib/env';
+import {
+  ADAPTER_URL,
+  API_URL,
+  CONFORMANCE_ADAPTER_URL,
+  FASTIFY_ADAPTER_URL,
+  MOCK_OIDC_PORT,
+  REACT_URL,
+} from './lib/env';
 import { startMockOidc } from './mock-oidc';
 
 async function waitForHealth(url: string, name: string, timeoutMs = 120_000): Promise<void> {
@@ -41,6 +48,9 @@ export default async function globalSetup(): Promise<void> {
   }
   if (process.env.SEAMLESS_VERIFY_ADAPTER_FASTIFY === '1') {
     await waitForHealth(`${FASTIFY_ADAPTER_URL}/`, 'adapter-fastify');
+  }
+  if (process.env.SEAMLESS_VERIFY_CONFORMANCE === '1') {
+    await waitForHealth(`${CONFORMANCE_ADAPTER_URL}/`, 'reference app');
   }
   if (process.env.SEAMLESS_VERIFY_REACT === '1') {
     await waitForHealth(`${REACT_URL}/health`, 'react');

@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-import { FASTIFY_ADAPTER_URL, REACT_URL } from './lib/env';
+import { CONFORMANCE_ADAPTER_URL, FASTIFY_ADAPTER_URL, REACT_URL } from './lib/env';
 import type { AdapterOptions } from './lib/fixtures';
 
 // Every service is published by Docker on IPv4. A host process listening on
@@ -44,6 +44,12 @@ export default defineConfig<AdapterOptions>({
       name: 'adapter-fastify',
       testDir: './adapter',
       use: { adapterUrl: FASTIFY_ADAPTER_URL },
+    },
+    // Any adapter's reference app, by URL. See verify/CONFORMANCE.md.
+    {
+      name: 'conformance',
+      testDir: './adapter',
+      use: { adapterUrl: CONFORMANCE_ADAPTER_URL },
     },
     { name: 'react', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
     // The same specs against the template's development server, where React

@@ -155,6 +155,7 @@ Every check runs, so one failure does not hide the rest.
     name: "verify",
     usage: [
       "seamless verify [--local] [--api-only] [--no-react] [--dev] [--filter=<flow>] [--keep-up]",
+      "seamless verify --adapter-url=<url> [--filter=<flow>] [--keep-up]",
     ],
     sections: [
       {
@@ -184,7 +185,13 @@ a sibling seamless-auth-api checkout (override with SEAMLESS_API_DIR).
     --filter <flow> is not parsed)
 
 --keep-up
-  • Leave the Docker stack running after the suite finishes`,
+  • Leave the Docker stack running after the suite finishes
+
+--adapter-url=<url>
+  • Run only the adapter conformance specs, against a reference app you
+    started at <url>. For server adapters this repository does not build
+    (Go, Rust, Python). Only Postgres and the auth API are started. The
+    reference app contract is in verify/CONFORMANCE.md`,
       },
     ],
     examples: [
@@ -194,6 +201,8 @@ a sibling seamless-auth-api checkout (override with SEAMLESS_API_DIR).
   → Run the passkey flows against locally built SDK source`,
       `seamless verify --dev
   → Run the browser specs against production builds and dev servers`,
+      `seamless verify --adapter-url=http://localhost:8080
+  → Hold a reference app on another adapter to the same contract`,
     ],
   },
   {
