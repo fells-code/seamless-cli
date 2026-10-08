@@ -1,8 +1,9 @@
+import type { IdentifierType } from "@seamless-auth/types";
 import fs from "fs";
 import os from "os";
 import path from "path";
 
-export type IdentifierType = "email" | "phone";
+export type { IdentifierType };
 
 export interface Profile {
   name: string;

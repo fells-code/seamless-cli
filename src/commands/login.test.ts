@@ -115,11 +115,23 @@ describe("runLogin: no configuration", () => {
   it("signs in to the portal without a profile", async () => {
     const calls = mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
       "/otp/verify-login-email-otp": [
-        () => json({ token: "a", refreshToken: "r", email: "dev@example.com" }),
+        () =>
+          json({
+            message: "Success",
+            token: "a",
+            refreshToken: "r",
+            email: "dev@example.com",
+          }),
       ],
     });
     vi.mocked(text).mockResolvedValueOnce("dev@example.com").mockResolvedValueOnce("123456");
@@ -144,11 +156,24 @@ describe("runLogin: identifier prompt", () => {
   it("uses the --identifier flag without prompting", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
       "/otp/verify-login-email-otp": [
-        () => json({ token: "a", refreshToken: "r", sub: "user-1", email: "dev@example.com" }),
+        () =>
+          json({
+            message: "Success",
+            token: "a",
+            refreshToken: "r",
+            sub: "user-1",
+            email: "dev@example.com",
+          }),
       ],
     });
     vi.mocked(text).mockResolvedValueOnce("123456");
@@ -162,10 +187,18 @@ describe("runLogin: identifier prompt", () => {
   it("uses a positional identifier without prompting", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
     vi.mocked(text).mockResolvedValueOnce("123456");
 
@@ -180,10 +213,18 @@ describe("runLogin: prefill", () => {
     savePortalSession({ instanceUrl: PORTAL_URL, email: "dev@example.com" });
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
     vi.mocked(text).mockResolvedValueOnce("dev@example.com").mockResolvedValueOnce("123456");
 
@@ -202,12 +243,19 @@ describe("runLogin: success", () => {
   it("logs in, saves tokens, and records the portal session", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
       "/otp/verify-login-email-otp": [
         () =>
           json({
+            message: "Success",
             token: "access-1",
             refreshToken: "refresh-1",
             sub: "user-1",
@@ -241,10 +289,18 @@ describe("runLogin: success", () => {
   it("falls back to the identifier in the outro message when the response omits email", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
     vi.mocked(text).mockResolvedValueOnce("dev@example.com").mockResolvedValueOnce("123456");
 
@@ -258,7 +314,13 @@ describe("runLogin: success", () => {
   it("cancels when the code prompt is cancelled", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
     });
@@ -272,13 +334,19 @@ describe("runLogin: success", () => {
   it("notifies on an incorrect code with correct pluralization, then succeeds", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
       "/otp/verify-login-email-otp": [
         () => json({ error: "Not allowed" }, 401),
         () => json({ error: "Not allowed" }, 401),
-        () => json({ token: "a", refreshToken: "r" }),
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
       ],
     });
     vi.mocked(text)
@@ -302,10 +370,18 @@ describe("runLogin: success", () => {
   it("hints the email code shape without rejecting another one", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
     vi.mocked(text).mockResolvedValueOnce("dev@example.com").mockResolvedValueOnce("ABCDEF");
 
@@ -323,10 +399,18 @@ describe("runLogin: success", () => {
   it("verifies with the email code exactly as it was typed", async () => {
     const calls = mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
     vi.mocked(text).mockResolvedValueOnce("dev@example.com").mockResolvedValueOnce("abcdef");
 
@@ -339,10 +423,18 @@ describe("runLogin: success", () => {
   it("hints the phone code shape without rejecting another one", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "phone", loginMethods: ["phone_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "phone",
+            loginMethods: ["phone_otp"],
+          }),
       ],
       "/otp/generate-login-phone-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-phone-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-phone-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
     vi.mocked(text).mockResolvedValueOnce("+15555550100").mockResolvedValueOnce("123456");
 
@@ -360,10 +452,18 @@ describe("runLogin: success", () => {
   it("validates the identifier prompt input", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
     vi.mocked(text).mockResolvedValueOnce("dev@example.com").mockResolvedValueOnce("123456");
 
@@ -382,11 +482,25 @@ describe("runLogin: success", () => {
 
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
-        () => json({ token: "e2", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
+        () =>
+          json({
+            message: "Success",
+            token: "e2",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
 
     let askedCode = false;
@@ -415,13 +529,30 @@ describe("runLogin: local delivery", () => {
   it("auto-fills the OTP from the response without prompting for a code", async () => {
     const calls = mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [
-        () => json({ message: "sent", delivery: { kind: "otp_email", token: "ABCDEF" } }),
+        () =>
+          json({
+            message: "sent",
+            delivery: { kind: "otp_email", to: "dev@example.com", token: "ABCDEF" },
+          }),
       ],
       "/otp/verify-login-email-otp": [
-        () => json({ token: "a", refreshToken: "r", sub: "user-1", email: "dev@example.com" }),
+        () =>
+          json({
+            message: "Success",
+            token: "a",
+            refreshToken: "r",
+            sub: "user-1",
+            email: "dev@example.com",
+          }),
       ],
     });
     vi.mocked(text).mockResolvedValueOnce("dev@example.com");
@@ -460,11 +591,23 @@ describe("runLogin: deprecated --profile shim", () => {
     upsertProfile(profile);
     const calls = mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
       "/otp/verify-login-email-otp": [
-        () => json({ token: "a", refreshToken: "r", email: "dev@example.com" }),
+        () =>
+          json({
+            message: "Success",
+            token: "a",
+            refreshToken: "r",
+            email: "dev@example.com",
+          }),
       ],
     });
     vi.mocked(text).mockResolvedValueOnce("dev@example.com").mockResolvedValueOnce("123456");
@@ -499,10 +642,18 @@ describe("runLogin: failure handling", () => {
   it("exits 1 with a red message when the keychain is unavailable", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
     vi.mocked(text).mockResolvedValueOnce("dev@example.com").mockResolvedValueOnce("123456");
 
@@ -522,10 +673,18 @@ describe("runLogin: failure handling", () => {
   it("propagates unexpected errors", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () =>
+          json({
+            message: "Success",
+            token: "e1",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
     vi.mocked(text).mockResolvedValueOnce("dev@example.com").mockResolvedValueOnce("123456");
 

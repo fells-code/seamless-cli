@@ -49,6 +49,7 @@ function mockOtpRoutes(verify: () => Response): void {
     vi.fn(async (url: string) => {
       if (url.endsWith("/login")) {
         return json({
+          message: "Success",
           token: "e1",
           identifierType: "email",
           loginMethods: ["email_otp"],
@@ -123,6 +124,7 @@ describe("loginToInstance", () => {
     upsertProfile(profile);
     mockOtpRoutes(() =>
       json({
+        message: "Success",
         token: "access-1",
         refreshToken: "refresh-1",
         sub: "user-1",
@@ -151,7 +153,7 @@ describe("loginToInstance", () => {
     upsertProfile(profile);
     const other = { name: "other", instanceUrl: "https://other.example.com" };
     upsertProfile(other);
-    mockOtpRoutes(() => json({ token: "a", refreshToken: "r" }));
+    mockOtpRoutes(() => json({ message: "Success", token: "a", refreshToken: "r" }));
     vi.mocked(text).mockResolvedValueOnce("123456");
 
     await loginToInstance({
@@ -172,15 +174,19 @@ describe("loginToInstance", () => {
       vi.fn(async (url: string) => {
         if (url.endsWith("/login")) {
           return json({
+            message: "Success",
             token: "e1",
             identifierType: "email",
             loginMethods: ["email_otp"],
           });
         }
         if (url.endsWith("/otp/generate-login-email-otp")) {
-          return json({ message: "sent", delivery: { token: "ABCDEF" } });
+          return json({
+            message: "sent",
+            delivery: { kind: "otp_email", to: "dev@example.com", token: "ABCDEF" },
+          });
         }
-        return json({ token: "a", refreshToken: "r" });
+        return json({ message: "Success", token: "a", refreshToken: "r" });
       }),
     );
 
@@ -222,7 +228,7 @@ describe("loginToInstance", () => {
 
   it("exits 1 when the keychain is unavailable", async () => {
     upsertProfile(profile);
-    mockOtpRoutes(() => json({ token: "a", refreshToken: "r" }));
+    mockOtpRoutes(() => json({ message: "Success", token: "a", refreshToken: "r" }));
     vi.mocked(text).mockResolvedValueOnce("123456");
     setBackendForTesting({
       get: () => null,
@@ -242,7 +248,7 @@ describe("loginToInstance", () => {
 
   it("propagates unexpected errors", async () => {
     upsertProfile(profile);
-    mockOtpRoutes(() => json({ token: "a", refreshToken: "r" }));
+    mockOtpRoutes(() => json({ message: "Success", token: "a", refreshToken: "r" }));
     vi.mocked(text).mockResolvedValueOnce("123456");
     setBackendForTesting({
       get: () => null,
