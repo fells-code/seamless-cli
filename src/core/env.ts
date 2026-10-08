@@ -50,7 +50,7 @@ export function parseEnvString(content: string): Record<string, string> {
 // Double-quotes (and escapes) any value a downstream dotenv parser would otherwise
 // misread: whitespace, `#` (starts a comment), embedded quotes/backslashes, or
 // newlines. Simple values (tokens, URLs, hex secrets) are written bare, unchanged.
-function formatValue(v: string): string {
+export function formatValue(v: string): string {
   const needsQuoting = v !== "" && (/[\s#"'\\]/.test(v) || v !== v.trim());
   if (!needsQuoting) return v;
 

@@ -24,7 +24,7 @@ describe("runCommand", () => {
     expect(spawn).toHaveBeenCalledWith("echo", ["hi"], {
       stdio: "inherit",
       cwd: "/tmp/proj",
-      shell: true,
+      shell: process.platform === "win32",
       env: process.env,
     });
   });
@@ -41,7 +41,7 @@ describe("runCommand", () => {
     expect(spawn).toHaveBeenCalledWith("echo", [], {
       stdio: "inherit",
       cwd: "/tmp/proj",
-      shell: true,
+      shell: process.platform === "win32",
       env: customEnv,
     });
   });

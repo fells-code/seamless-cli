@@ -10,7 +10,10 @@ export function runCommand(
     const child = spawn(command, args, {
       stdio: "inherit",
       cwd,
-      shell: true,
+      // Only Windows needs a shell, to run npm and friends as .cmd scripts.
+      // Elsewhere the arguments go to the program as they are: a shell would
+      // re-split a path with spaces, and Node 24 warns about passing args to one.
+      shell: process.platform === "win32",
       env: env ?? process.env,
     });
 

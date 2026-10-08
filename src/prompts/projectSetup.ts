@@ -408,7 +408,7 @@ async function resolveChoice<T extends string>(
   return ask();
 }
 
-async function resolveOwnerEmail(
+export async function resolveOwnerEmail(
   supplied: string | undefined,
   knownEmail: string | undefined,
   assumeYes: boolean,

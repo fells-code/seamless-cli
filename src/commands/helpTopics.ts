@@ -104,6 +104,62 @@ NON-INTERACTIVE
     ],
   },
   {
+    name: "add",
+    usage: [
+      "seamless add [path] [--local | --app <id>] [--email=<address>] [--api-url=<url>] [--web-url=<url>] [--admin=<api|none>] [--skip-install] [--yes] [--force]",
+    ],
+    sections: [
+      {
+        heading: "add [path]",
+        body: `Add Seamless Auth to an existing project
+
+Finds an Express or Fastify backend and a React web app (at the project root, or in
+api/, server/, backend/, web/, client/, frontend/, apps/* or packages/*), then:
+  • Connects an auth server: a local one in Docker, written to seamless/, or a
+    managed application
+  • Writes the backend's .env (auth server URL, service token, signing key id, a
+    cookie secret), keeping every value you already have, and the web app's API
+    URL in .env.local
+  • Installs the adapter and SDK with the project's own package manager
+  • Prints the lines of code to add. It never edits your source files
+
+--local
+  • Run the auth server on this machine: seamless/docker-compose.yml with its
+    secrets in seamless/.env (gitignored). Start it with
+    docker compose -f seamless/docker-compose.yml up -d
+
+--app <id>
+  • Connect a managed application instead (needs seamless login). Issuing the
+    service token replaces an existing one, so it confirms first
+
+--email=<address>
+  • With --local, the owner address: it becomes the admin when you register
+
+--api-url=<url>, --web-url=<url>
+  • Your backend and web app origins, when they are not on the defaults
+    (http://localhost:<PORT from the backend .env, or 3000> and
+    http://localhost:5173)
+
+--admin=<api|none>
+  • Whether your backend serves the admin dashboard at /console (default: api)
+
+--skip-install
+  • Print the install commands instead of running them
+
+--yes, -y / --force
+  • --yes answers every question with its default; pass --local or --app with it.
+    --force replaces an existing seamless/ stack or rotates a managed
+    application's service token without asking`,
+      },
+    ],
+    examples: [
+      `seamless add --local --email=you@example.com
+  → A local auth server for the project in this directory`,
+      `seamless add ./my-app --app app_123
+  → Connect ./my-app to a managed application`,
+    ],
+  },
+  {
     name: "templates",
     usage: ["seamless templates list [--json]"],
     sections: [

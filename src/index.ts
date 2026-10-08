@@ -19,6 +19,7 @@ import { runOrg } from "./commands/org.js";
 import { runApps } from "./commands/apps.js";
 import { runMigrate } from "./commands/migrate.js";
 import { runTemplates } from "./commands/templates.js";
+import { runAdd } from "./commands/add.js";
 import { isCancelled } from "./core/cancel.js";
 import kleur from "kleur";
 
@@ -64,6 +65,11 @@ async function main() {
 
   if (command === "init") {
     await runCLI(...parseInitArgs(args.slice(1)));
+    return;
+  }
+
+  if (command === "add") {
+    await runAdd(args.slice(1));
     return;
   }
 
