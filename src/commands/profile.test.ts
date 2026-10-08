@@ -320,10 +320,20 @@ describe("profile login", () => {
       "fetch",
       vi.fn(async (url: string) => {
         const body = url.endsWith("/login")
-          ? { token: "e1", identifierType: "email", loginMethods: ["email_otp"] }
+          ? {
+              message: "Success",
+              token: "e1",
+              identifierType: "email",
+              loginMethods: ["email_otp"],
+            }
           : url.endsWith("/otp/generate-login-email-otp")
             ? { message: "sent" }
-            : { token: "a", refreshToken: "r", email: "dev@example.com" };
+            : {
+                message: "Success",
+                token: "a",
+                refreshToken: "r",
+                email: "dev@example.com",
+              };
         return new Response(JSON.stringify(body), {
           status: 200,
           headers: { "content-type": "application/json" },

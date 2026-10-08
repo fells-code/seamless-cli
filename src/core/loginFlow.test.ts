@@ -19,6 +19,19 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+// A `/login` answer as the API sends it, real or decoy alike.
+function loginOk(overrides: Record<string, unknown> = {}) {
+  return json({
+    message: "Success",
+    token: "e1",
+    sub: "user-1",
+    identifierType: "email",
+    loginMethods: ["email_otp"],
+    ttl: 900,
+    ...overrides,
+  });
+}
+
 function mockRouter(routes: Record<string, Responder[]>): Call[] {
   const calls: Call[] = [];
   const queues = new Map<string, Responder[]>(Object.entries(routes));
@@ -55,6 +68,7 @@ describe("completeLogin", () => {
       "/login": [
         () =>
           json({
+            message: "Success",
             token: "ephemeral-1",
             sub: "user-1",
             identifierType: "email",
@@ -65,6 +79,7 @@ describe("completeLogin", () => {
       "/otp/verify-login-email-otp": [
         () =>
           json({
+            message: "Success",
             token: "access-1",
             refreshToken: "refresh-1",
             ttl: 900,
@@ -96,9 +111,13 @@ describe("completeLogin", () => {
 
   it("passes the channel to getCode so the prompt can validate accordingly", async () => {
     mockRouter({
-      "/login": [() => json({ token: "e1", identifierType: "phone" })],
+      "/login": [
+        () => json({ message: "Success", token: "e1", identifierType: "phone" }),
+      ],
       "/otp/generate-login-phone-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-phone-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-phone-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
 
     let seenChannel: string | undefined;
@@ -117,12 +136,12 @@ describe("completeLogin", () => {
   it("retries a rejected code, then succeeds", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
       "/otp/verify-login-email-otp": [
         () => json({ error: "Not allowed" }, 401),
-        () => json({ token: "a", refreshToken: "r" }),
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
       ],
     });
 
@@ -145,7 +164,7 @@ describe("completeLogin", () => {
   it("gives up after the attempt cap", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
       "/otp/verify-login-email-otp": [() => json({ error: "Not allowed" }, 401)],
@@ -170,7 +189,7 @@ describe("completeLogin", () => {
   it("surfaces the OTP rate limiter on generate", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [() => json({ error: "rate limited" }, 429)],
     });
@@ -188,11 +207,13 @@ describe("completeLogin", () => {
     let clock = 1_000;
     const calls = mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
-        () => json({ token: "e2", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
+        () => loginOk({ token: "e2" }),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
 
     let resentSeen = false;
@@ -251,7 +272,7 @@ describe("completeLogin", () => {
   it("rejects when email OTP is not an available login method", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["passkey"] }),
+        () => loginOk({ loginMethods: ["passkey"] }),
       ],
     });
 
@@ -269,7 +290,7 @@ describe("completeLogin", () => {
   it("returns null when the user cancels the code prompt", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
     });
@@ -285,10 +306,12 @@ describe("completeLogin", () => {
 
   it("runs the phone OTP flow, defaulting loginMethods when omitted", async () => {
     const calls = mockRouter({
-      "/login": [() => json({ token: "e1", identifierType: "phone" })],
+      "/login": [
+        () => json({ message: "Success", token: "e1", identifierType: "phone" }),
+      ],
       "/otp/generate-login-phone-otp": [() => json({ message: "sent" })],
       "/otp/verify-login-phone-otp": [
-        () => json({ token: "a", refreshToken: "r" }),
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
       ],
     });
 
@@ -305,6 +328,52 @@ describe("completeLogin", () => {
     expect(calls.some((c) => c.url.endsWith("/otp/verify-login-phone-otp"))).toBe(
       true,
     );
+  });
+
+  // The instance checks its method list against its own types, so a newer one can
+  // offer a method this CLI has never heard of. That must not stop an OTP login.
+  it("proceeds when the instance also offers a method it does not know", async () => {
+    mockRouter({
+      "/login": [() => loginOk({ loginMethods: ["added_later", "email_otp"] })],
+      "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
+    });
+
+    const result = await completeLogin({
+      instanceUrl: INSTANCE,
+      identifier: "dev@example.com",
+      getCode: async () => "ABCDEF",
+    });
+
+    expect(result?.tokens.accessToken).toBe("a");
+  });
+
+  it("names an unknown method among those offered when OTP is not one", async () => {
+    mockRouter({ "/login": [() => loginOk({ loginMethods: ["added_later"] })] });
+
+    await expect(
+      completeLogin({
+        instanceUrl: INSTANCE,
+        identifier: "dev@example.com",
+        getCode: async () => "ABCDEF",
+      }),
+    ).rejects.toThrow(
+      "email otp login is not available for dev@example.com. Offered: added_later.",
+    );
+  });
+
+  it("refuses a login response it cannot read", async () => {
+    mockRouter({ "/login": [() => loginOk({ token: 42 })] });
+
+    await expect(
+      completeLogin({
+        instanceUrl: INSTANCE,
+        identifier: "dev@example.com",
+        getCode: async () => "ABCDEF",
+      }),
+    ).rejects.toThrow("The instance returned a login response this CLI cannot read.");
   });
 
   it("wraps a network failure while starting login", async () => {
@@ -371,7 +440,9 @@ describe("completeLogin", () => {
             ttl: 900,
           }),
       ],
-      "/otp/generate-login-email-otp": [() => json({ message: "success", token: "decoy" })],
+      "/otp/generate-login-email-otp": [
+        () => json({ message: "success", token: "decoy" }),
+      ],
       "/otp/verify-login-email-otp": [
         () => json({ error: "Not allowed" }, 401),
         () => json({ error: "Not allowed" }, 401),
@@ -423,7 +494,14 @@ describe("completeLogin", () => {
 
   it("rejects when the instance omits the ephemeral token", async () => {
     mockRouter({
-      "/login": [() => json({ identifierType: "email", loginMethods: ["email_otp"] })],
+      "/login": [
+        () =>
+          json({
+            message: "Success",
+            identifierType: "email",
+            loginMethods: ["email_otp"],
+          }),
+      ],
     });
 
     await expect(
@@ -438,7 +516,7 @@ describe("completeLogin", () => {
   it("rejects when OTP login is disabled on the instance", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [() => json({ error: "disabled" }, 403)],
     });
@@ -455,7 +533,7 @@ describe("completeLogin", () => {
   it("includes the API message when sending a code fails", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [
         () => json({ message: "SMTP is down" }, 500),
@@ -474,7 +552,7 @@ describe("completeLogin", () => {
   it("falls back to a generic message when sending a code fails without detail", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [() => json({}, 500)],
     });
@@ -491,7 +569,7 @@ describe("completeLogin", () => {
   it("rejects an unexpected verification response shape", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
       "/otp/verify-login-email-otp": [() => json({ status: "ok" })],
@@ -509,12 +587,18 @@ describe("completeLogin", () => {
   it("auto-fills the code from external delivery in local mode", async () => {
     const calls = mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [
-        () => json({ message: "sent", delivery: { kind: "otp_email", token: "ABCDEF" } }),
+        () =>
+          json({
+            message: "sent",
+            delivery: { kind: "otp_email", to: "dev@example.com", token: "ABCDEF" },
+          }),
       ],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
 
     let asked = 0;
@@ -542,10 +626,42 @@ describe("completeLogin", () => {
     expect(verify.init.body).toBe(JSON.stringify({ verificationToken: "ABCDEF" }));
   });
 
+  // The API generates an SMS code with randomInt, so the delivery block carries a
+  // number. Reading it as a string only dropped it, and every `--local` phone login
+  // failed claiming the instance had not returned the code.
+  it("auto-fills a numeric SMS code from external delivery in local mode", async () => {
+    const calls = mockRouter({
+      "/login": [() => loginOk({ identifierType: "phone", loginMethods: ["phone_otp"] })],
+      "/otp/generate-login-phone-otp": [
+        () =>
+          json({
+            message: "Success",
+            delivery: { kind: "otp_sms", to: "+15555550100", token: 482913 },
+          }),
+      ],
+      "/otp/verify-login-phone-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
+    });
+
+    const result = await completeLogin({
+      instanceUrl: INSTANCE,
+      identifier: "+15555550100",
+      localDelivery: true,
+      getCode: async () => {
+        throw new Error("should not prompt");
+      },
+    });
+
+    expect(result?.tokens.accessToken).toBe("a");
+    const verify = calls.find((c) => c.url.endsWith("/otp/verify-login-phone-otp"))!;
+    expect(verify.init.body).toBe(JSON.stringify({ verificationToken: "482913" }));
+  });
+
   it("errors in local mode when the instance does not return the code", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
     });
@@ -563,10 +679,12 @@ describe("completeLogin", () => {
   it("does not request external delivery when local mode is off", async () => {
     const calls = mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
-      "/otp/verify-login-email-otp": [() => json({ token: "a", refreshToken: "r" })],
+      "/otp/verify-login-email-otp": [
+        () => json({ message: "Success", token: "a", refreshToken: "r" }),
+      ],
     });
 
     await completeLogin({
@@ -586,7 +704,7 @@ describe("completeLogin", () => {
   it("surfaces the rate limiter when verifying a code", async () => {
     mockRouter({
       "/login": [
-        () => json({ token: "e1", identifierType: "email", loginMethods: ["email_otp"] }),
+        () => loginOk(),
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
       "/otp/verify-login-email-otp": [() => json({ error: "rate limited" }, 429)],
@@ -611,6 +729,7 @@ describe("completeLogin", () => {
         "/login": [
           () =>
             json({
+              message: "Success",
               token: "ephemeral-1",
               identifierType: "email",
               loginMethods: ["email_otp"],
@@ -703,6 +822,7 @@ describe("completeLogin", () => {
       "/login": [
         () =>
           json({
+            message: "Success",
             token: "ephemeral-1",
             identifierType: "email",
             loginMethods: ["email_otp"],
@@ -710,7 +830,7 @@ describe("completeLogin", () => {
       ],
       "/otp/generate-login-email-otp": [() => json({ message: "sent" })],
       "/otp/verify-login-email-otp": [
-        () => json({ token: "access-1", refreshToken: "refresh-1" }),
+        () => json({ message: "Success", token: "access-1", refreshToken: "refresh-1" }),
       ],
     });
 

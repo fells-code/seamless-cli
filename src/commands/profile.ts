@@ -1,4 +1,5 @@
 import { intro, outro, text, isCancel, cancel } from "@clack/prompts";
+import { IdentifierTypeSchema } from "@seamless-auth/types";
 import kleur from "kleur";
 import { extractFlag } from "../core/args.js";
 import {
@@ -10,7 +11,6 @@ import {
   resolveActiveProfileName,
   setActiveProfile,
   upsertProfile,
-  type IdentifierType,
 } from "../core/config.js";
 import { deleteTokens, KeychainUnavailableError } from "../core/keychain.js";
 import { loginToInstance } from "./instanceLogin.js";
@@ -72,13 +72,14 @@ async function profileAdd(rest: string[]): Promise<void> {
   let name = typeFlag.rest[0];
   let instanceUrl = urlFlag.value;
 
-  const identifierType = (typeFlag.value ?? "email") as IdentifierType;
-  if (identifierType !== "email" && identifierType !== "phone") {
+  const parsedType = IdentifierTypeSchema.safeParse(typeFlag.value ?? "email");
+  if (!parsedType.success) {
     console.error(
       kleur.red(`Invalid --identifier-type "${typeFlag.value}". Use email or phone.`),
     );
     process.exit(1);
   }
+  const identifierType = parsedType.data;
 
   intro("Add a Seamless profile");
 

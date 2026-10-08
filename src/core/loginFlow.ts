@@ -1,4 +1,11 @@
-import type { IdentifierType } from "./config.js";
+import {
+  AuthDeliverySchema,
+  LoginSuccessResponseSchema,
+  OTPVerifyTokenSuccessSchema,
+  type IdentifierType,
+  type LoginMethod,
+} from "@seamless-auth/types";
+import { z } from "zod";
 import { apiRequest, isRateLimited, joinUrl, jsonBody } from "./http.js";
 import { tokensFromAuthResponse } from "./authClient.js";
 import type { TokenBundle } from "./keychain.js";
@@ -8,7 +15,20 @@ export const DEFAULT_MAX_ATTEMPTS = 3;
 
 const EXTERNAL_DELIVERY_HEADER = "x-seamless-auth-delivery-mode";
 
-export type LoginChannel = "email" | "phone";
+export type LoginChannel = IdentifierType;
+
+// The `/login` answer. A real account and a decoy are sent by the same responder, so
+// this cannot tell them apart and must not try. `loginMethods` is read as strings
+// rather than the LoginMethod enum: the instance validates the list against its own
+// types, so a method added after this CLI was built would otherwise fail every login,
+// and the check in completeLogin only needs to find the one method it asks for.
+const LoginStartSchema = LoginSuccessResponseSchema.extend({
+  loginMethods: z.array(z.string()).optional(),
+}).loose();
+
+const CodeSentSchema = z.object({ token: z.string().optional() }).loose();
+
+const VerifiedSchema = OTPVerifyTokenSuccessSchema.loose();
 
 export class LoginError extends Error {
   constructor(message: string) {
@@ -53,19 +73,22 @@ export interface CompleteLoginOptions {
 
 interface StartedLogin {
   ephemeralToken: string;
+  // Strings, not LoginMethod[]; see LoginStartSchema.
   loginMethods: string[];
   channel: LoginChannel;
   sub?: string;
   deadline: number;
 }
 
+// An SMS code arrives as a number (the API generates it with randomInt), so a check
+// for a string alone dropped every phone code and failed `--local` phone logins.
 function deliveryCode(data: Record<string, unknown> | null): string | undefined {
-  const delivery = data?.delivery;
-  if (delivery && typeof delivery === "object") {
-    const token = (delivery as Record<string, unknown>).token;
-    if (typeof token === "string" && token) return token;
-  }
-  return undefined;
+  const parsed = AuthDeliverySchema.safeParse(data?.delivery);
+  if (!parsed.success) return undefined;
+  const delivery = parsed.data;
+  if (delivery.kind !== "otp_email" && delivery.kind !== "otp_sms") return undefined;
+  const code = String(delivery.token);
+  return code || undefined;
 }
 
 function apiMessage(data: unknown): string | undefined {
@@ -142,23 +165,19 @@ async function startLogin(
     throw new LoginError(`Login request failed (${res.status}).`);
   }
 
-  const data = res.data ?? {};
-  const ephemeralToken = typeof data.token === "string" ? data.token : "";
-  if (!ephemeralToken) {
+  const parsed = LoginStartSchema.safeParse(res.data);
+  if (!parsed.success) {
+    throw new LoginError("The instance returned a login response this CLI cannot read.");
+  }
+  const { token, loginMethods = [], identifierType = "email", sub } = parsed.data;
+  if (!token) {
     throw new LoginError("The instance did not return a login token.");
   }
 
-  const loginMethods = Array.isArray(data.loginMethods)
-    ? data.loginMethods.filter((m): m is string => typeof m === "string")
-    : [];
-  const channel: LoginChannel =
-    data.identifierType === "phone" ? "phone" : "email";
-  const sub = typeof data.sub === "string" ? data.sub : undefined;
-
   return {
-    ephemeralToken,
+    ephemeralToken: token,
     loginMethods,
-    channel,
+    channel: identifierType,
     sub,
     deadline: now() + EPHEMERAL_WINDOW_MS,
   };
@@ -201,7 +220,7 @@ async function sendCode(
     );
   }
 
-  const refreshed = typeof res.data?.token === "string" ? res.data.token : undefined;
+  const refreshed = CodeSentSchema.safeParse(res.data).data?.token;
   if (refreshed) started.ephemeralToken = refreshed;
 
   return localDelivery ? deliveryCode(res.data) : undefined;
@@ -263,7 +282,7 @@ export async function completeLogin(
 
   let started = await startLogin(opts.instanceUrl, opts.identifier, now);
   const channel = started.channel;
-  const required = channel === "email" ? "email_otp" : "phone_otp";
+  const required: LoginMethod = channel === "email" ? "email_otp" : "phone_otp";
   if (started.loginMethods.length > 0 && !started.loginMethods.includes(required)) {
     // Deliberately not "this account cannot": the method list comes back for an unknown
     // identifier too, so saying so would report an account that may not exist.
@@ -308,17 +327,20 @@ export async function completeLogin(
     const res = await verifyCode(opts.instanceUrl, started, code);
 
     if (res.status === 200 && res.data) {
-      const tokens = tokensFromAuthResponse(res.data);
-      if (!tokens) {
+      const verified = VerifiedSchema.safeParse(res.data);
+      const tokens = verified.success ? tokensFromAuthResponse(res.data) : null;
+      if (!verified.success || !tokens) {
         throw new LoginError(
           "The instance returned an unexpected verification response.",
         );
       }
-      const email = typeof res.data.email === "string" ? res.data.email : undefined;
-      const sub = typeof res.data.sub === "string" ? res.data.sub : started.sub;
       return {
         tokens,
-        identity: { sub, email, identifierType: channel },
+        identity: {
+          sub: verified.data.sub ?? started.sub,
+          email: verified.data.email,
+          identifierType: channel,
+        },
         channel,
       };
     }
