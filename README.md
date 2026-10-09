@@ -256,10 +256,18 @@ my-app/
 ├─ mobile/                # Expo mobile app (--mobile only)
 ├─ admin/                 # Admin console source (--admin=source only)
 ├─ docker-compose.yml     # not written for a managed project
-└─ seamless.config.json
+├─ seamless.config.json
+├─ AGENTS.md              # guide for coding agents, written from your choices
+└─ CLAUDE.md              # "See @AGENTS.md", so Claude Code loads it
 ```
 
 All services are preconfigured to work together.
+
+The root `AGENTS.md` describes this project as init built it: which directory came from which
+template (linking each starter's own `AGENTS.md`), the ports and admin console, how to start the
+stack, who the first admin is, and the rules an agent should follow (use the SDK and adapter, never
+hand-rolled JWT, password, session cookie or login code). Like the other root files, it replaces
+one already there when you scaffold into a non-empty directory with `--force`.
 
 - Web calls the API
 - API communicates with the auth server
