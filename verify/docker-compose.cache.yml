@@ -78,3 +78,17 @@ services:
         - type=gha,scope=verify-angular-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
       cache_to:
         - type=gha,mode=max,scope=verify-angular-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+
+  vue:
+    build:
+      cache_from:
+        - type=gha,scope=verify-vue-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+      cache_to:
+        - type=gha,mode=max,scope=verify-vue-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+
+  vue-dev:
+    build:
+      cache_from:
+        - type=gha,scope=verify-vue-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+      cache_to:
+        - type=gha,mode=max,scope=verify-vue-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}

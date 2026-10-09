@@ -17,6 +17,10 @@ const ALL_PROFILES = [
   "--profile",
   "angular-dev",
   "--profile",
+  "vue",
+  "--profile",
+  "vue-dev",
+  "--profile",
   "nextjs",
   "--profile",
   "nextjs-dev",
@@ -122,7 +126,7 @@ describe("runVerify — published (default) mode", () => {
     await runVerify([]);
 
     // Stale tarballs are removed from every vendor dir; non-tgz files are left.
-    expect(fs.rmSync).toHaveBeenCalledTimes(4);
+    expect(fs.rmSync).toHaveBeenCalledTimes(5);
 
     const tails = dockerTails();
     expect(tails).toContainEqual([...ALL_PROFILES, "down", "-v"]); // initial clean
@@ -160,6 +164,8 @@ describe("runVerify — published (default) mode", () => {
     expect(tails).toContainEqual(["--profile", "angular", "up", "-d", "--build", "angular"]);
     expect(tails).toContainEqual(["--profile", "angular", "rm", "-sf", "angular"]);
     expect(npmTests).toContainEqual(["test", "--", "--project", "angular"]);
+    expect(tails).toContainEqual(["--profile", "vue", "up", "-d", "--build", "vue"]);
+    expect(npmTests).toContainEqual(["test", "--", "--project", "vue"]);
 
     // A successful run does not exit non-zero.
     expect(exitSpy).not.toHaveBeenCalled();
@@ -321,6 +327,8 @@ describe("runVerify — flag parsing", () => {
       "react-dev",
       "angular",
       "angular-dev",
+      "vue",
+      "vue-dev",
       "nextjs",
       "nextjs-dev",
     ]);
@@ -329,6 +337,7 @@ describe("runVerify — flag parsing", () => {
     const out = logSpy.mock.calls.flat().join("\n");
     expect(out).toContain("Web (dev) · web-basic");
     expect(out).toContain("Web (dev) · angular-reference");
+    expect(out).toContain("Web (dev) · vue-reference");
     expect(out).toContain("Full-stack (dev) · nextjs");
   });
 
@@ -489,9 +498,9 @@ describe("runVerify — local mode", () => {
   });
 
   it("packs the react SDK as a single package when the checkout has no workspaces", async () => {
-    // A checkout that predates the Angular package has no packages/angular/dist.
+    // A checkout that predates the Angular and Vue packages has neither.
     vi.mocked(fs.existsSync).mockImplementation(
-      (p: never) => !String(p).includes("packages/angular/dist"),
+      (p: never) => !/packages\/(angular\/dist|vue)/.test(String(p)),
     );
 
     await runVerify(["--local"]);
@@ -520,9 +529,24 @@ describe("runVerify — local mode", () => {
     ]);
   });
 
+  it("packs the Vue package and its client core for the Vue app", async () => {
+    await runVerify(["--local"]);
+
+    const packs = callsFor("npm").filter((a) => a[0] === "pack");
+    expect(packs).toContainEqual([
+      "pack",
+      "-w",
+      "@seamless-auth/client",
+      "-w",
+      "@seamless-auth/vue",
+      "--pack-destination",
+      expect.stringContaining("vue-vendor"),
+    ]);
+  });
+
   it("packs the client core alongside react when the checkout is a workspace", async () => {
     vi.mocked(fs.existsSync).mockImplementation(
-      (p: never) => !String(p).includes("packages/angular/dist"),
+      (p: never) => !/packages\/(angular\/dist|vue)/.test(String(p)),
     );
     vi.mocked(fs.readFileSync).mockImplementation((p: never) => {
       const s = String(p);

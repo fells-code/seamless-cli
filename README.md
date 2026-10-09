@@ -415,13 +415,14 @@ their own Dockerfile's `runtime` target and driven by specs written for their ow
 Mobile templates are announced and skipped: the harness has no
 simulator to drive, so a native app is checked by running it against a `--keep-up` stack.
 
-Angular runs the same browser specs as React. `@seamless-auth/angular` keeps the React
-screens' accessible names, so the `angular` Playwright projects point at the React specs and
-drive an Angular app instead: a web template whose `template.json` sets `verify.project` (or
-whose registry `framework` is) `angular`, or, until one exists, the reference app in
-[verify/angular-app](verify/angular-app). `SEAMLESS_ANGULAR_DIR` points the run at another
-Angular app. With `--local`, the client and the built Angular package are packed into
-`verify/angular-vendor` and installed over the published ones.
+Angular and Vue run the same browser specs as React. `@seamless-auth/angular` and
+`@seamless-auth/vue` keep the React screens' accessible names, so the `angular` and `vue`
+Playwright projects point at the React specs and drive an app of that framework instead: a web
+template whose `template.json` sets `verify.project` (or whose registry `framework` is) `angular`
+or `vue`, or, until one exists, the reference app in [verify/angular-app](verify/angular-app) or
+[verify/vue-app](verify/vue-app). `SEAMLESS_ANGULAR_DIR` and `SEAMLESS_VUE_DIR` point the run at
+another app. With `--local`, the client and each binding are packed into `verify/angular-vendor`
+and `verify/vue-vendor` and installed over the published ones.
 
 `--adapter-url` holds a server adapter this repository does not build (Go, Rust, Python)
 to the same contract as the Express and Fastify adapters. It starts only Postgres and the
