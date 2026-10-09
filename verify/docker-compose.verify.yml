@@ -11,6 +11,8 @@
 #                       react-dev profiles)
 #   SEAMLESS_FULLSTACK_DIR  absolute path to the full-stack template to serve
 #                       (nextjs and nextjs-dev profiles)
+#   SEAMLESS_ANGULAR_DIR  absolute path to the Angular app to serve (angular and
+#                       angular-dev profiles); defaults to ./angular-app
 #   API_SERVICE_TOKEN   shared secret between the API and both adapters
 #   JWKS_KID            key id the adapters expect (must match the API's active kid)
 #   OWNER_EMAIL         tenant owner; this email gets the admin role at signup
@@ -240,6 +242,57 @@ services:
       interval: 3s
       timeout: 3s
       retries: 40
+
+  # An Angular app on @seamless-auth/angular, driven by the same browser specs as
+  # the React template: the screens keep the same accessible names. By default the
+  # reference app in ./angular-app; an Angular web template points
+  # SEAMLESS_ANGULAR_DIR at itself. Built from the app's own Dockerfile, whose
+  # `sdk` context installs the client and Angular tarballs a --local run packs into
+  # ./angular-vendor (empty otherwise, which means the published package).
+  angular:
+    profiles: ['angular']
+    build:
+      context: ${SEAMLESS_ANGULAR_DIR:-./angular-app}
+      additional_contexts:
+        sdk: ./angular-vendor
+      target: runtime
+    ports:
+      - '5173:80'
+    environment:
+      API_URL: http://localhost:3000
+    depends_on:
+      adapter:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost/health']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # The same app on `ng serve`, which runs Angular's development-mode checks
+  # (expression-changed-after-checked among them) that a production build strips.
+  # The dev server reads the API origin from public/config.js, which already
+  # points at localhost:3000. Dependency prebundling is off in angular.json, so the
+  # server does not restart under the first test to re-optimize.
+  angular-dev:
+    profiles: ['angular-dev']
+    build:
+      context: ${SEAMLESS_ANGULAR_DIR:-./angular-app}
+      additional_contexts:
+        sdk: ./angular-vendor
+      target: dev
+    ports:
+      - '5173:5173'
+    depends_on:
+      adapter:
+        condition: service_healthy
+    # Healthy once the compiled bundle is served, not just the index page: the
+    # first navigation otherwise races the dev server's initial build.
+    healthcheck:
+      test: ['CMD', 'node', '-e', "Promise.all(['/', '/main.js'].map(p=>fetch('http://localhost:5173'+p))).then(rs=>process.exit(rs.every(r=>r.ok)?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
 
   # A full-stack template (the Next.js starter) built with its own Dockerfile's
   # `runtime` target: the standalone production server, on port 80 with /health.

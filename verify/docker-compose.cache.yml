@@ -64,3 +64,17 @@ services:
         - type=gha,scope=verify-nextjs-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
       cache_to:
         - type=gha,mode=max,scope=verify-nextjs-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+
+  angular:
+    build:
+      cache_from:
+        - type=gha,scope=verify-angular-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+      cache_to:
+        - type=gha,mode=max,scope=verify-angular-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+
+  angular-dev:
+    build:
+      cache_from:
+        - type=gha,scope=verify-angular-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+      cache_to:
+        - type=gha,mode=max,scope=verify-angular-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}

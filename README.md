@@ -415,21 +415,30 @@ their own Dockerfile's `runtime` target and driven by specs written for their ow
 Mobile templates are announced and skipped: the harness has no
 simulator to drive, so a native app is checked by running it against a `--keep-up` stack.
 
+Angular runs the same browser specs as React. `@seamless-auth/angular` keeps the React
+screens' accessible names, so the `angular` Playwright projects point at the React specs and
+drive an Angular app instead: a web template whose `template.json` sets `verify.project` (or
+whose registry `framework` is) `angular`, or, until one exists, the reference app in
+[verify/angular-app](verify/angular-app). `SEAMLESS_ANGULAR_DIR` points the run at another
+Angular app. With `--local`, the client and the built Angular package are packed into
+`verify/angular-vendor` and installed over the published ones.
+
 `--adapter-url` holds a server adapter this repository does not build (Go, Rust, Python)
 to the same contract as the Express and Fastify adapters. It starts only Postgres and the
 auth API and runs the adapter specs against a reference app you started at that URL. What
 the reference app must serve, and how it reaches the API, is in
 [verify/CONFORMANCE.md](verify/CONFORMANCE.md).
 
-`--dev` runs every browser template a second time on its development server (`vite`, or
-`next dev`). Production React runs each effect once; Strict Mode in development runs it
+`--dev` runs every browser template a second time on its development server (`vite`,
+`ng serve`, or `next dev`). Production React runs each effect once; Strict Mode in development runs it
 twice, so an effect that is not idempotent (a single-use magic link verified twice, say)
 passes the production pass and fails this one, the way it fails on a developer's first
 `npm run dev`. The conformance workflow passes `--dev` on every pull request.
 
 Sibling repositories are resolved next to this one and can be pointed elsewhere with
 `SEAMLESS_API_DIR`, `SEAMLESS_SERVER_DIR`, `SEAMLESS_REACT_SDK_DIR`, and
-`SEAMLESS_TEMPLATES_DIR`.
+`SEAMLESS_TEMPLATES_DIR` (`SEAMLESS_REACT_SDK_DIR` is the client SDK workspace, which also
+holds the Angular package).
 
 ---
 

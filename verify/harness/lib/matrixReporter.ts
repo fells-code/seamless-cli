@@ -10,6 +10,8 @@ const LAYERS = [
   'adapter-fastify',
   'react',
   'react-dev',
+  'angular',
+  'angular-dev',
   'nextjs',
   'nextjs-dev',
 ] as const;

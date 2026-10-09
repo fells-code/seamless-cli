@@ -53,6 +53,12 @@ export default async function globalSetup(): Promise<void> {
     await waitForHealth(`${CONFORMANCE_ADAPTER_URL}/`, 'reference app');
   }
   if (process.env.SEAMLESS_VERIFY_REACT === '1') {
-    await waitForHealth(`${REACT_URL}/health`, 'react');
+    // Checked on IPv4, the address the browser projects are pinned to with
+    // --host-resolver-rules. Node resolves `localhost` to ::1 first, so a dev
+    // server the developer left running there (a vite on 5173, say) would answer
+    // this check while the container under test is still starting.
+    const browserUrl = new URL(REACT_URL);
+    if (browserUrl.hostname === 'localhost') browserUrl.hostname = '127.0.0.1';
+    await waitForHealth(`${browserUrl.origin}/health`, 'web app');
   }
 }
