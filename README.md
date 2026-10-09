@@ -5,9 +5,18 @@
 ![coverage](resources/coverage-badge.svg)
 [![conformance](https://github.com/fells-code/seamless-cli/actions/workflows/conformance.yml/badge.svg)](https://github.com/fells-code/seamless-cli/actions/workflows/conformance.yml)
 
-Seamless CLI is a command-line tool for bootstrapping applications with Seamless Auth, an open source, passwordless authentication system.
+Seamless CLI is the CLI for Seamless Auth, open source passwordless auth. It scaffolds, checks, and verifies Seamless Auth projects.
 
-It guides you through creating a fully working authentication stack with a web app, API, and auth server that are already connected and ready to run.
+## Quick start
+
+```bash
+npm install -g seamless-cli
+seamless init my-app --local --yes --email=you@example.com
+```
+
+It never prompts (a missing value exits with an error naming the flag), so it is safe for coding agents and CI.
+
+Run without flags, `seamless init` guides you through creating a fully working authentication stack with a web app, API, and auth server that are already connected and ready to run.
 
 ---
 
@@ -49,7 +58,7 @@ You’ll be guided through a short setup process. For a local stack, `init` asks
   itself.
 - **Mobile app**: an optional mobile starter (defaults to none).
 - **Your email**: the owner email, which becomes the admin when you register.
-- **How would you like to run SeamlessAuth?**: the auth server as a Docker container
+- **How would you like to run Seamless Auth?**: the auth server as a Docker container
   (recommended) or a local dev server.
 - **How would you like to host the admin console?**: served by your API at `/console`
   (recommended), a separate container from the official image or a cloned repo, or none. A
