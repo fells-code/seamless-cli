@@ -21,6 +21,10 @@ const ALL_PROFILES = [
   "--profile",
   "vue-dev",
   "--profile",
+  "svelte",
+  "--profile",
+  "svelte-dev",
+  "--profile",
   "nextjs",
   "--profile",
   "nextjs-dev",
@@ -126,7 +130,7 @@ describe("runVerify — published (default) mode", () => {
     await runVerify([]);
 
     // Stale tarballs are removed from every vendor dir; non-tgz files are left.
-    expect(fs.rmSync).toHaveBeenCalledTimes(5);
+    expect(fs.rmSync).toHaveBeenCalledTimes(6);
 
     const tails = dockerTails();
     expect(tails).toContainEqual([...ALL_PROFILES, "down", "-v"]); // initial clean
@@ -166,6 +170,8 @@ describe("runVerify — published (default) mode", () => {
     expect(npmTests).toContainEqual(["test", "--", "--project", "angular"]);
     expect(tails).toContainEqual(["--profile", "vue", "up", "-d", "--build", "vue"]);
     expect(npmTests).toContainEqual(["test", "--", "--project", "vue"]);
+    expect(tails).toContainEqual(["--profile", "svelte", "up", "-d", "--build", "svelte"]);
+    expect(npmTests).toContainEqual(["test", "--", "--project", "svelte"]);
 
     // A successful run does not exit non-zero.
     expect(exitSpy).not.toHaveBeenCalled();
@@ -329,6 +335,8 @@ describe("runVerify — flag parsing", () => {
       "angular-dev",
       "vue",
       "vue-dev",
+      "svelte",
+      "svelte-dev",
       "nextjs",
       "nextjs-dev",
     ]);
@@ -338,6 +346,7 @@ describe("runVerify — flag parsing", () => {
     expect(out).toContain("Web (dev) · web-basic");
     expect(out).toContain("Web (dev) · angular-reference");
     expect(out).toContain("Web (dev) · vue-reference");
+    expect(out).toContain("Web (dev) · svelte-reference");
     expect(out).toContain("Full-stack (dev) · nextjs");
   });
 
@@ -498,9 +507,9 @@ describe("runVerify — local mode", () => {
   });
 
   it("packs the react SDK as a single package when the checkout has no workspaces", async () => {
-    // A checkout that predates the Angular and Vue packages has neither.
+    // A checkout that predates the Angular, Vue and Svelte packages has none of them.
     vi.mocked(fs.existsSync).mockImplementation(
-      (p: never) => !/packages\/(angular\/dist|vue)/.test(String(p)),
+      (p: never) => !/packages\/(angular\/dist|vue|svelte)/.test(String(p)),
     );
 
     await runVerify(["--local"]);
@@ -544,9 +553,24 @@ describe("runVerify — local mode", () => {
     ]);
   });
 
+  it("packs the Svelte package and its client core for the Svelte app", async () => {
+    await runVerify(["--local"]);
+
+    const packs = callsFor("npm").filter((a) => a[0] === "pack");
+    expect(packs).toContainEqual([
+      "pack",
+      "-w",
+      "@seamless-auth/client",
+      "-w",
+      "@seamless-auth/svelte",
+      "--pack-destination",
+      expect.stringContaining("svelte-vendor"),
+    ]);
+  });
+
   it("packs the client core alongside react when the checkout is a workspace", async () => {
     vi.mocked(fs.existsSync).mockImplementation(
-      (p: never) => !/packages\/(angular\/dist|vue)/.test(String(p)),
+      (p: never) => !/packages\/(angular\/dist|vue|svelte)/.test(String(p)),
     );
     vi.mocked(fs.readFileSync).mockImplementation((p: never) => {
       const s = String(p);

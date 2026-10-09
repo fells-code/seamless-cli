@@ -92,3 +92,17 @@ services:
         - type=gha,scope=verify-vue-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
       cache_to:
         - type=gha,mode=max,scope=verify-vue-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+
+  svelte:
+    build:
+      cache_from:
+        - type=gha,scope=verify-svelte-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+      cache_to:
+        - type=gha,mode=max,scope=verify-svelte-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+
+  svelte-dev:
+    build:
+      cache_from:
+        - type=gha,scope=verify-svelte-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}
+      cache_to:
+        - type=gha,mode=max,scope=verify-svelte-dev-${SEAMLESS_VERIFY_TEMPLATE_ID:-default}

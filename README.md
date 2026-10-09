@@ -415,14 +415,16 @@ their own Dockerfile's `runtime` target and driven by specs written for their ow
 Mobile templates are announced and skipped: the harness has no
 simulator to drive, so a native app is checked by running it against a `--keep-up` stack.
 
-Angular and Vue run the same browser specs as React. `@seamless-auth/angular` and
-`@seamless-auth/vue` keep the React screens' accessible names, so the `angular` and `vue`
-Playwright projects point at the React specs and drive an app of that framework instead: a web
-template whose `template.json` sets `verify.project` (or whose registry `framework` is) `angular`
-or `vue`, or, until one exists, the reference app in [verify/angular-app](verify/angular-app) or
-[verify/vue-app](verify/vue-app). `SEAMLESS_ANGULAR_DIR` and `SEAMLESS_VUE_DIR` point the run at
-another app. With `--local`, the client and each binding are packed into `verify/angular-vendor`
-and `verify/vue-vendor` and installed over the published ones.
+Angular, Vue and Svelte run the same browser specs as React. `@seamless-auth/angular`,
+`@seamless-auth/vue` and `@seamless-auth/svelte` keep the React screens' accessible names, so the
+`angular`, `vue` and `svelte` Playwright projects point at the React specs and drive an app of that
+framework instead: a web template whose `template.json` sets `verify.project` (or whose registry
+`framework` is) `angular`, `vue` or `svelte`, or, until one exists, the reference app in
+[verify/angular-app](verify/angular-app), [verify/vue-app](verify/vue-app) or
+[verify/svelte-app](verify/svelte-app) (SvelteKit 3, as a single-page app).
+`SEAMLESS_ANGULAR_DIR`, `SEAMLESS_VUE_DIR` and `SEAMLESS_SVELTE_DIR` point the run at another app.
+With `--local`, the client and each binding are packed into that app's vendor directory and
+installed over the published ones.
 
 `--adapter-url` holds a server adapter this repository does not build (Go, Rust, Python)
 to the same contract as the Express and Fastify adapters. It starts only Postgres and the
@@ -431,7 +433,7 @@ the reference app must serve, and how it reaches the API, is in
 [verify/CONFORMANCE.md](verify/CONFORMANCE.md).
 
 `--dev` runs every browser template a second time on its development server (`vite`,
-`ng serve`, or `next dev`). Production React runs each effect once; Strict Mode in development runs it
+`ng serve`, `vite dev` for SvelteKit, or `next dev`). Production React runs each effect once; Strict Mode in development runs it
 twice, so an effect that is not idempotent (a single-use magic link verified twice, say)
 passes the production pass and fails this one, the way it fails on a developer's first
 `npm run dev`. The conformance workflow passes `--dev` on every pull request.
