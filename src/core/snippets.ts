@@ -1,4 +1,4 @@
-import { addPackagesCommand, type DetectedBackend, type DetectedWeb } from "./detect.js";
+import { addPackagesCommand, type DetectedBackend } from "./detect.js";
 import { nativeBackendSnippet } from "./nativeSnippets.js";
 
 // What `seamless add` prints for the adopter to paste. It never edits their files:
@@ -121,28 +121,6 @@ const signedIn = requireAuth({
 app.get("/api/me", { preHandler: signedIn }, async (req) => ({ id: req.user${ts ? "!" : ""}.id }));`;
 }
 
-/** The environment variable a React build reads the backend URL from. */
-export function webApiUrlVariable(web: DetectedWeb): string {
-  return web.bundler === "react-scripts" ? "REACT_APP_API_URL" : "VITE_API_URL";
-}
-
-export function webSnippet(web: DetectedWeb): string {
-  const variable = webApiUrlVariable(web);
-  const read =
-    web.bundler === "react-scripts"
-      ? `process.env.${variable}`
-      : `import.meta.env.${variable}`;
-  return `import { AuthProvider, useAuth } from "@seamless-auth/react";
-
-// Wrap your app once, at the root. It talks to your backend's /auth routes.
-<AuthProvider apiHost={${read}}>
-  <App />
-</AuthProvider>
-
-// Anywhere below it:
-const { isAuthenticated, user, logout } = useAuth();`;
-}
-
 const FRAMEWORK_NAMES: Record<DetectedBackend["framework"], string> = {
   express: "Express",
   fastify: "Fastify",
@@ -224,5 +202,3 @@ export function backendPackages(backend: DetectedBackend): { deps: string[]; dev
   }
   return { deps: ["@seamless-auth/fastify", "@fastify/cors"], dev: [] };
 }
-
-export const WEB_PACKAGES = ["@seamless-auth/react"];

@@ -28,12 +28,20 @@ export interface DetectedBackend {
   packageManager: BackendPackageManager;
 }
 
+export type WebFramework = "react" | "angular" | "vue" | "sveltekit";
+
 export interface DetectedWeb {
-  framework: "react";
-  bundler: "vite" | "react-scripts" | "other";
+  framework: WebFramework;
+  bundler: "vite" | "react-scripts" | "angular" | "other";
   dir: string;
   typescript: boolean;
   entry?: string;
+  // Vue: the file the router is created in, when it is not the entry.
+  router?: string;
+  // SvelteKit: how the app imports from src/lib. SvelteKit 3 renamed $lib to #lib.
+  libAlias?: "$lib" | "#lib";
+  // Peer dependencies of the binding the app does not have yet.
+  missingPeers: string[];
   packageManager: JsPackageManager;
 }
 
@@ -168,8 +176,6 @@ export function detectProject(root: string): DetectedProject {
 
   for (const dir of candidateDirs(root)) {
     const rel = path.relative(root, dir) || ".";
-    if (fs.existsSync(path.join(dir, "angular.json"))) note("Angular");
-
     // Every folder is read, so a stack that is not wired yet is reported even
     // after a backend has been found; the first backend found is the one used.
     const native = detectNativeBackend(dir, rel, note);
@@ -193,22 +199,66 @@ export function detectProject(root: string): DetectedProject {
     }
 
     if ("next" in deps) note("Next.js");
-    if ("vue" in deps) note("Vue");
-    if ("svelte" in deps) note("Svelte");
-    if ("@angular/core" in deps) note("Angular");
+    if ("nuxt" in deps) note("Nuxt");
+    if ("svelte" in deps && !("@sveltejs/kit" in deps)) note("Svelte without SvelteKit");
 
-    if (!result.web && "react" in deps && !("next" in deps) && !("react-native" in deps)) {
-      result.web = {
-        framework: "react",
-        bundler: "vite" in deps ? "vite" : "react-scripts" in deps ? "react-scripts" : "other",
-        dir: rel,
-        typescript,
-        entry: findEntry(dir, pkg, WEB_ENTRIES),
-        packageManager: detectJsPackageManager(dir, root),
-      };
-    }
+    if (!result.web) result.web = detectWeb(dir, rel, root, pkg, typescript);
   }
   return result;
+}
+
+function detectWeb(
+  dir: string,
+  rel: string,
+  root: string,
+  pkg: PackageJson,
+  typescript: boolean,
+): DetectedWeb | undefined {
+  const deps = dependencies(pkg);
+  const base = { dir: rel, typescript, packageManager: detectJsPackageManager(dir, root) };
+  const missing = (...names: string[]) => names.filter((name) => !(name in deps));
+
+  if ("@angular/core" in deps) {
+    return {
+      ...base,
+      framework: "angular",
+      bundler: "angular",
+      typescript: true,
+      entry: firstExisting(dir, ["src/app/app.config.ts", "src/app/app.module.ts", "src/main.ts"]),
+      missingPeers: missing("@angular/router"),
+    };
+  }
+  if ("@sveltejs/kit" in deps) {
+    const kit = deps["@sveltejs/kit"].match(/\d+/)?.[0];
+    return {
+      ...base,
+      framework: "sveltekit",
+      bundler: "vite",
+      entry: firstExisting(dir, ["src/routes/+layout.svelte"]),
+      libAlias: kit !== undefined && Number(kit) >= 3 ? "#lib" : "$lib",
+      missingPeers: [],
+    };
+  }
+  if ("vue" in deps && !("nuxt" in deps)) {
+    return {
+      ...base,
+      framework: "vue",
+      bundler: "vite" in deps ? "vite" : "other",
+      entry: firstExisting(dir, ["src/main.ts", "src/main.js"]),
+      router: firstExisting(dir, ["src/router/index.ts", "src/router/index.js", "src/router.ts", "src/router.js"]),
+      missingPeers: missing("vue-router"),
+    };
+  }
+  if ("react" in deps && !("next" in deps) && !("react-native" in deps)) {
+    return {
+      ...base,
+      framework: "react",
+      bundler: "vite" in deps ? "vite" : "react-scripts" in deps ? "react-scripts" : "other",
+      entry: findEntry(dir, pkg, WEB_ENTRIES),
+      missingPeers: [],
+    };
+  }
+  return undefined;
 }
 
 function readText(file: string): string | undefined {

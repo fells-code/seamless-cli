@@ -114,13 +114,13 @@ NON-INTERACTIVE
         body: `Add Seamless Auth to an existing project
 
 Finds a backend (Express, Fastify, Go net/http, Gin, chi, Echo, Axum, FastAPI or
-Django) and a React web app (at the project root, or in api/, server/, backend/,
-web/, client/, frontend/, apps/* or packages/*), then:
+Django) and a web app (React, Angular, Vue or SvelteKit), at the project root or in
+api/, server/, backend/, web/, client/, frontend/, apps/* or packages/*, then:
   • Connects an auth server: a local one in Docker, written to seamless/, or a
     managed application
   • Writes the backend's .env (auth server URL, service token, signing key id, a
     cookie secret), keeping every value you already have, and the web app's API
-    URL in .env.local
+    URL in .env.local (Angular gets it in the printed code)
   • Installs the adapter and SDK with the project's own tool (npm, pnpm, yarn,
     bun, go get, cargo add, uv or poetry; a pip install is printed instead)
   • Prints the lines of code to add. It never edits your source files
@@ -140,7 +140,7 @@ web/, client/, frontend/, apps/* or packages/*), then:
 --api-url=<url>, --web-url=<url>
   • Your backend and web app origins, when they are not on the defaults
     (http://localhost:<PORT from the backend .env, or 3000> and
-    http://localhost:5173)
+    http://localhost:5173, or 4200 for Angular and 3001 for Create React App)
 
 --admin=<api|none>
   • Whether your backend serves the admin dashboard at /console (default: api)

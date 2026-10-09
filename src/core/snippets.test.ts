@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { DetectedBackend, DetectedWeb } from "./detect.js";
+import type { DetectedBackend } from "./detect.js";
 import {
   backendInstalls,
   backendPackages,
   backendSnippet,
   envLoadingHint,
   frameworkName,
-  webApiUrlVariable,
-  webSnippet,
 } from "./snippets.js";
 
 const backend = (framework: "express" | "fastify", typescript: boolean): DetectedBackend => ({
@@ -46,23 +44,6 @@ describe("backendSnippet", () => {
     expect(code).toContain('await app.register(seamlessAuth, { prefix: "/auth", ...seamless });');
     expect(code).toContain("{ preHandler: signedIn }");
     expect(code).toContain("seamlessConsoleProxy");
-  });
-});
-
-describe("web", () => {
-  const web = (bundler: DetectedWeb["bundler"]): DetectedWeb => ({
-    framework: "react",
-    bundler,
-    dir: "web",
-    typescript: true,
-    packageManager: "npm",
-  });
-
-  it("reads the API URL the way the bundler exposes it", () => {
-    expect(webApiUrlVariable(web("vite"))).toBe("VITE_API_URL");
-    expect(webSnippet(web("vite"))).toContain("import.meta.env.VITE_API_URL");
-    expect(webApiUrlVariable(web("react-scripts"))).toBe("REACT_APP_API_URL");
-    expect(webSnippet(web("react-scripts"))).toContain("process.env.REACT_APP_API_URL");
   });
 });
 

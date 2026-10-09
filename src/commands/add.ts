@@ -31,10 +31,14 @@ import {
   envLoadingHint,
   frameworkName,
   type PackageInstall,
-  WEB_PACKAGES,
-  webApiUrlVariable,
-  webSnippet,
 } from "../core/snippets.js";
+import {
+  webApiUrlVariable,
+  webFrameworkName,
+  webPackages,
+  webStepFile,
+  webSteps,
+} from "../core/webSnippets.js";
 import { requireInteractive } from "../core/tty.js";
 import { AUTH_STACK_DIR, generateAuthStack } from "../generators/docker/authStack.js";
 import { LOCAL_AUTH_ISSUER } from "../generators/docker/docker.js";
@@ -167,8 +171,8 @@ export async function addSeamlessAuth(opts: AddOptions) {
     );
   }
 
-  if (web) {
-    const variable = webApiUrlVariable(web);
+  const variable = web && webApiUrlVariable(web);
+  if (web && variable) {
     const envFile = path.join(web.dir, ".env.local");
     const result = mergeEnvFile(path.join(root, envFile), {
       defaults: { [variable]: `${apiOrigin}/` },
@@ -196,6 +200,7 @@ export async function addSeamlessAuth(opts: AddOptions) {
     mode,
     backend,
     web,
+    apiOrigin,
     webOrigin,
     serveConsole,
     installs: installs.filter((i) => opts.install === false || !i.run).map((i) => i.display),
@@ -217,13 +222,13 @@ function reportDetection(project: DetectedProject) {
   }
   if (web) {
     console.log(
-      `  Web:     React in ${web.dir}` + kleur.dim(web.entry ? ` (${web.entry})` : ""),
+      `  Web:     ${webFrameworkName(web.framework)} in ${web.dir}` + kleur.dim(web.entry ? ` (${web.entry})` : ""),
     );
   }
   if (unsupported.length > 0) {
     console.log(
       kleur.dim(
-        `  Also found ${unsupported.join(", ")}, which seamless add does not wire yet (fells-code/seamless-cli#248).`,
+        `  Also found ${unsupported.join(", ")}, which seamless add does not wire yet.`,
       ),
     );
   }
@@ -356,7 +361,9 @@ function backendPort(root: string, backend: DetectedBackend): string {
 }
 
 function defaultWebOrigin(web: DetectedWeb | undefined): string {
-  return web?.bundler === "react-scripts" ? "http://localhost:3001" : "http://localhost:5173";
+  if (web?.bundler === "react-scripts") return "http://localhost:3001";
+  if (web?.framework === "angular") return "http://localhost:4200";
+  return "http://localhost:5173";
 }
 
 // A rough answer is enough here: it only decides whether to warn.
@@ -394,7 +401,7 @@ function installCommands(
   });
   const out = backendInstalls(backend).map((i) => located(backend.dir, i));
   if (web) {
-    const { command, args } = addPackagesCommand(web.packageManager, WEB_PACKAGES);
+    const { command, args } = addPackagesCommand(web.packageManager, webPackages(web));
     out.push(located(web.dir, { command, args, display: `${command} ${args.join(" ")}`, run: true }));
   }
   return out;
@@ -404,6 +411,7 @@ function printNextSteps(ctx: {
   mode: "local" | "managed";
   backend: DetectedBackend;
   web: DetectedWeb | undefined;
+  apiOrigin: string;
   webOrigin: string;
   serveConsole: boolean;
   installs: string[];
@@ -437,8 +445,11 @@ function printNextSteps(ctx: {
   console.log(indent(backendSnippet(backend, { webOrigin: ctx.webOrigin, serveConsole: ctx.serveConsole && mode === "local" })));
 
   if (web) {
-    heading("Wrap your React app" + (web.entry ? ` (${path.join(web.dir, web.entry)})` : ""));
-    console.log(indent(webSnippet(web)));
+    for (const webStep of webSteps(web, { apiOrigin: ctx.apiOrigin })) {
+      const file = webStepFile(web, webStep);
+      heading(webStep.heading + (file ? ` (${file})` : ""));
+      console.log(indent(webStep.code));
+    }
   }
 
   heading("Sign in");
