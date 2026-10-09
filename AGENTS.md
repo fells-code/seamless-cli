@@ -70,7 +70,7 @@ The entry point is [src/index.ts](src/index.ts), which dispatches to a command m
   `fells-code/seamless-templates` monorepo (pinned by `SEAMLESS_TEMPLATES_COMMIT`, the commit
   `SEAMLESS_TEMPLATES_REF` resolved to, in [src/core/images.ts](src/core/images.ts)), downloads the
   selected templates, and applies each
-  template's `template.json` env contract. The auth, docker, and config pieces are still generated
+  template's `template.json` env contract. The auth, docker, config, and root agent guide (`AGENTS.md`, `CLAUDE.md`) pieces are generated
   locally in `src/generators/*`. Override the template source for development with
   `SEAMLESS_TEMPLATES_DIR` (a local checkout) or `SEAMLESS_TEMPLATES_REF` (a different ref, used
   as given).

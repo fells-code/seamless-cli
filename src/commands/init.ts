@@ -23,6 +23,10 @@ import {
 } from "../core/output.js";
 import { generateSeamlessConfig } from "../generators/config/config.js";
 import {
+  generateAgentsFiles,
+  type AgentsTemplate,
+} from "../generators/agents/agents.js";
+import {
   applyTemplateEnv,
   assertCliSupports,
   isFullStack,
@@ -473,6 +477,14 @@ async function scaffoldManaged(
       },
     });
 
+    generateAgentsFiles(root, {
+      projectName: projectName || path.basename(root),
+      ...agentsTemplates(selected, webEntry),
+      authMode: "managed",
+      adminMode: "image",
+      managed: { instanceUrl: authServerUrl, applicationName: app.name },
+    });
+
     printManagedSuccessOutput({
       projectName,
       webFramework: webEntry.framework,
@@ -625,6 +637,14 @@ async function scaffoldLocal(
     adminMode: answers.adminMode,
   });
 
+  generateAgentsFiles(root, {
+    projectName: projectName || path.basename(root),
+    ...agentsTemplates(selected, webEntry),
+    authMode: answers.authMode,
+    adminMode: answers.adminMode,
+    ownerEmail: answers.ownerEmail,
+  });
+
   printSuccessOutput({
     projectName,
     root,
@@ -762,6 +782,28 @@ async function resolveSelectedTemplates(
     selected.push({ entry, manifest, dir });
   }
   return selected;
+}
+
+// Each chosen template as the root AGENTS.md describes it, by layer and by the
+// directory its manifest placed it in.
+function agentsTemplates(selected: SelectedTemplate[], webEntry: RegistryEntry) {
+  const byLayer = (layer: "web" | "api" | "mobile"): AgentsTemplate | undefined => {
+    const s = selected.find((t) => layerOf(t.entry.kind) === layer);
+    return s
+      ? {
+          id: s.entry.id,
+          label: s.entry.label,
+          framework: s.entry.framework,
+          dir: s.manifest.targetDir,
+          hasGuide: fs.existsSync(path.join(s.dir, "AGENTS.md")),
+        }
+      : undefined;
+  };
+  return {
+    web: { ...byLayer("web")!, fullStack: isFullStack(webEntry) },
+    api: byLayer("api"),
+    mobile: byLayer("mobile"),
+  };
 }
 
 function findEntry(templates: RegistryEntry[], id: string): RegistryEntry {

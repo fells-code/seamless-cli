@@ -11,6 +11,7 @@ import { generateAuthServer } from "../generators/auth/auth.js";
 import { generateDockerCompose } from "../generators/docker/docker.js";
 import { generateAdminSource } from "../generators/admin/admin.js";
 import { generateSeamlessConfig } from "../generators/config/config.js";
+import { generateAgentsFiles } from "../generators/agents/agents.js";
 import {
   printManagedSuccessOutput,
   printSuccessOutput,
@@ -87,6 +88,9 @@ vi.mock("../generators/admin/admin.js", () => ({
 }));
 vi.mock("../generators/config/config.js", () => ({
   generateSeamlessConfig: vi.fn(),
+}));
+vi.mock("../generators/agents/agents.js", () => ({
+  generateAgentsFiles: vi.fn(),
 }));
 vi.mock("../core/output.js", () => ({
   printManagedSuccessOutput: vi.fn(),
@@ -545,6 +549,34 @@ describe("scaffoldLocal", () => {
       "/work",
       expect.objectContaining({ mobileFramework: "expo" }),
     );
+    expect(generateAgentsFiles).toHaveBeenCalledWith("/work", {
+      projectName: "work",
+      web: {
+        id: "web-basic",
+        label: "Vue Basic",
+        framework: "vue",
+        dir: "web",
+        hasGuide: false,
+        fullStack: false,
+      },
+      api: {
+        id: "api-express",
+        label: "Express",
+        framework: "express",
+        dir: "api",
+        hasGuide: false,
+      },
+      mobile: {
+        id: "expo",
+        label: "Expo",
+        framework: "expo",
+        dir: "mobile",
+        hasGuide: false,
+      },
+      authMode: "docker",
+      adminMode: "api",
+      ownerEmail: "dev@example.com",
+    });
     expect(printSuccessOutput).toHaveBeenCalledWith(
       expect.objectContaining({ mobileFramework: "expo" }),
     );
@@ -984,6 +1016,14 @@ describe("scaffoldManaged", () => {
           applicationId: "app-1",
           applicationName: "Acme",
         }),
+      }),
+    );
+    expect(generateAgentsFiles).toHaveBeenCalledWith(
+      "/work",
+      expect.objectContaining({
+        authMode: "managed",
+        api: expect.objectContaining({ dir: "api" }),
+        managed: { instanceUrl: expect.any(String), applicationName: "Acme" },
       }),
     );
     expect(printManagedSuccessOutput).toHaveBeenCalled();
