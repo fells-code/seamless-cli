@@ -157,7 +157,7 @@ describe("runProjectSetupPrompts", () => {
     mockSelect({
       "Web example": "web-a",
       "Backend framework": "api-a",
-      "How would you like to run SeamlessAuth?": "docker",
+      "How would you like to run Seamless Auth?": "docker",
       "How would you like to host the admin console?": "api",
     });
 
@@ -180,7 +180,7 @@ describe("runProjectSetupPrompts", () => {
 
   it("uses preselected template ids and logs them instead of prompting", async () => {
     mockSelect({
-      "How would you like to run SeamlessAuth?": "docker",
+      "How would you like to run Seamless Auth?": "docker",
       "How would you like to host the admin console?": "none",
     });
 
@@ -199,7 +199,7 @@ describe("runProjectSetupPrompts", () => {
     mockSelect({
       "Web example": "web-a",
       "Backend framework": "api-a",
-      "How would you like to run SeamlessAuth?": "docker",
+      "How would you like to run Seamless Auth?": "docker",
       "How would you like to host the admin console?": "api",
     });
 
@@ -222,7 +222,7 @@ describe("runProjectSetupPrompts", () => {
     const calls = mockSelect({
       "Web example": "web-a",
       "Backend framework": "api-a",
-      "How would you like to run SeamlessAuth?": "docker",
+      "How would you like to run Seamless Auth?": "docker",
       "How would you like to host the admin console?": "source",
     });
 
@@ -246,7 +246,7 @@ describe("runProjectSetupPrompts", () => {
     mockSelect({
       "Web example": "web-a",
       "Backend framework": "api-a",
-      "How would you like to run SeamlessAuth?": "docker",
+      "How would you like to run Seamless Auth?": "docker",
       "How would you like to host the admin console?": "image",
     });
 
@@ -261,7 +261,7 @@ describe("runProjectSetupPrompts", () => {
     mockSelect({
       "Web example": "web-a",
       "Backend framework": "api-a",
-      "How would you like to run SeamlessAuth?": "local",
+      "How would you like to run Seamless Auth?": "local",
       "How would you like to host the admin console?": "api",
     });
 
@@ -397,7 +397,7 @@ describe("runProjectSetupPrompts without a terminal", () => {
         apiTemplateId: "api-a",
         ownerEmail: "dev@example.com",
       },
-      /run SeamlessAuth\?.*--auth=<docker\|local>/s,
+      /run Seamless Auth\?.*--auth=<docker\|local>/s,
     ],
     [
       {
@@ -485,7 +485,7 @@ describe("the optional mobile layer", () => {
       "Web example": "web-a",
       "Backend framework": "api-a",
       "Mobile app": "expo",
-      "How would you like to run SeamlessAuth?": "docker",
+      "How would you like to run Seamless Auth?": "docker",
       "How would you like to host the admin console?": "api",
     });
 
@@ -554,7 +554,7 @@ describe("full-stack templates", () => {
     const calls = mockSelect({
       "Web example": "web-a",
       "Backend framework": "api-a",
-      "How would you like to run SeamlessAuth?": "docker",
+      "How would you like to run Seamless Auth?": "docker",
       "How would you like to host the admin console?": "api",
     });
 
@@ -572,7 +572,7 @@ describe("full-stack templates", () => {
   it("skips the backend question and offers only the console modes it can host", async () => {
     const calls = mockSelect({
       "Web example": "fs-a",
-      "How would you like to run SeamlessAuth?": "docker",
+      "How would you like to run Seamless Auth?": "docker",
       "How would you like to host the admin console?": "api",
     });
 

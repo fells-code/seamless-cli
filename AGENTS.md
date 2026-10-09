@@ -1,7 +1,7 @@
 # Seamless CLI Agent Guide
 
 This repository is the Seamless Auth command-line tool (published as `seamless-cli`, invoked as
-`seamless` or `npx create-seamless`). It does two things:
+`seamless` or `npx seamless-cli`). It does two things:
 
 - **Scaffold** a working Seamless Auth project (`seamless init`): generates a React frontend, an
   Express adapter, the auth server, a Docker Compose file, and config.

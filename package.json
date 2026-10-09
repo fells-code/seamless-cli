@@ -1,7 +1,16 @@
 {
   "name": "seamless-cli",
   "version": "0.21.0",
-  "description": "The Seamless Auth command-line interface",
+  "description": "The CLI for Seamless Auth, open source passwordless auth",
+  "keywords": [
+    "seamless-auth",
+    "authentication",
+    "passwordless",
+    "passkeys",
+    "webauthn",
+    "cli",
+    "scaffold"
+  ],
   "homepage": "https://github.com/fells-code/seamless-cli#readme",
   "bugs": {
     "url": "https://github.com/fells-code/seamless-cli/issues"

@@ -284,13 +284,13 @@ export async function runProjectSetupPrompts(
     preselect.authMode,
     assumeYes ? DEFAULT_AUTH_MODE : undefined,
     "Auth server",
-    "How would you like to run SeamlessAuth?",
+    "How would you like to run Seamless Auth?",
     "--auth",
     AUTH_MODES,
     async () =>
       orCancel(
         await select({
-          message: "How would you like to run SeamlessAuth?",
+          message: "How would you like to run Seamless Auth?",
           options: [
             {
               value: "docker",
