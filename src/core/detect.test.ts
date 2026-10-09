@@ -188,3 +188,67 @@ describe("detectProject, Go, Rust and Python", () => {
     expect(detectProject(root).backend).toBeUndefined();
   });
 });
+
+describe("detectProject, Angular, Vue and SvelteKit", () => {
+  it("finds a standalone Angular app and its config", () => {
+    write("web/package.json", { dependencies: { "@angular/core": "^22", "@angular/router": "^22" } });
+    write("web/src/app/app.config.ts", "");
+    expect(detectProject(root).web).toMatchObject({
+      framework: "angular",
+      bundler: "angular",
+      dir: "web",
+      typescript: true,
+      entry: "src/app/app.config.ts",
+      missingPeers: [],
+    });
+  });
+
+  it("falls back to an NgModule app, and notes a missing router", () => {
+    write("client/package.json", { dependencies: { "@angular/core": "^20" } });
+    write("client/src/app/app.module.ts", "");
+    expect(detectProject(root).web).toMatchObject({
+      entry: "src/app/app.module.ts",
+      missingPeers: ["@angular/router"],
+    });
+  });
+
+  it("finds a Vue app and the file its router is created in", () => {
+    write("frontend/package.json", { dependencies: { vue: "^3.5", "vue-router": "^4" }, devDependencies: { vite: "^7" } });
+    write("frontend/src/main.ts", "");
+    write("frontend/src/router/index.ts", "");
+    expect(detectProject(root).web).toMatchObject({
+      framework: "vue",
+      bundler: "vite",
+      entry: "src/main.ts",
+      router: "src/router/index.ts",
+      missingPeers: [],
+    });
+  });
+
+  it("notes a Vue app without vue-router, and leaves Nuxt alone", () => {
+    write("web/package.json", { dependencies: { vue: "^3.5" } });
+    expect(detectProject(root).web).toMatchObject({ bundler: "other", missingPeers: ["vue-router"] });
+    write("web/package.json", { dependencies: { vue: "^3.5", nuxt: "^4" } });
+    expect(detectProject(root)).toEqual({ unsupported: ["Nuxt"] });
+  });
+
+  it("finds SvelteKit, with the lib alias of its major version", () => {
+    write("web/package.json", { devDependencies: { "@sveltejs/kit": "^3.0.0", svelte: "^5" } });
+    write("web/src/routes/+layout.svelte", "");
+    expect(detectProject(root).web).toMatchObject({
+      framework: "sveltekit",
+      bundler: "vite",
+      entry: "src/routes/+layout.svelte",
+      libAlias: "#lib",
+    });
+    write("web/package.json", { devDependencies: { "@sveltejs/kit": "^2.26.0", svelte: "^5" } });
+    expect(detectProject(root).web?.libAlias).toBe("$lib");
+    write("web/package.json", { devDependencies: { "@sveltejs/kit": "latest", svelte: "^5" } });
+    expect(detectProject(root).web?.libAlias).toBe("$lib");
+  });
+
+  it("reports Svelte without SvelteKit, which needs a router of its own", () => {
+    write("web/package.json", { devDependencies: { svelte: "^5" } });
+    expect(detectProject(root)).toEqual({ unsupported: ["Svelte without SvelteKit"] });
+  });
+});

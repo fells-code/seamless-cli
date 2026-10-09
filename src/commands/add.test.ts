@@ -305,3 +305,41 @@ describe("seamless add for a Go or Python backend", () => {
     expect(out).toContain("add it to requirements.txt");
   });
 });
+
+describe("seamless add for an Angular, Vue or SvelteKit web app", () => {
+  it("writes no .env for Angular, serves it on 4200, and prints the URL into its config", async () => {
+    write("web/package.json", { dependencies: { "@angular/core": "^22", "@angular/router": "^22" } });
+    write("web/src/app/app.config.ts", "");
+    await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test" });
+
+    expect(fs.existsSync(path.join(root, "web", ".env.local"))).toBe(false);
+    expect(parseEnv(path.join(root, "api", ".env")).UI_ORIGINS).toBe("http://localhost:4200");
+    expect(vi.mocked(runCommand).mock.calls.at(-1)?.[1]).toEqual(["install", "@seamless-auth/angular"]);
+    const out = logs.join("\n");
+    expect(out).toContain("Web:     Angular in web");
+    expect(out).toContain(`Provide Seamless Auth in your Angular app (${path.join("web", "src/app/app.config.ts")})`);
+    expect(out).toContain('provideSeamlessAuth({ apiHost: "http://localhost:4000" })');
+    expect(out).toContain(`Add the sign-in screens and guard your routes (${path.join("web", "src/app/app.routes.ts")})`);
+  });
+
+  it("installs vue-router alongside the Vue binding when the app has none", async () => {
+    write("web/package.json", { dependencies: { vue: "^3.5" }, devDependencies: { vite: "^7" } });
+    await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test" });
+
+    expect(parseEnv(path.join(root, "web", ".env.local")).VITE_API_URL).toBe("http://localhost:4000/");
+    expect(vi.mocked(runCommand).mock.calls.at(-1)?.[1]).toEqual(["install", "@seamless-auth/vue", "vue-router"]);
+    expect(logs.join("\n")).toContain("Create a router with the sign-in screens, and install Seamless Auth");
+  });
+
+  it("wires SvelteKit through its own steps", async () => {
+    write("web/package.json", { devDependencies: { "@sveltejs/kit": "^3.0.0", svelte: "^5", vite: "^7" } });
+    write("web/tsconfig.json", "{}");
+    await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
+
+    const out = logs.join("\n");
+    expect(out).toContain("Web:     SvelteKit in web");
+    expect(out).toContain(`Create the session (${path.join("web", "src/lib/auth.ts")})`);
+    expect(out).toContain("Render in the browser and share the session\n");
+    expect(out).toContain("cd web && npm install @seamless-auth/svelte");
+  });
+});
