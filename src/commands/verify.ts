@@ -96,6 +96,7 @@ interface BrowserRuntime {
     | "SEAMLESS_REACT_DIR"
     | "SEAMLESS_ANGULAR_DIR"
     | "SEAMLESS_VUE_DIR"
+    | "SEAMLESS_SVELTE_DIR"
     | "SEAMLESS_FULLSTACK_DIR";
 }
 
@@ -123,12 +124,20 @@ const VUE_RUNTIME: BrowserRuntime = {
   dirEnv: "SEAMLESS_VUE_DIR",
 };
 
+const SVELTE_RUNTIME: BrowserRuntime = {
+  project: "svelte",
+  service: "svelte",
+  devService: "svelte-dev",
+  dirEnv: "SEAMLESS_SVELTE_DIR",
+};
+
 // Web templates pick their runtime by verify.project, falling back to the
 // framework, and then to React, which is what every web template was before.
 const WEB_RUNTIMES: Record<string, BrowserRuntime> = {
   react: WEB_RUNTIME,
   angular: ANGULAR_RUNTIME,
   vue: VUE_RUNTIME,
+  svelte: SVELTE_RUNTIME,
 };
 
 // The reference apps in this repo, one per binding without a web template yet
@@ -138,6 +147,7 @@ const WEB_RUNTIMES: Record<string, BrowserRuntime> = {
 const REFERENCE_APPS: Array<{ id: string; runtime: BrowserRuntime; dir: string }> = [
   { id: "angular-reference", runtime: ANGULAR_RUNTIME, dir: path.join(VERIFY_DIR, "angular-app") },
   { id: "vue-reference", runtime: VUE_RUNTIME, dir: path.join(VERIFY_DIR, "vue-app") },
+  { id: "svelte-reference", runtime: SVELTE_RUNTIME, dir: path.join(VERIFY_DIR, "svelte-app") },
 ];
 
 // Full-stack templates render their own screens, so each framework has its own
@@ -292,6 +302,7 @@ const FASTIFY_VENDOR_DIR = path.join(VERIFY_DIR, "adapter-fastify-app", "vendor"
 const REACT_VENDOR_DIR = path.join(VERIFY_DIR, "react-vendor");
 const ANGULAR_VENDOR_DIR = path.join(VERIFY_DIR, "angular-vendor");
 const VUE_VENDOR_DIR = path.join(VERIFY_DIR, "vue-vendor");
+const SVELTE_VENDOR_DIR = path.join(VERIFY_DIR, "svelte-vendor");
 
 // The React client SDK (@seamless-auth/react). Defaults to a sibling checkout;
 // override with SEAMLESS_REACT_SDK_DIR. Only needed for --local browser runs.
@@ -329,6 +340,7 @@ function cleanVendor(): void {
     REACT_VENDOR_DIR,
     ANGULAR_VENDOR_DIR,
     VUE_VENDOR_DIR,
+    SVELTE_VENDOR_DIR,
   ]) {
     for (const f of fs.readdirSync(dir)) {
       if (f.endsWith(".tgz")) fs.rmSync(path.join(dir, f));
@@ -352,7 +364,9 @@ function reactSdkWorkspaces(sdkDir: string): string[] {
 // over the published version (--local browser runs).
 async function packLocalReactSdk(env: NodeJS.ProcessEnv): Promise<void> {
   const sdkDir = resolveReactSdkDir();
-  console.log(kleur.cyan("→ Building & packing the local client SDKs (react, angular, vue)…"));
+  console.log(
+    kleur.cyan("→ Building & packing the local client SDKs (react, angular, vue, svelte)…"),
+  );
   await runCommand("npm", ["run", "build"], sdkDir, env);
   const workspaceArgs = reactSdkWorkspaces(sdkDir).flatMap((pkg) => ["-w", pkg]);
   await runCommand(
@@ -380,8 +394,12 @@ async function packLocalReactSdk(env: NodeJS.ProcessEnv): Promise<void> {
     );
   }
 
-  // @seamless-auth/vue publishes its own directory, like react.
-  if (fs.existsSync(path.join(sdkDir, "packages", "vue", "package.json"))) {
+  // @seamless-auth/vue and /svelte publish their own directories, like react.
+  for (const [binding, vendorDir] of [
+    ["vue", VUE_VENDOR_DIR],
+    ["svelte", SVELTE_VENDOR_DIR],
+  ] as const) {
+    if (!fs.existsSync(path.join(sdkDir, "packages", binding, "package.json"))) continue;
     await runCommand(
       "npm",
       [
@@ -389,9 +407,9 @@ async function packLocalReactSdk(env: NodeJS.ProcessEnv): Promise<void> {
         "-w",
         "@seamless-auth/client",
         "-w",
-        "@seamless-auth/vue",
+        `@seamless-auth/${binding}`,
         "--pack-destination",
-        VUE_VENDOR_DIR,
+        vendorDir,
       ],
       sdkDir,
       env,
@@ -517,7 +535,7 @@ function collectPackageVersions(
             ? path.join(sdkDir, "packages", "react", "package.json")
             : path.join(sdkDir, "package.json");
         push("@seamless-auth/react", readPkgVersion(reactPkg));
-        for (const binding of ["angular", "vue"]) {
+        for (const binding of ["angular", "vue", "svelte"]) {
           const pkg = path.join(sdkDir, "packages", binding, "package.json");
           if (fs.existsSync(pkg)) push(`@seamless-auth/${binding}`, readPkgVersion(pkg));
         }
@@ -546,7 +564,7 @@ function collectPackageVersions(
     for (const pin of reactPins) push("@seamless-auth/react", pin);
   }
 
-  // A full-stack, Angular, or Vue template builds from its own lockfile in both
+  // A full-stack, Angular, Vue, or Svelte template builds from its own lockfile in both
   // modes, so its SDK is always the version it pins. A reference app pins
   // nothing: it installs the published package unless --local packed one.
   for (const tmpl of webTemplates.filter((t) => t.runtime !== WEB_RUNTIME)) {

@@ -14,6 +14,8 @@ const LAYERS = [
   'angular-dev',
   'vue',
   'vue-dev',
+  'svelte',
+  'svelte-dev',
   'nextjs',
   'nextjs-dev',
 ] as const;

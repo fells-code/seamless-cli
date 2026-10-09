@@ -65,6 +65,10 @@ export default defineConfig<AdapterOptions>({
     // on `vite`.
     { name: 'vue', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
     { name: 'vue-dev', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
+    // And against a SvelteKit app on @seamless-auth/svelte; its dev pass runs on
+    // `vite dev`.
+    { name: 'svelte', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
+    { name: 'svelte-dev', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
     // The Next.js full-stack starter renders its own screens, so it has its own
     // specs; its dev pass runs them on `next dev`.
     { name: 'nextjs', testDir: './nextjs', use: { ...browser, baseURL: REACT_URL } },

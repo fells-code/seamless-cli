@@ -15,6 +15,8 @@
 #                       angular-dev profiles); defaults to ./angular-app
 #   SEAMLESS_VUE_DIR    absolute path to the Vue app to serve (vue and vue-dev
 #                       profiles); defaults to ./vue-app
+#   SEAMLESS_SVELTE_DIR absolute path to the Svelte app to serve (svelte and
+#                       svelte-dev profiles); defaults to ./svelte-app
 #   API_SERVICE_TOKEN   shared secret between the API and both adapters
 #   JWKS_KID            key id the adapters expect (must match the API's active kid)
 #   OWNER_EMAIL         tenant owner; this email gets the admin role at signup
@@ -327,6 +329,49 @@ services:
       context: ${SEAMLESS_VUE_DIR:-./vue-app}
       additional_contexts:
         sdk: ./vue-vendor
+      target: dev
+    ports:
+      - '5173:5173'
+    depends_on:
+      adapter:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  # A SvelteKit app on @seamless-auth/svelte, driven by the same browser specs as
+  # the React template. Built like the Vue app, with the client and Svelte
+  # tarballs a --local run packs into ./svelte-vendor.
+  svelte:
+    profiles: ['svelte']
+    build:
+      context: ${SEAMLESS_SVELTE_DIR:-./svelte-app}
+      additional_contexts:
+        sdk: ./svelte-vendor
+      target: runtime
+    ports:
+      - '5173:80'
+    environment:
+      API_URL: http://localhost:3000
+    depends_on:
+      adapter:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost/health']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # The same app on `vite dev` (the Dockerfile's `dev` target). It reads the API
+  # origin from static/config.js, which already points at localhost:3000.
+  svelte-dev:
+    profiles: ['svelte-dev']
+    build:
+      context: ${SEAMLESS_SVELTE_DIR:-./svelte-app}
+      additional_contexts:
+        sdk: ./svelte-vendor
       target: dev
     ports:
       - '5173:5173'
