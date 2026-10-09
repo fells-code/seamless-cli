@@ -61,6 +61,10 @@ export default defineConfig<AdapterOptions>({
     // on `ng serve`.
     { name: 'angular', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
     { name: 'angular-dev', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
+    // The same again against a Vue app on @seamless-auth/vue; its dev pass runs
+    // on `vite`.
+    { name: 'vue', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
+    { name: 'vue-dev', testDir: './react', use: { ...browser, baseURL: REACT_URL } },
     // The Next.js full-stack starter renders its own screens, so it has its own
     // specs; its dev pass runs them on `next dev`.
     { name: 'nextjs', testDir: './nextjs', use: { ...browser, baseURL: REACT_URL } },

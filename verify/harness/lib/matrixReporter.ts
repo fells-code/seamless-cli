@@ -12,6 +12,8 @@ const LAYERS = [
   'react-dev',
   'angular',
   'angular-dev',
+  'vue',
+  'vue-dev',
   'nextjs',
   'nextjs-dev',
 ] as const;
