@@ -199,8 +199,11 @@ services:
     depends_on:
       adapter:
         condition: service_healthy
+    # 127.0.0.1, not localhost: busybox wget resolves localhost to ::1, and nginx
+    # listens on IPv4 only. The same holds for the angular, vue, and svelte
+    # services below.
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost/health']
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1/health']
       interval: 3s
       timeout: 3s
       retries: 20
@@ -268,7 +271,7 @@ services:
       adapter:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost/health']
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1/health']
       interval: 3s
       timeout: 3s
       retries: 20
@@ -316,13 +319,19 @@ services:
       adapter:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost/health']
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1/health']
       interval: 3s
       timeout: 3s
       retries: 20
 
   # The same app on `vite` (the Dockerfile's `dev` target). It reads the API
-  # origin from public/config.js, which already points at localhost:3000.
+  # origin from public/config.js, which already points at localhost:3000. Vite
+  # answers `/` with the HTML shell before it has compiled anything, so the first
+  # navigation would otherwise race the initial transform and dependency
+  # optimization. vite.config.ts warms the app at startup, and the healthcheck
+  # waits for the compiled entry and then the prebundled SDK, in that order:
+  # compiling the entry waits for the dependency scan, and asking for a prebundled
+  # file before the scan has registered it logs a spurious missing-file error.
   vue-dev:
     profiles: ['vue-dev']
     build:
@@ -336,10 +345,10 @@ services:
       adapter:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'node', '-e', "fetch('http://localhost:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ['CMD', 'node', '-e', "(async()=>{for(const p of ['/','/src/main.ts','/node_modules/.vite/deps/@seamless-auth_vue.js'])if(!(await fetch('http://localhost:5173'+p)).ok)process.exit(1)})().then(()=>process.exit(0),()=>process.exit(1))"]
       interval: 3s
       timeout: 3s
-      retries: 40
+      retries: 60
 
   # A SvelteKit app on @seamless-auth/svelte, driven by the same browser specs as
   # the React template. Built like the Vue app, with the client and Svelte
@@ -359,13 +368,18 @@ services:
       adapter:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost/health']
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1/health']
       interval: 3s
       timeout: 3s
       retries: 20
 
   # The same app on `vite dev` (the Dockerfile's `dev` target). It reads the API
-  # origin from static/config.js, which already points at localhost:3000.
+  # origin from static/config.js, which already points at localhost:3000. As with
+  # vue-dev, `/` (and /health, a server route) answer before the client is
+  # compiled, and SvelteKit's client runtime is served as source, so a cold first
+  # navigation is many module transforms. vite.config.ts warms them at startup,
+  # and the healthcheck waits for a compiled route and then the prebundled SDK,
+  # in order, for the reason given at vue-dev.
   svelte-dev:
     profiles: ['svelte-dev']
     build:
@@ -379,10 +393,10 @@ services:
       adapter:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'node', '-e', "fetch('http://localhost:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ['CMD', 'node', '-e', "(async()=>{for(const p of ['/','/src/routes/login/+page.svelte','/node_modules/.vite/deps/@seamless-auth_svelte.js'])if(!(await fetch('http://localhost:5173'+p)).ok)process.exit(1)})().then(()=>process.exit(0),()=>process.exit(1))"]
       interval: 3s
       timeout: 3s
-      retries: 40
+      retries: 60
 
   # A full-stack template (the Next.js starter) built with its own Dockerfile's
   # `runtime` target: the standalone production server, on port 80 with /health.

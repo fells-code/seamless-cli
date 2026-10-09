@@ -799,9 +799,39 @@ export async function runVerify(args: string[] = []): Promise<void> {
 
       for (const pass of passes) {
         await compose(reactEnv, "--profile", pass.service, "up", "-d", "--build", pass.service);
+        // Hold the specs until the service's healthcheck passes. The harness's own
+        // /health probe is not enough on a dev server, which answers it before the
+        // app is compiled; the dev healthchecks wait for that. A service that never
+        // gets healthy fails its layer, with its logs, and the run moves on.
+        const healthy = await compose(
+          reactEnv,
+          "--profile",
+          pass.service,
+          "up",
+          "-d",
+          "--wait",
+          pass.service,
+        ).then(
+          () => true,
+          () => false,
+        );
+        if (!healthy) {
+          console.log(kleur.red(`\n✖ ${pass.service} did not become healthy. Recent logs:\n`));
+          await compose(
+            reactEnv,
+            "--profile",
+            pass.service,
+            "logs",
+            "--tail",
+            "80",
+            pass.service,
+          ).catch(() => undefined);
+        }
         if (
-          !(await runLayer(results, pass.label, () =>
-            runProjects(reactEnv, [pass.project], grep),
+          !(await runLayer(
+            results,
+            pass.label,
+            async () => healthy && runProjects(reactEnv, [pass.project], grep),
           ))
         ) {
           failed = true;

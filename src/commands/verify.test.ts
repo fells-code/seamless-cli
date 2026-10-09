@@ -321,6 +321,7 @@ describe("runVerify — flag parsing", () => {
 
     const tails = dockerTails();
     expect(tails).toContainEqual(["--profile", "react-dev", "up", "-d", "--build", "react-dev"]);
+    expect(tails).toContainEqual(["--profile", "react-dev", "up", "-d", "--wait", "react-dev"]);
     expect(tails).toContainEqual(["--profile", "react-dev", "rm", "-sf", "react-dev"]);
     expect(tails).toContainEqual(["--profile", "nextjs-dev", "up", "-d", "--build", "nextjs-dev"]);
 
@@ -725,6 +726,36 @@ describe("runVerify — conformance failures (caught, exits 1)", () => {
 
     await runVerify([]);
     expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("fails only the layer whose service never gets healthy, and dumps its logs", async () => {
+    vi.mocked(runCommand).mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === "docker" && args.includes("--wait") && args.includes("svelte-dev")) {
+        return Promise.reject(new Error("unhealthy"));
+      }
+      return Promise.resolve();
+    });
+
+    await runVerify(["--dev"]);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+
+    const projects = callsFor("npm")
+      .filter((a) => a[0] === "test")
+      .map((t) => t[t.indexOf("--project") + 1]);
+    // The unhealthy pass runs no specs; the passes after it still run.
+    expect(projects).not.toContain("svelte-dev");
+    expect(projects).toContain("nextjs-dev");
+    expect(dockerTails()).toContainEqual([
+      "--profile",
+      "svelte-dev",
+      "logs",
+      "--tail",
+      "80",
+      "svelte-dev",
+    ]);
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(printed).toMatch(/svelte-dev did not become healthy/);
+    expect(printed).not.toMatch(/Verify aborted/);
   });
 
   it("reports a setup error and prints no layers when the stack fails to build", async () => {
