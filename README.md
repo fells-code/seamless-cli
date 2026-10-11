@@ -173,8 +173,14 @@ seamless templates list
 ID           KIND       FRAMEWORK  FLAGS                   STATUS
 react-vite   web        react      --basic, --react-vite   stable
 react-oauth  web        react      --oauth, --react-oauth  stable
+angular      web        angular    --angular               beta
+vue          web        vue        --vue                   beta
+svelte       web        svelte     --svelte                beta
 express      api        express    --express               stable
 fastify      api        fastify    --fastify               beta
+gin          api        gin        --gin                   beta
+axum         api        axum       --axum                  beta
+fastapi      api        fastapi    --fastapi               beta
 expo         mobile     expo       --mobile, --expo        beta
 nextjs       fullstack  nextjs     --nextjs                beta
 
