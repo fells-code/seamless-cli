@@ -1,5 +1,11 @@
 # seamless-cli
 
+## 0.23.0
+
+### Minor Changes
+
+- 162c6f4: Scaffold from seamless-templates v0.19.0, which adds Angular, Vue and SvelteKit web starters (`seamless init --angular`, `--vue` or `--svelte`), each usable with any api template.
+
 ## 0.22.0
 
 ### Minor Changes
