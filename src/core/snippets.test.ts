@@ -119,15 +119,20 @@ describe("Go, Rust and Python backends", () => {
     expect(backendInstalls(native("gin", "go"))).toEqual([
       { command: "go", args: ["get", "github.com/fells-code/seamless-auth-go@latest"], display: "go get github.com/fells-code/seamless-auth-go@latest", run: true },
     ]);
-    expect(backendInstalls(native("axum", "rust", "cargo"))[0].display).toBe("cargo add seamless-auth");
+    expect(backendInstalls(native("axum", "rust", "cargo")).map((i) => i.display)).toEqual([
+      "cargo add seamless-auth",
+      "cargo add tower-http --features cors",
+    ]);
     expect(backendInstalls(native("fastapi", "python", "uv"))[0]).toMatchObject({
-      args: ["add", "seamless-auth[fastapi]>=0.2"],
-      display: 'uv add "seamless-auth[fastapi]>=0.2"',
+      args: ["add", "seamless-auth[fastapi]>=0.2", "python-dotenv"],
+      display: 'uv add "seamless-auth[fastapi]>=0.2" python-dotenv',
       run: true,
     });
-    expect(backendInstalls(native("django", "python", "poetry"))[0].display).toBe('poetry add "seamless-auth[django]>=0.2"');
+    expect(backendInstalls(native("django", "python", "poetry"))[0].display).toBe(
+      'poetry add "seamless-auth[django]>=0.2" python-dotenv django-cors-headers',
+    );
     expect(backendInstalls(native("django", "python", "pip"))[0]).toMatchObject({
-      display: 'pip install "seamless-auth[django]>=0.2"',
+      display: 'pip install "seamless-auth[django]>=0.2" python-dotenv django-cors-headers',
       run: false,
     });
     expect(backendInstalls(backend("express", true)).map((i) => i.display)).toEqual([
@@ -143,8 +148,56 @@ describe("Go, Rust and Python backends", () => {
     expect(envLoadingHint(backend("express", true))).toContain("--env-file=.env");
     expect(envLoadingHint(native("gin", "go"))).toContain("godotenv");
     expect(envLoadingHint(native("axum", "rust", "cargo"))).toContain("dotenvy");
-    expect(envLoadingHint(native("fastapi", "python", "uv"))).toContain("--env-file");
+    expect(envLoadingHint(native("fastapi", "python", "uv"))).toContain("python-dotenv");
+    expect(envLoadingHint(native("fastapi", "python", "uv"))).not.toContain("--env-file");
     expect(envLoadingHint(native("django", "python", "pip"))).toContain("settings.py");
+  });
+
+  it("loads the .env with python-dotenv in the Python code", () => {
+    for (const framework of ["fastapi", "django"] as const) {
+      const code = backendSnippet(native(framework, "python", "uv"), on);
+      expect(code).toContain("from dotenv import load_dotenv");
+      expect(code.indexOf("load_dotenv()")).toBeLessThan(code.indexOf('os.environ["AUTH_SERVER_URL"]'));
+    }
+  });
+
+  it.each(["nethttp", "chi", "gin", "echo"] as const)("gives Go (%s) credentialed CORS for UI_ORIGINS", (framework) => {
+    const code = backendSnippet(native(framework, "go"), on);
+    expect(code).toContain('cmp.Or(os.Getenv("UI_ORIGINS"), "http://localhost:5173")');
+    // CORS goes ahead of the routes it covers.
+    expect(code.indexOf("uiOrigins")).toBeLessThan(code.indexOf("auth.Handler()"));
+    if (framework === "echo") {
+      expect(code).toContain("e.Use(middleware.CORSWithConfig(middleware.CORSConfig{");
+      expect(code).toContain("AllowCredentials: true,");
+      expect(code).toContain('"github.com/labstack/echo/v4/middleware"');
+      expect(code).not.toContain('"slices"');
+    } else {
+      expect(code).toContain('h.Set("Access-Control-Allow-Credentials", "true")');
+      expect(code).toContain('"slices"');
+    }
+  });
+
+  it("wires each Go router's CORS its own way", () => {
+    expect(backendSnippet(native("nethttp", "go"), on)).toContain("http.ListenAndServe(addr, withCORS(mux))");
+    expect(backendSnippet(native("chi", "go"), on)).toContain("r.Use(withCORS)");
+    expect(backendSnippet(native("gin", "go"), on)).toContain("r.Use(func(c *gin.Context) {");
+    expect(backendSnippet(native("gin", "go"), on)).toContain("c.AbortWithStatus(http.StatusNoContent)");
+  });
+
+  it("gives Axum a tower-http CorsLayer that leaves the console out", () => {
+    const code = backendSnippet(native("axum", "rust", "cargo"), on);
+    expect(code).toContain("use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};");
+    expect(code).toContain(".allow_origin(AllowOrigin::list(ui_origins))");
+    expect(code).toContain(".allow_credentials(true)");
+    expect(code.indexOf(".layer(cors)")).toBeLessThan(code.indexOf("auth.console_router()"));
+  });
+
+  it("gives Django credentialed CORS with django-cors-headers", () => {
+    const code = backendSnippet(native("django", "python", "pip"), on);
+    expect(code).toContain('INSTALLED_APPS += ["corsheaders"]');
+    expect(code).toContain('MIDDLEWARE.insert(0, "corsheaders.middleware.CorsMiddleware")');
+    expect(code).toContain('os.environ.get("UI_ORIGINS", "http://localhost:5173")');
+    expect(code).toContain("CORS_ALLOW_CREDENTIALS = True");
   });
 
   it("names each framework", () => {

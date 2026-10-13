@@ -40,21 +40,77 @@ const GO_ME = `func(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"id": user.ID})
 }`;
 
+const CORS_COMMENT = "Your web app calls /auth on this server with cookies, so it needs credentialed\n// CORS for the origins in UI_ORIGINS.";
+
+// The origins in UI_ORIGINS, falling back to the web origin seamless add found.
+function goOrigins(webOrigin: string): string {
+  return `var uiOrigins []string
+for _, o := range strings.Split(cmp.Or(os.Getenv("UI_ORIGINS"), "${webOrigin}"), ",") {
+	uiOrigins = append(uiOrigins, strings.TrimSpace(o))
+}`;
+}
+
+// Credentialed CORS as net/http middleware, for net/http and chi. An origin not
+// in the list gets no CORS headers, and the browser blocks the response.
+// Same-origin requests (the console's own) need none.
+const GO_CORS_MIDDLEWARE = `withCORS := func(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); slices.Contains(uiOrigins, origin) {
+			h := w.Header()
+			h.Set("Access-Control-Allow-Origin", origin)
+			h.Set("Access-Control-Allow-Credentials", "true")
+			h.Add("Vary", "Origin")
+			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+				h.Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
+				h.Set("Access-Control-Allow-Headers", r.Header.Get("Access-Control-Request-Headers"))
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}`;
+
+// The same for Gin, as the Gin starter writes it.
+const GIN_CORS = `// Ahead of every route: Gin applies middleware only to routes added after it.
+r.Use(func(c *gin.Context) {
+	if origin := c.GetHeader("Origin"); slices.Contains(uiOrigins, origin) {
+		h := c.Writer.Header()
+		h.Set("Access-Control-Allow-Origin", origin)
+		h.Set("Access-Control-Allow-Credentials", "true")
+		h.Add("Vary", "Origin")
+		if c.Request.Method == http.MethodOptions && c.GetHeader("Access-Control-Request-Method") != "" {
+			h.Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
+			h.Set("Access-Control-Allow-Headers", c.GetHeader("Access-Control-Request-Headers"))
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+	}
+	c.Next()
+})`;
+
+const ECHO_CORS = `e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+	AllowOrigins:     uiOrigins,
+	AllowCredentials: true,
+}))`;
+
 function goSnippet(framework: DetectedBackend["framework"], opts: SnippetOptions): string {
   const imports = [
+    '"cmp"',
     '"context"',
     '"encoding/json"',
     '"log"',
     '"net/http"',
     '"os"',
+    ...(framework === "echo" ? [] : ['"slices"']),
+    '"strings"',
     "",
     'seamlessauth "github.com/fells-code/seamless-auth-go"',
   ];
   if (framework === "gin") imports.push('"github.com/gin-gonic/gin"');
-  if (framework === "echo") imports.push('"github.com/labstack/echo/v4"');
+  if (framework === "echo") imports.push('"github.com/labstack/echo/v4"', '"github.com/labstack/echo/v4/middleware"');
   const header = `import (\n${imports.map((i) => (i ? `\t${i}` : "")).join("\n")}\n)\n\n${goOptions()}\n`;
-  const cors = `// Your web app (${opts.webOrigin}) calls /auth on this server with cookies, so it
-// needs credentialed CORS for the origins in UI_ORIGINS.`;
+  const cors = (use: string) => `// ${CORS_COMMENT}\n${goOrigins(opts.webOrigin)}\n${use}`;
   const consoleLine = (mount: string) =>
     opts.serveConsole
       ? `\n// The admin dashboard at /console.\nif os.Getenv("SERVE_ADMIN_CONSOLE") == "true" {\n\t${mount}\n}`
@@ -63,7 +119,8 @@ function goSnippet(framework: DetectedBackend["framework"], opts: SnippetOptions
   switch (framework) {
     case "gin":
       return `${header}
-${cors}
+${cors(GIN_CORS)}
+
 r.Any("/auth/*path", gin.WrapH(http.StripPrefix("/auth", auth.Handler())))${consoleLine(
         'r.Any("/console/*path", gin.WrapH(http.StripPrefix("/console", auth.ConsoleHandler())))',
       )}
@@ -72,7 +129,8 @@ r.Any("/auth/*path", gin.WrapH(http.StripPrefix("/auth", auth.Handler())))${cons
 r.GET("/api/me", gin.WrapH(auth.RequireAuth(http.HandlerFunc(${GO_ME}))))`;
     case "chi":
       return `${header}
-${cors}
+${cors(`${GO_CORS_MIDDLEWARE}\n// Ahead of every route: chi refuses middleware added after one.\nr.Use(withCORS)`)}
+
 r.Mount("/auth", http.StripPrefix("/auth", auth.Handler()))${consoleLine(
         'r.Mount("/console", http.StripPrefix("/console", auth.ConsoleHandler()))',
       )}
@@ -81,7 +139,8 @@ r.Mount("/auth", http.StripPrefix("/auth", auth.Handler()))${consoleLine(
 r.With(auth.RequireAuth).Get("/api/me", ${GO_ME})`;
     case "echo":
       return `${header}
-${cors}
+${cors(ECHO_CORS)}
+
 e.Any("/auth/*", echo.WrapHandler(http.StripPrefix("/auth", auth.Handler())))${consoleLine(
         'e.Any("/console/*", echo.WrapHandler(http.StripPrefix("/console", auth.ConsoleHandler())))',
       )}
@@ -90,13 +149,17 @@ e.Any("/auth/*", echo.WrapHandler(http.StripPrefix("/auth", auth.Handler())))${c
 e.GET("/api/me", echo.WrapHandler(auth.RequireAuth(http.HandlerFunc(${GO_ME}))))`;
     default:
       return `${header}
-${cors}
+${cors(GO_CORS_MIDDLEWARE)}
+
 mux.Handle("/auth/", http.StripPrefix("/auth", auth.Handler()))${consoleLine(
         'mux.Handle("/console/", http.StripPrefix("/console", auth.ConsoleHandler()))',
       )}
 
 // Protect a route. RequireAuth answers 401 without a session.
-mux.Handle("GET /api/me", auth.RequireAuth(http.HandlerFunc(${GO_ME})))`;
+mux.Handle("GET /api/me", auth.RequireAuth(http.HandlerFunc(${GO_ME})))
+
+// Serve the mux through the CORS middleware, where you start the server:
+// http.ListenAndServe(addr, withCORS(mux))`;
   }
 }
 
@@ -104,8 +167,10 @@ function rustSnippet(opts: SnippetOptions): string {
   return `use std::collections::HashMap;
 use std::net::SocketAddr;
 
+use axum::http::{HeaderValue, Method};
 use axum::{Json, routing::get};
 use seamless_auth::{Adapter, Delivery, User};
+use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 
 let env = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"));
 let mut builder = Adapter::builder(env("AUTH_SERVER_URL"))
@@ -124,8 +189,18 @@ if std::env::var("APP_ENV").as_deref() != Ok("production") {
 }
 let auth = builder.build().expect("Seamless Auth configuration");
 
-// Your web app (${opts.webOrigin}) calls /auth on this server with cookies, so it
-// needs credentialed CORS (tower-http's CorsLayer) for the origins in UI_ORIGINS.
+// ${CORS_COMMENT}
+let ui_origins: Vec<HeaderValue> = std::env::var("UI_ORIGINS")
+    .unwrap_or_else(|_| "${opts.webOrigin}".into())
+    .split(',')
+    .filter_map(|origin| origin.trim().parse().ok())
+    .collect();
+let cors = CorsLayer::new()
+    .allow_origin(AllowOrigin::list(ui_origins))
+    .allow_credentials(true)
+    .allow_methods([Method::GET, Method::HEAD, Method::PUT, Method::PATCH, Method::POST, Method::DELETE])
+    .allow_headers(AllowHeaders::mirror_request());
+
 // Added to the router you already have:
 let app = app
     // Protect a route. require_auth answers 401 without a session.
@@ -134,7 +209,10 @@ let app = app
         get(|user: User| async move { Json(HashMap::from([("id", user.id)])) })
             .route_layer(auth.require_auth()),
     )
-    .nest("/auth", auth.router());${
+    .nest("/auth", auth.router())
+    // CORS covers the routes added so far, and leaves out the console below,
+    // which is same-origin.
+    .layer(cors);${
       opts.serveConsole
         ? `
 // The admin dashboard at /console (merged, not nested: it serves /console/ too).
@@ -153,10 +231,15 @@ axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).a
 function fastapiSnippet(opts: SnippetOptions): string {
   return `import os
 
+from dotenv import load_dotenv
 from fastapi import Depends
 from fastapi.middleware.cors import CORSMiddleware
 from seamless_auth import Adapter, Delivery, User
 from seamless_auth.fastapi import RequireUser, auth_router${opts.serveConsole ? ", console_router" : ""}
+
+# Reads .env into the environment. A missing file is fine: in production the
+# variables come from the environment.
+load_dotenv()
 
 
 # ${DEV_NOTE.replace("\n//", "\n#")}
@@ -174,7 +257,7 @@ auth = Adapter(
 )
 current_user = RequireUser(auth)
 
-# Your web app calls /auth on this server with cookies, so it needs credentialed CORS.
+# ${CORS_COMMENT.replace("\n//", "\n#")}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get("UI_ORIGINS", "${opts.webOrigin}").split(","),
@@ -201,6 +284,12 @@ function djangoSnippet(opts: SnippetOptions): string {
   return `# settings.py
 import os
 
+from dotenv import load_dotenv
+
+# Reads .env into the environment. A missing file is fine: in production the
+# variables come from the environment.
+load_dotenv()
+
 
 # ${DEV_NOTE.replace("\n//", "\n#")}
 def _dev_deliver(d):
@@ -215,8 +304,13 @@ SEAMLESS_AUTH = {
     "jwks_kid": os.environ["JWKS_KID"],
     "deliver": None if os.environ.get("APP_ENV") == "production" else _dev_deliver,
 }
-# Your web app (${opts.webOrigin}) calls /auth with cookies, so it needs
-# credentialed CORS for the origins in UI_ORIGINS (django-cors-headers).
+
+# ${CORS_COMMENT.replace("\n//", "\n#")}
+# django-cors-headers answers it; its middleware goes first.
+INSTALLED_APPS += ["corsheaders"]
+MIDDLEWARE.insert(0, "corsheaders.middleware.CorsMiddleware")
+CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("UI_ORIGINS", "${opts.webOrigin}").split(",")]
+CORS_ALLOW_CREDENTIALS = True
 
 # urls.py
 from django.urls import include, path

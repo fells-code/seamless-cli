@@ -74,7 +74,7 @@ function logs(): string {
   return logSpy.mock.calls.map((c) => String(c[0])).join("\n");
 }
 
-describe("runOrg — top-level routing", () => {
+describe("runOrg: top-level routing", () => {
   it("prints usage and exits 1 on an unknown subcommand", async () => {
     await expect(runOrg(["bogus"])).rejects.toBeInstanceOf(ExitError);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Unknown org subcommand: bogus"));
@@ -279,7 +279,7 @@ describe("runOrg update", () => {
   });
 });
 
-describe("runOrg members — routing", () => {
+describe("runOrg members: routing", () => {
   it("prints usage and exits 1 on an unknown members subcommand", async () => {
     await expect(runOrg(["members", "bogus"])).rejects.toBeInstanceOf(ExitError);
     expect(errorSpy).toHaveBeenCalledWith(

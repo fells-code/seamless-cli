@@ -40,7 +40,7 @@ export function printHelp() {
   console.log(`
 seamless v${VERSION}
 
-Seamless CLI — scaffold and manage full-stack authentication systems.
+Seamless CLI: scaffold and manage full-stack authentication systems.
 
 ${DIVIDER}
 
@@ -121,7 +121,7 @@ export function printCommandHelp(name: string): boolean {
     : "";
 
   console.log(`
-seamless ${command.name} — seamless v${VERSION}
+seamless ${command.name} (seamless v${VERSION})
 
 USAGE
 

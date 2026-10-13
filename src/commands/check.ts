@@ -72,7 +72,7 @@ export async function runCheck(args: string[] = []) {
   checkStructure(root, config, report);
 
   // Managed projects run the auth server remotely and ship no compose file, so the
-  // Docker/container checks don't apply — validate the remote instance instead.
+  // Docker/container checks don't apply. Validate the remote instance instead.
   if (config?.services?.auth?.mode === "managed") {
     await checkManaged(config, report);
   } else {

@@ -44,19 +44,51 @@ const ENTRY_SCREENS_COMMENT =
 function reactSteps(web: DetectedWeb): WebStep[] {
   const variable = webApiUrlVariable(web);
   const read = web.bundler === "react-scripts" ? `process.env.${variable}` : `import.meta.env.${variable}`;
+  const ts = web.typescript;
   return [
     {
       heading: "Wrap your React app",
       file: web.entry,
-      code: `import { AuthProvider, useAuth } from "@seamless-auth/react";
+      code: `import { BrowserRouter } from "react-router-dom";
+import { AuthProvider } from "@seamless-auth/react";
 
-// Wrap your app once, at the root. It talks to your backend's /auth routes.
-<AuthProvider apiHost={${read}}>
-  <App />
-</AuthProvider>
+// Wrap your app once, at the root, inside your router (keep yours if the app
+// already has one). AuthProvider talks to your backend's /auth routes.
+<BrowserRouter>
+  <AuthProvider apiHost={${read}}>
+    <App />
+  </AuthProvider>
+</BrowserRouter>`,
+    },
+    {
+      heading: "Add the sign-in screens and guard your routes",
+      file: web.router ?? web.entry,
+      code: `${ts ? 'import type { ReactNode } from "react";\n' : ""}import { Navigate, Route, Routes } from "react-router-dom";
+import { useAuth } from "@seamless-auth/react";
+import { AuthRoutes } from "@seamless-auth/react/routes";
 
-// Anywhere below it:
-const { isAuthenticated, user, logout } = useAuth();`,
+// Pages that need a signed-in user send everyone else to the sign-in screens.
+function RequireAuth({ children }${ts ? ": { children: ReactNode }" : ""}) {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading && !isAuthenticated) return null;
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+}
+
+// The sign-in screens are for signed-out visitors only.
+function SignIn() {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return null;
+  return isAuthenticated ? <Navigate to="/" replace /> : <AuthRoutes />;
+}
+
+<Routes>
+  {/* Your routes, wrapped in RequireAuth where they need a signed-in user: */}
+  <Route path="/" element={<RequireAuth><Home /></RequireAuth>} />
+  {/* Last: every other path is a sign-in screen (/login, /passkey-login, ...). */}
+  <Route path="*" element={<SignIn />} />
+</Routes>
+
+// In a component: const { user, logout } = useAuth();`,
     },
   ];
 }

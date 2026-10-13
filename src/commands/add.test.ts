@@ -33,6 +33,7 @@ vi.mock("../prompts/appSelect.js", () => ({
 import { confirm, select } from "@clack/prompts";
 
 import { createPortalClient, ReauthRequiredError, type AuthClient } from "../core/authClient.js";
+import { searchedDirsText } from "../core/detect.js";
 import { parseEnv } from "../core/env.js";
 import { runCommand } from "../core/exec.js";
 import { issueServiceToken } from "../core/managedConnect.js";
@@ -113,12 +114,13 @@ describe("seamless add --local", () => {
     expect(vi.mocked(runCommand).mock.calls.map(([cmd, args, cwd]) => [cmd, args.join(" "), path.relative(root, cwd)])).toEqual([
       ["npm", "install @seamless-auth/express cookie-parser cors", "api"],
       ["npm", "install --save-dev @types/cookie-parser @types/cors", "api"],
-      ["npm", "install @seamless-auth/react", "web"],
+      ["npm", "install @seamless-auth/react react-router-dom", "web"],
     ]);
     const out = logs.join("\n");
     expect(out).toContain("docker compose -f seamless/docker-compose.yml up -d");
     expect(out).toContain('app.use("/auth", createSeamlessAuthServer(seamless));');
     expect(out).toContain("<AuthProvider apiHost={import.meta.env.VITE_API_URL}>");
+    expect(out).toContain('<Route path="*" element={<SignIn />} />');
     expect(out).not.toContain("does not look gitignored");
   });
 
@@ -175,9 +177,12 @@ describe("seamless add --local", () => {
     await expect(addSeamlessAuth({ dir: root, yes: true })).rejects.toThrow(/--local .* --app/);
   });
 
-  it("explains when there is no backend to add to", async () => {
+  it("explains when there is no backend to add to, naming every folder it searched", async () => {
     fs.rmSync(path.join(root, "api"), { recursive: true });
     await expect(addSeamlessAuth({ dir: root, local: true, yes: true })).rejects.toThrow(/no backend to add/);
+    await expect(addSeamlessAuth({ dir: root, local: true, yes: true })).rejects.toThrow(
+      `at ${searchedDirsText()}.`,
+    );
   });
 });
 
@@ -332,8 +337,35 @@ describe("seamless add for a Go or Python backend", () => {
 
     expect(vi.mocked(runCommand).mock.calls.map(([cmd]) => cmd)).toEqual(["npm"]);
     const out = logs.join("\n");
-    expect(out).toContain('pip install "seamless-auth[fastapi]>=0.2"');
-    expect(out).toContain("add it to requirements.txt");
+    expect(out).toContain('pip install "seamless-auth[fastapi]>=0.2" python-dotenv');
+    expect(out).toContain("add them to requirements.txt");
+    expect(out).toContain("load_dotenv()");
+  });
+
+  it.each([
+    ["FastAPI", "requirements.txt", "fastapi\n", "main.py", "8000"],
+    ["Django", "requirements.txt", "django\n", "manage.py", "8000"],
+    ["Go", "go.mod", "module example.com/app\n", "main.go", "8080"],
+    ["Axum", "Cargo.toml", '[dependencies]\naxum = "0.8"\n', "src/main.rs", "8080"],
+  ])("defaults the API URL for %s to its dev server's port", async (_name, manifest, content, entry, port) => {
+    fs.rmSync(path.join(root, "api"), { recursive: true });
+    write(manifest, content);
+    write(entry, "");
+    await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
+    expect(parseEnv(path.join(root, "seamless", ".env")).APP_ORIGINS).toBe(`http://localhost:${port}`);
+    expect(parseEnv(path.join(root, "web", ".env.local")).VITE_API_URL).toBe(`http://localhost:${port}/`);
+  });
+
+  it("takes the port from the entry's listen call, and PORT in .env over both", async () => {
+    fs.rmSync(path.join(root, "api"), { recursive: true });
+    write("go.mod", "module example.com/app\n");
+    write("main.go", 'log.Fatal(http.ListenAndServe(":9090", mux))');
+    await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
+    expect(parseEnv(path.join(root, "seamless", ".env")).APP_ORIGINS).toBe("http://localhost:9090");
+
+    write(".env", "PORT=7000\n");
+    await addSeamlessAuth({ dir: root, local: true, yes: true, force: true, email: "owner@x.test", install: false });
+    expect(parseEnv(path.join(root, "seamless", ".env")).APP_ORIGINS).toBe("http://localhost:7000");
   });
 });
 

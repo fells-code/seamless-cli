@@ -621,7 +621,7 @@ function printSummary(
   const sdk = opts.local ? "local (built from source)" : "released (npm)";
 
   console.log(`\n${rule}`);
-  console.log(kleur.bold("  Seamless Verify — summary"));
+  console.log(kleur.bold("  Seamless Verify: summary"));
   console.log(kleur.dim(`  SDK: ${sdk}  ·  ${formatDuration(elapsedMs)} total`));
 
   if (packages.length > 0) {
@@ -654,18 +654,18 @@ function printSummary(
     const failedCount = results.filter((r) => !r.ok).length;
     console.log(
       kleur.red(
-        `  ✖ Conformance failed — ${failedCount} of ${results.length} layer(s) failed.`,
+        `  ✖ Conformance failed: ${failedCount} of ${results.length} layer(s) failed.`,
       ),
     );
   } else {
-    console.log(kleur.green(`  ✔ Conformance passed — ${results.length} layer(s).`));
+    console.log(kleur.green(`  ✔ Conformance passed: ${results.length} layer(s).`));
   }
   console.log(`${rule}\n`);
 }
 
 export async function runVerify(args: string[] = []): Promise<void> {
   const opts = parseArgs(args);
-  console.log(kleur.bold("\nSeamless Verify — auth conformance"));
+  console.log(kleur.bold("\nSeamless Verify: auth conformance"));
   console.log(kleur.dim(`SDK: ${opts.local ? "local (built from source)" : "released (npm)"}\n`));
 
   ensureDocker();
@@ -847,7 +847,7 @@ export async function runVerify(args: string[] = []): Promise<void> {
     failed = true;
     setupError = err as Error;
     console.log(kleur.red(`\n✖ Conformance failed: ${setupError.message}\n`));
-    // A container that exits on startup surfaces only as "docker failed" — dump the
+    // A container that exits on startup surfaces only as "docker failed", so dump the
     // recent stack logs before teardown so the real cause is visible (in CI too).
     console.log(kleur.dim("→ Recent container logs:\n"));
     await compose(

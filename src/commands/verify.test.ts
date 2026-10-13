@@ -125,7 +125,7 @@ afterEach(() => {
   process.env = { ...SAVED_ENV };
 });
 
-describe("runVerify — published (default) mode", () => {
+describe("runVerify: published (default) mode", () => {
   it("cleans vendor, builds the base stack, and runs API + web layers", async () => {
     await runVerify([]);
 
@@ -315,7 +315,7 @@ describe("runVerify with an Angular app", () => {
   });
 });
 
-describe("runVerify — flag parsing", () => {
+describe("runVerify: flag parsing", () => {
   it("--dev adds a development-server pass after each production pass", async () => {
     await runVerify(["--dev"]);
 
@@ -429,7 +429,7 @@ describe("runVerify — flag parsing", () => {
   });
 });
 
-describe("runVerify — --adapter-url (an external reference app)", () => {
+describe("runVerify: --adapter-url (an external reference app)", () => {
   it("starts only the API and runs the conformance project against the URL", async () => {
     await runVerify(["--adapter-url=http://localhost:8080/"]);
 
@@ -472,7 +472,7 @@ describe("runVerify — --adapter-url (an external reference app)", () => {
   });
 });
 
-describe("runVerify — local mode", () => {
+describe("runVerify: local mode", () => {
   it("packs local server and react SDKs before starting the stack", async () => {
     await runVerify(["--local"]);
 
@@ -632,7 +632,7 @@ describe("runVerify — local mode", () => {
   });
 });
 
-describe("runVerify — SEAMLESS_REACT_DIR override", () => {
+describe("runVerify: SEAMLESS_REACT_DIR override", () => {
   it("uses the single override template and its manifest flows", async () => {
     process.env.SEAMLESS_REACT_DIR = "/fake/override-template";
 
@@ -681,7 +681,7 @@ describe("runVerify — SEAMLESS_REACT_DIR override", () => {
   });
 });
 
-describe("runVerify — setup failures (thrown before the run)", () => {
+describe("runVerify: setup failures (thrown before the run)", () => {
   it("aborts when Docker is not installed", async () => {
     vi.mocked(execSync).mockImplementation(() => {
       throw new Error("not found");
@@ -717,7 +717,7 @@ describe("runVerify — setup failures (thrown before the run)", () => {
   });
 });
 
-describe("runVerify — conformance failures (caught, exits 1)", () => {
+describe("runVerify: conformance failures (caught, exits 1)", () => {
   it("marks the run failed when a Playwright layer fails", async () => {
     vi.mocked(runCommand).mockImplementation((cmd: string, args: string[]) => {
       if (cmd === "npm" && args[0] === "test") return Promise.reject(new Error("tests failed"));
@@ -789,7 +789,7 @@ describe("runVerify — conformance failures (caught, exits 1)", () => {
   });
 });
 
-describe("runVerify — duration formatting in the summary", () => {
+describe("runVerify: duration formatting in the summary", () => {
   it("renders sub-minute layer durations as seconds", async () => {
     vi.spyOn(Date, "now")
       .mockReturnValueOnce(0) // startedAt

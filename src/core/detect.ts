@@ -36,7 +36,8 @@ export interface DetectedWeb {
   dir: string;
   typescript: boolean;
   entry?: string;
-  // Vue: the file the router is created in, when it is not the entry.
+  // Vue: the file the router is created in. React: the component that renders
+  // the routes (src/App). Only when it is not the entry.
   router?: string;
   // SvelteKit: how the app imports from src/lib. SvelteKit 3 renamed $lib to #lib.
   libAlias?: "$lib" | "#lib";
@@ -65,6 +66,19 @@ const CANDIDATE_DIRS = [
   "app",
 ];
 const WORKSPACE_PARENTS = ["apps", "packages"];
+
+/**
+ * Where detection looks, in words: "the project root or api/, server/, ..., apps/*
+ * or packages/*". The error, the help and the README quote it, so they cannot
+ * drift from the list above.
+ */
+export function searchedDirsText(): string {
+  const dirs = [
+    ...CANDIDATE_DIRS.filter((d) => d !== ".").map((d) => `${d}/`),
+    ...WORKSPACE_PARENTS.map((d) => `${d}/*`),
+  ];
+  return `the project root or ${dirs.slice(0, -1).join(", ")} or ${dirs.at(-1)}`;
+}
 
 interface PackageJson {
   main?: string;
@@ -250,12 +264,16 @@ function detectWeb(
     };
   }
   if ("react" in deps && !("next" in deps) && !("react-native" in deps)) {
+    const entry = findEntry(dir, pkg, WEB_ENTRIES);
+    const app = firstExisting(dir, ["src/App.tsx", "src/App.jsx", "src/App.js"]);
     return {
       ...base,
       framework: "react",
       bundler: "vite" in deps ? "vite" : "react-scripts" in deps ? "react-scripts" : "other",
-      entry: findEntry(dir, pkg, WEB_ENTRIES),
-      missingPeers: [],
+      entry,
+      router: app !== entry ? app : undefined,
+      // The bundled sign-in screens (@seamless-auth/react/routes) render with it.
+      missingPeers: missing("react-router-dom"),
     };
   }
   return undefined;
@@ -355,6 +373,38 @@ function djangoSettings(dir: string): string | undefined {
     if (fs.existsSync(path.join(dir, file))) return file;
   }
   return manage === undefined ? undefined : "manage.py";
+}
+
+/**
+ * The port a backend's dev server listens on when nothing says otherwise: Node
+ * servers by convention, uvicorn's and Django runserver's default, and the Go and
+ * Rust adapters' own examples (Gin's Run() also defaults to it).
+ */
+export const DEFAULT_BACKEND_PORTS: Record<Ecosystem, number> = {
+  node: 3000,
+  go: 8080,
+  rust: 8080,
+  python: 8000,
+};
+
+// A port written into the entry file's listen call, such as app.listen(4000),
+// http.ListenAndServe(":8081", mux), TcpListener::bind("0.0.0.0:3000") or
+// uvicorn.run(app, port=8001).
+const LISTEN_PORT: Record<Ecosystem, RegExp[]> = {
+  node: [/\.listen\(\s*(\d{2,5})\s*[,)]/, /\.listen\(\s*\{[^}]*\bport:\s*(\d{2,5})/],
+  go: [/(?:ListenAndServe(?:TLS)?|\.Run|\.Start)\(\s*"[^"]*:(\d{2,5})"/, /\bAddr:\s*"[^"]*:(\d{2,5})"/],
+  rust: [/\bbind\(\s*"[^"]*:(\d{2,5})"/, /SocketAddr::from\(\(\s*\[[^\]]*\]\s*,\s*(\d{2,5})\s*\)\)/],
+  python: [/uvicorn\.run\([^)]*\bport\s*=\s*(\d{2,5})/],
+};
+
+/** The port the backend listens on, read from its entry file, or its ecosystem's default. */
+export function backendListenPort(root: string, backend: DetectedBackend): number {
+  const source = backend.entry ? readText(path.join(root, backend.dir, backend.entry)) : undefined;
+  for (const pattern of source === undefined ? [] : LISTEN_PORT[backend.ecosystem]) {
+    const port = source!.match(pattern)?.[1];
+    if (port) return Number(port);
+  }
+  return DEFAULT_BACKEND_PORTS[backend.ecosystem];
 }
 
 /** The command that adds packages with a project's own package manager. */

@@ -361,11 +361,11 @@ async function resolveAdminMode(
             },
             {
               value: "image",
-              label: "Separate container — official Docker image",
+              label: "Separate container: the official Docker image",
             },
             {
               value: "source",
-              label: "Separate container — clone repo for modification",
+              label: "Separate container: clone the repo to modify it",
             },
             {
               value: "none",

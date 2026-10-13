@@ -148,8 +148,8 @@ export function envLoadingHint(backend: DetectedBackend): string {
       return "Rust does not read .env on its own: call dotenvy::dotenv() at startup (the dotenvy crate).";
     default:
       return backend.framework === "django"
-        ? "load it at the top of settings.py with python-dotenv (from dotenv import load_dotenv; load_dotenv())."
-        : "load it at startup with python-dotenv (load_dotenv()), or run uvicorn with --env-file .env.";
+        ? "the code below loads it at the top of settings.py with python-dotenv, which the install step adds."
+        : "the code below loads it with python-dotenv (load_dotenv()), which the install step adds.";
   }
 }
 
@@ -182,12 +182,16 @@ export function backendInstalls(backend: DetectedBackend): PackageInstall[] {
     case "go":
       return [install("go", ["get", "github.com/fells-code/seamless-auth-go@latest"])];
     case "rust":
-      return [install("cargo", ["add", "seamless-auth"])];
+      return [install("cargo", ["add", "seamless-auth"]), install("cargo", ["add", "tower-http", "--features", "cors"])];
     default: {
-      const pkg = `seamless-auth[${backend.framework === "django" ? "django" : "fastapi"}]>=0.2`;
-      if (backend.packageManager === "uv") return [install("uv", ["add", pkg])];
-      if (backend.packageManager === "poetry") return [install("poetry", ["add", pkg])];
-      return [install("pip", ["install", pkg], false)];
+      // python-dotenv loads the .env; django-cors-headers answers CORS for Django.
+      const pkgs =
+        backend.framework === "django"
+          ? ["seamless-auth[django]>=0.2", "python-dotenv", "django-cors-headers"]
+          : ["seamless-auth[fastapi]>=0.2", "python-dotenv"];
+      if (backend.packageManager === "uv") return [install("uv", ["add", ...pkgs])];
+      if (backend.packageManager === "poetry") return [install("poetry", ["add", ...pkgs])];
+      return [install("pip", ["install", ...pkgs], false)];
     }
   }
 }

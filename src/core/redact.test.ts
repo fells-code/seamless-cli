@@ -12,7 +12,7 @@ describe("redactToken", () => {
   });
 });
 
-describe("scrubTokens — by key", () => {
+describe("scrubTokens: by key", () => {
   it("masks token-like fields recursively", () => {
     expect(
       scrubTokens({
@@ -66,7 +66,7 @@ describe("scrubTokens — by key", () => {
   });
 });
 
-describe("scrubTokens — by shape", () => {
+describe("scrubTokens: by shape", () => {
   // Key matching cannot help here: the secret has no key of its own, it is quoted
   // inside a message the server wrote.
   it("masks a JWT embedded in a string value", () => {

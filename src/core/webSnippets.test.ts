@@ -30,11 +30,28 @@ describe("React", () => {
     expect(code(web({ bundler: "react-scripts" }))).toContain("process.env.REACT_APP_API_URL");
   });
 
-  it("is one step at the app's entry", () => {
-    const steps = webSteps(web({ entry: "src/main.tsx" }), api);
-    expect(steps.map((s) => s.heading)).toEqual(["Wrap your React app"]);
+  it("wraps the app at its entry, then mounts the sign-in screens where the routes are", () => {
+    const steps = webSteps(web({ entry: "src/main.tsx", router: "src/App.tsx" }), api);
+    expect(steps.map((s) => s.heading)).toEqual(["Wrap your React app", "Add the sign-in screens and guard your routes"]);
+    expect(steps.map((s) => s.file)).toEqual(["src/main.tsx", "src/App.tsx"]);
     expect(webStepFile(web({}), steps[0])).toBe(path.join("web", "src/main.tsx"));
+    expect(steps[0].code).toContain("<BrowserRouter>");
+    expect(steps[1].code).toContain('import { AuthRoutes } from "@seamless-auth/react/routes";');
+    expect(steps[1].code).toContain('<Route path="*" element={<SignIn />} />');
+    expect(steps[1].code).toContain('<Navigate to="/login" replace />');
+    expect(steps[1].code).toContain("{ children }: { children: ReactNode }");
+    expect(webSteps(web({ entry: "src/main.tsx" }), api)[1].file).toBe("src/main.tsx");
+  });
+
+  it("prints plain JSX for a JavaScript app", () => {
+    const routes = webSteps(web({ typescript: false }), api)[1].code;
+    expect(routes).not.toContain("ReactNode");
+    expect(routes).toContain("function RequireAuth({ children }) {");
+  });
+
+  it("installs react-router-dom with the binding when the app has none", () => {
     expect(webPackages(web({}))).toEqual(["@seamless-auth/react"]);
+    expect(webPackages(web({ missingPeers: ["react-router-dom"] }))).toEqual(["@seamless-auth/react", "react-router-dom"]);
   });
 });
 

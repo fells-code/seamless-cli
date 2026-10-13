@@ -1,3 +1,5 @@
+import { DEFAULT_BACKEND_PORTS, searchedDirsText } from "../core/detect.js";
+
 export interface HelpSection {
   heading: string;
   body: string;
@@ -113,9 +115,9 @@ NON-INTERACTIVE
         heading: "add [path]",
         body: `Add Seamless Auth to an existing project
 
-Finds a backend (Express, Fastify, Go net/http, Gin, chi, Echo, Axum, FastAPI or
-Django) and a web app (React, Angular, Vue or SvelteKit), at the project root or in
-api/, server/, backend/, web/, client/, frontend/, apps/* or packages/*, then:
+${wrap(
+  `Finds a backend (Express, Fastify, Go net/http, Gin, chi, Echo, Axum, FastAPI or Django) and a web app (React, Angular, Vue or SvelteKit), at ${searchedDirsText()}, then:`,
+)}
   • Connects an auth server: a local one in Docker, written to seamless/, or a
     managed application
   • Writes the backend's .env (auth server URL, service token, service token
@@ -140,9 +142,11 @@ api/, server/, backend/, web/, client/, frontend/, apps/* or packages/*, then:
   • With --local, the owner address: it becomes the admin when you register
 
 --api-url=<url>, --web-url=<url>
-  • Your backend and web app origins, when they are not on the defaults
-    (http://localhost:<PORT from the backend .env, or 3000> and
-    http://localhost:5173, or 4200 for Angular and 3001 for Create React App)
+  • Your backend and web app origins, when they are not on the defaults.
+${wrap(
+  `The backend: http://localhost:<port>, with PORT from the backend's .env, else the port in the entry file's listen call, else ${DEFAULT_BACKEND_PORTS.node} for Node, ${DEFAULT_BACKEND_PORTS.python} for FastAPI and Django (uvicorn and runserver), and ${DEFAULT_BACKEND_PORTS.go} for Go and Rust. The web app: http://localhost:5173, or 4200 for Angular and 3001 for Create React App`,
+  "    ",
+)}
 
 --admin=<api|none>
   • Whether your backend serves the admin dashboard at /console (default: api)
@@ -534,4 +538,20 @@ export const COMMANDS = COMMAND_HELP.map((c) => c.name);
 
 export function findCommandHelp(name: string): CommandHelp | undefined {
   return COMMAND_HELP.find((c) => c.name === name);
+}
+
+// Fills generated text to the width the hand-wrapped help uses.
+function wrap(text: string, indent = "", width = 82): string {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    if (line && indent.length + line.length + 1 + word.length > width) {
+      lines.push(indent + line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(indent + line);
+  return lines.join("\n");
 }
