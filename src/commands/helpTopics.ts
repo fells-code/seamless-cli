@@ -118,9 +118,9 @@ Django) and a web app (React, Angular, Vue or SvelteKit), at the project root or
 api/, server/, backend/, web/, client/, frontend/, apps/* or packages/*, then:
   • Connects an auth server: a local one in Docker, written to seamless/, or a
     managed application
-  • Writes the backend's .env (auth server URL, service token, signing key id, a
-    cookie secret), keeping every value you already have, and the web app's API
-    URL in .env.local (Angular gets it in the printed code)
+  • Writes the backend's .env (auth server URL, service token, service token
+    kid, a cookie secret), keeping every value you already have, and the web
+    app's API URL in .env.local (Angular gets it in the printed code)
   • Installs the adapter and SDK with the project's own tool (npm, pnpm, yarn,
     bun, go get, cargo add, uv or poetry; a pip install is printed instead)
   • Prints the lines of code to add. It never edits your source files

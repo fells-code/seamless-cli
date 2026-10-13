@@ -1968,7 +1968,7 @@ describe("managed scaffold JWKS kid", () => {
       expect.anything(),
       expect.objectContaining({ jwksKid: "dev-main" }),
     );
-    expect(out()).toContain("Could not read the signing key id");
+    expect(out()).toContain("Could not read the active key id");
   });
 
   it("does not fail the scaffold when the kid cannot be read", async () => {

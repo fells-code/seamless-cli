@@ -18,7 +18,7 @@
 #   SEAMLESS_SVELTE_DIR absolute path to the Svelte app to serve (svelte and
 #                       svelte-dev profiles); defaults to ./svelte-app
 #   API_SERVICE_TOKEN   shared secret between the API and both adapters
-#   JWKS_KID            key id the adapters expect (must match the API's active kid)
+#   JWKS_KID            kid header on the adapters' service tokens (the API never checks it)
 #   OWNER_EMAIL         tenant owner; this email gets the admin role at signup
 #
 # The adapters are built from ./adapter-app and ./adapter-fastify-app in this repo,

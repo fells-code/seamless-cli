@@ -10,9 +10,9 @@ import { requireInteractive } from "./tty.js";
 // Shared by `seamless init` and `seamless add`, which both connect a project to a
 // managed application.
 
-// Only reached when the instance cannot be asked. Adapters resolve the signing key
-// from the token header through the remote JWKS, so this value verifies nothing, but
-// they warn on boot while it is the dev default, so the real kid is worth fetching.
+// Only reached when the instance cannot be asked. JWKS_KID is only the kid header on
+// the service tokens the adapter signs, and the auth API never checks it, but adapters
+// warn on boot while it is the dev default, so the instance's kid is worth fetching.
 export const FALLBACK_JWKS_KID = "dev-main";
 
 // Asked of the instance rather than assumed: instances pin their kid per tier
@@ -24,12 +24,12 @@ export async function resolveJwksKid(authServerUrl: string): Promise<string> {
 
   console.log(
     kleur.yellow(
-      `Could not read the signing key id from ${authServerUrl}, so JWKS_KID is set to "${FALLBACK_JWKS_KID}".`,
+      `Could not read the active key id from ${authServerUrl}, so JWKS_KID is set to "${FALLBACK_JWKS_KID}".`,
     ),
   );
   console.log(
     kleur.dim(
-      "  Nothing verifies against it, the SDK resolves the key from the token, but your adapter will warn on boot until it matches. Read it from /.well-known/jwks.json once the instance is up.",
+      "  JWKS_KID is only the kid header on the service tokens your adapter signs, and the auth server does not check it, but the adapter warns on boot while it is dev-main. Set any other value to quiet it.",
     ),
   );
   return FALLBACK_JWKS_KID;
