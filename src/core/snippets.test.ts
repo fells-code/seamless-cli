@@ -200,6 +200,23 @@ describe("Go, Rust and Python backends", () => {
     expect(code).toContain("CORS_ALLOW_CREDENTIALS = True");
   });
 
+  it("reads SEAMLESS_SERVICE_TOKEN, or the variable an earlier project already has", () => {
+    const cases = [
+      [backend("express", true), "process.env.SEAMLESS_SERVICE_TOKEN!"],
+      [backend("fastify", false), "process.env.SEAMLESS_SERVICE_TOKEN,"],
+      [native("gin", "go"), 'os.Getenv("SEAMLESS_SERVICE_TOKEN")'],
+      [native("axum", "rust", "cargo"), '.service_secret(env("SEAMLESS_SERVICE_TOKEN"))'],
+      [native("fastapi", "python", "uv"), 'service_secret=os.environ["SEAMLESS_SERVICE_TOKEN"]'],
+      [native("django", "python", "pip"), '"service_secret": os.environ["SEAMLESS_SERVICE_TOKEN"]'],
+    ] as const;
+    for (const [target, read] of cases) {
+      expect(backendSnippet(target, on)).toContain(read);
+      const legacy = backendSnippet(target, { ...on, serviceTokenVar: "API_SERVICE_TOKEN" });
+      expect(legacy).toContain(read.replace("SEAMLESS_SERVICE_TOKEN", "API_SERVICE_TOKEN"));
+      expect(legacy).not.toContain("SEAMLESS_SERVICE_TOKEN");
+    }
+  });
+
   it("names each framework", () => {
     expect(frameworkName("nethttp")).toBe("Go (net/http)");
     expect(frameworkName("django")).toBe("Django");

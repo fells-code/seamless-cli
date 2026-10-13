@@ -1,4 +1,5 @@
 import type { DetectedBackend } from "./detect.js";
+import { SERVICE_TOKEN_VAR } from "./serviceToken.js";
 
 // The code `seamless add` prints for Go, Rust and Python backends, on the
 // seamless-auth-go, seamless-auth (crates.io) and seamless-auth (PyPI) adapters.
@@ -9,17 +10,24 @@ import type { DetectedBackend } from "./detect.js";
 export interface SnippetOptions {
   webOrigin: string;
   serveConsole: boolean;
+  // The variable the backend reads its service token from. SEAMLESS_SERVICE_TOKEN
+  // unless the project's .env already holds the legacy API_SERVICE_TOKEN.
+  serviceTokenVar?: string;
+}
+
+export function tokenVar(opts: SnippetOptions): string {
+  return opts.serviceTokenVar ?? SERVICE_TOKEN_VAR;
 }
 
 const DEV_NOTE =
   "Development only: log one-time codes and magic links instead of sending them,\n// so you can sign in without a mail or SMS provider. Replace before deploying.";
 
-function goOptions(): string {
+function goOptions(variable: string): string {
   return `opts := seamlessauth.Options{
 	AuthServerURL:    os.Getenv("AUTH_SERVER_URL"),
 	AuthServerIssuer: os.Getenv("AUTH_SERVER_ISSUER"),
 	CookieSecret:     os.Getenv("COOKIE_SIGNING_KEY"),
-	ServiceSecret:    os.Getenv("API_SERVICE_TOKEN"),
+	ServiceSecret:    os.Getenv("${variable}"),
 	JWKSKid:          os.Getenv("JWKS_KID"),
 }
 // ${DEV_NOTE}
@@ -109,7 +117,7 @@ function goSnippet(framework: DetectedBackend["framework"], opts: SnippetOptions
   ];
   if (framework === "gin") imports.push('"github.com/gin-gonic/gin"');
   if (framework === "echo") imports.push('"github.com/labstack/echo/v4"', '"github.com/labstack/echo/v4/middleware"');
-  const header = `import (\n${imports.map((i) => (i ? `\t${i}` : "")).join("\n")}\n)\n\n${goOptions()}\n`;
+  const header = `import (\n${imports.map((i) => (i ? `\t${i}` : "")).join("\n")}\n)\n\n${goOptions(tokenVar(opts))}\n`;
   const cors = (use: string) => `// ${CORS_COMMENT}\n${goOrigins(opts.webOrigin)}\n${use}`;
   const consoleLine = (mount: string) =>
     opts.serveConsole
@@ -175,7 +183,7 @@ use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 let env = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"));
 let mut builder = Adapter::builder(env("AUTH_SERVER_URL"))
     .cookie_secret(env("COOKIE_SIGNING_KEY"))
-    .service_secret(env("API_SERVICE_TOKEN"))
+    .service_secret(env("${tokenVar(opts)}"))
     .jwks_kid(env("JWKS_KID"));
 if let Ok(issuer) = std::env::var("AUTH_SERVER_ISSUER") {
     builder = builder.auth_server_issuer(issuer);
@@ -251,7 +259,7 @@ auth = Adapter(
     auth_server_url=os.environ["AUTH_SERVER_URL"],
     auth_server_issuer=os.environ.get("AUTH_SERVER_ISSUER") or None,
     cookie_secret=os.environ["COOKIE_SIGNING_KEY"],
-    service_secret=os.environ["API_SERVICE_TOKEN"],
+    service_secret=os.environ["${tokenVar(opts)}"],
     jwks_kid=os.environ["JWKS_KID"],
     deliver=None if os.environ.get("APP_ENV") == "production" else dev_deliver,
 )
@@ -300,7 +308,7 @@ SEAMLESS_AUTH = {
     "auth_server_url": os.environ["AUTH_SERVER_URL"],
     "auth_server_issuer": os.environ.get("AUTH_SERVER_ISSUER") or None,
     "cookie_secret": os.environ["COOKIE_SIGNING_KEY"],
-    "service_secret": os.environ["API_SERVICE_TOKEN"],
+    "service_secret": os.environ["${tokenVar(opts)}"],
     "jwks_kid": os.environ["JWKS_KID"],
     "deliver": None if os.environ.get("APP_ENV") == "production" else _dev_deliver,
 }

@@ -1428,7 +1428,7 @@ describe("integrateExistingProject", () => {
       "/work/api/.env",
       expect.objectContaining({
         AUTH_SERVER_URL: "norm:https://acme.example.com",
-        API_SERVICE_TOKEN: "svc-token",
+        SEAMLESS_SERVICE_TOKEN: "svc-token",
         JWKS_KID: "dev-main",
         COOKIE_SIGNING_KEY: "generated-secret",
       }),
@@ -1504,6 +1504,27 @@ describe("integrateExistingProject", () => {
     );
   });
 
+  it("writes the token into API_SERVICE_TOKEN for a project that reads that name", async () => {
+    vi.mocked(createPortalClient).mockResolvedValue({
+      profile: { name: "default", instanceUrl: "https://auth" },
+    } as never);
+    vi.mocked(listApplications).mockResolvedValue([app()] as never);
+    vi.mocked(selectApplication).mockResolvedValue(app() as never);
+    vi.mocked(rotateServiceToken).mockResolvedValue("svc-token");
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    // Scaffolded before the starters moved to SEAMLESS_SERVICE_TOKEN.
+    vi.mocked(parseEnv).mockReturnValue({
+      API_SERVICE_TOKEN: "old-token",
+    } as never);
+
+    await runCLI(undefined, []);
+
+    const written = vi.mocked(writeEnv).mock.calls[0][1] as Record<string, string>;
+    expect(written.API_SERVICE_TOKEN).toBe("svc-token");
+    expect(written).not.toHaveProperty("SEAMLESS_SERVICE_TOKEN");
+    expect(out()).toContain("Updated API_SERVICE_TOKEN in api/.env in place");
+  });
+
   it("prints the managed values to paste when there is no api directory", async () => {
     vi.mocked(createPortalClient).mockResolvedValue({
       profile: { name: "default", instanceUrl: "https://auth" },
@@ -1518,6 +1539,7 @@ describe("integrateExistingProject", () => {
     expect(writeEnv).not.toHaveBeenCalled();
     expect(out()).toContain("Managed connection values:");
     expect(out()).toContain("svc-token");
+    expect(out()).toContain("SEAMLESS_SERVICE_TOKEN");
   });
 
   it("stops when the application selection is cancelled", async () => {

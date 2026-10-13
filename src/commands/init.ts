@@ -61,6 +61,11 @@ import { getPortalSession, normalizeInstanceUrl } from "../core/config.js";
 import { parseEnv, writeEnv } from "../core/env.js";
 import { generateAdminSource } from "../generators/admin/admin.js";
 import { generateSecret } from "../core/secrets.js";
+import {
+  appServiceTokenVar,
+  LEGACY_SERVICE_TOKEN_VAR,
+  legacyServiceTokenNote,
+} from "../core/serviceToken.js";
 import { fetchActiveJwksKid } from "../core/jwksKid.js";
 import {
   buildScaffoldDatabaseUrl,
@@ -687,8 +692,9 @@ async function integrateExistingProject(
 
   // The token is already rotated (old one invalidated); if the write fails, print
   // it so the app can be re-wired by hand rather than left bricked.
+  let serviceTokenVar: string;
   try {
-    wireApiEnv(apiDir, authServerUrl, serviceToken, databaseUrl);
+    serviceTokenVar = wireApiEnv(apiDir, authServerUrl, serviceToken, databaseUrl);
   } catch (err) {
     console.error(
       kleur.red(
@@ -700,6 +706,9 @@ async function integrateExistingProject(
   }
 
   console.log(kleur.green(`Updated ${path.join("api", ".env")}.`));
+  if (serviceTokenVar === LEGACY_SERVICE_TOKEN_VAR) {
+    console.log(kleur.yellow(`  ${legacyServiceTokenNote(path.join("api", ".env"))}`));
+  }
   console.log(
     kleur.dim("  Set your web app's auth server URL to: ") +
       kleur.cyan(authServerUrl),
@@ -707,18 +716,20 @@ async function integrateExistingProject(
 }
 
 // Merges the managed auth values into an existing api/.env, preserving any keys
-// already there and keeping (or generating) a cookie signing key.
+// already there and keeping (or generating) a cookie signing key. Returns the
+// variable the service token went into.
 function wireApiEnv(
   apiDir: string,
   authServerUrl: string,
   serviceToken: string,
   databaseUrl: string,
-) {
+): string {
   const envPath = path.join(apiDir, ".env");
   const values = fs.existsSync(envPath) ? parseEnv(envPath) : {};
+  const serviceTokenVar = appServiceTokenVar(values);
 
   values.AUTH_SERVER_URL = authServerUrl;
-  values.API_SERVICE_TOKEN = serviceToken;
+  values[serviceTokenVar] = serviceToken;
   values.JWKS_KID = values.JWKS_KID || FALLBACK_JWKS_KID;
   values.COOKIE_SIGNING_KEY =
     values.COOKIE_SIGNING_KEY || generateSecret(32);
@@ -730,6 +741,7 @@ function wireApiEnv(
 
   fs.mkdirSync(apiDir, { recursive: true });
   writeEnv(envPath, values);
+  return serviceTokenVar;
 }
 
 function printManagedValues(
@@ -738,9 +750,9 @@ function printManagedValues(
   jwksKid: string,
 ) {
   console.log(kleur.green("\nManaged connection values:\n"));
-  console.log(kleur.dim("  AUTH_SERVER_URL   ") + authServerUrl);
-  console.log(kleur.dim("  API_SERVICE_TOKEN ") + serviceToken);
-  console.log(kleur.dim("  JWKS_KID          ") + jwksKid);
+  console.log(kleur.dim("  AUTH_SERVER_URL        ") + authServerUrl);
+  console.log(kleur.dim("  SEAMLESS_SERVICE_TOKEN ") + serviceToken);
+  console.log(kleur.dim("  JWKS_KID               ") + jwksKid);
   console.log(
     kleur.yellow(
       "\nCopy the service token now. The control plane will not show it again.",
@@ -748,12 +760,13 @@ function printManagedValues(
   );
   console.log(
     kleur.dim(
-      "Set AUTH_SERVER_URL, API_SERVICE_TOKEN, and JWKS_KID on your backend. Point",
+      "Set AUTH_SERVER_URL, SEAMLESS_SERVICE_TOKEN, and JWKS_KID on your backend (a",
     ),
   );
   console.log(
     kleur.dim(
-      "your frontend at your backend, not the auth server, then sign in to verify.\n",
+      "backend scaffolded before seamless-cli 0.24.0 reads API_SERVICE_TOKEN instead).\n" +
+        "Point your frontend at your backend, not the auth server, then sign in to verify.\n",
     ),
   );
 }
