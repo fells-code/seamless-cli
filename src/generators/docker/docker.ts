@@ -174,6 +174,11 @@ function apiUiOrigins(adminMode: AdminMode): string {
   return web;
 }
 
+// Written above the app's token in the generated compose file, where both
+// names sit side by side and a reader would otherwise wonder which is right.
+const SERVICE_TOKEN_COMMENT = `      # The same secret as the auth service's API_SERVICE_TOKEN. Apps read it
+      # as SEAMLESS_SERVICE_TOKEN; the auth server keeps its own name.`;
+
 function apiService(shared: any, adminMode: AdminMode) {
   return `
   api:
@@ -188,7 +193,8 @@ function apiService(shared: any, adminMode: AdminMode) {
       AUTH_SERVER_ISSUER: ${LOCAL_AUTH_ISSUER}
       UI_ORIGINS: ${apiUiOrigins(adminMode)}
       DB_HOST: db
-      API_SERVICE_TOKEN: ${shared.apiToken}
+${SERVICE_TOKEN_COMMENT}
+      SEAMLESS_SERVICE_TOKEN: ${shared.apiToken}
       JWKS_KID: ${shared.kid}
     volumes:
       - ./api:/app
@@ -241,7 +247,8 @@ function fullStackWebService(shared: any) {
     environment:
       AUTH_SERVER_URL: ${LOCAL_AUTH_ISSUER}
       AUTH_SERVER_ISSUER: ${LOCAL_AUTH_ISSUER}
-      API_SERVICE_TOKEN: ${shared.apiToken}
+${SERVICE_TOKEN_COMMENT}
+      SEAMLESS_SERVICE_TOKEN: ${shared.apiToken}
       JWKS_KID: ${shared.kid}
     volumes:
       - ./web:/app

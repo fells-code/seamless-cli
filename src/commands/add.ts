@@ -28,6 +28,11 @@ import {
 import { listApplications } from "../core/portal.js";
 import { generateSecret } from "../core/secrets.js";
 import {
+  appServiceTokenVar,
+  LEGACY_SERVICE_TOKEN_VAR,
+  legacyServiceTokenNote,
+} from "../core/serviceToken.js";
+import {
   backendInstalls,
   backendSnippet,
   envLoadingHint,
@@ -145,11 +150,15 @@ export async function addSeamlessAuth(opts: AddOptions) {
       : await connectManaged(opts);
 
   const backendDir = path.join(root, backend.dir);
-  const backendEnv = mergeEnvFile(path.join(backendDir, ".env"), {
+  const backendEnvPath = path.join(backendDir, ".env");
+  const serviceTokenVar = appServiceTokenVar(
+    fs.existsSync(backendEnvPath) ? parseEnv(backendEnvPath) : {},
+  );
+  const backendEnv = mergeEnvFile(backendEnvPath, {
     set: {
       AUTH_SERVER_URL: connection.authServerUrl,
       AUTH_SERVER_ISSUER: connection.authServerIssuer,
-      API_SERVICE_TOKEN: connection.serviceToken,
+      [serviceTokenVar]: connection.serviceToken,
       JWKS_KID: connection.jwksKid,
     },
     defaults: {
@@ -164,6 +173,9 @@ export async function addSeamlessAuth(opts: AddOptions) {
   );
   if (backendEnv.kept.length > 0) {
     console.log(kleur.dim(`  Kept your existing ${backendEnv.kept.join(", ")}.`));
+  }
+  if (serviceTokenVar === LEGACY_SERVICE_TOKEN_VAR) {
+    console.log(kleur.yellow(`  ${legacyServiceTokenNote(path.join(backend.dir, ".env"))}`));
   }
   if (!isGitIgnored(root, backendDir, ".env")) {
     console.log(
@@ -205,6 +217,7 @@ export async function addSeamlessAuth(opts: AddOptions) {
     apiOrigin,
     webOrigin,
     serveConsole,
+    serviceTokenVar,
     installs: installs.filter((i) => opts.install === false || !i.run).map((i) => i.display),
   });
 }
@@ -426,6 +439,7 @@ function printNextSteps(ctx: {
   apiOrigin: string;
   webOrigin: string;
   serveConsole: boolean;
+  serviceTokenVar: string;
   installs: string[];
 }) {
   const { mode, backend, web } = ctx;
@@ -454,7 +468,11 @@ function printNextSteps(ctx: {
       `   After you create the app and before your routes. Merge the imports with your own. It reads the\n   values written to ${path.join(backend.dir, ".env")}: ${envLoadingHint(backend)}\n`,
     ),
   );
-  console.log(indent(backendSnippet(backend, { webOrigin: ctx.webOrigin, serveConsole: ctx.serveConsole && mode === "local" })));
+  console.log(indent(backendSnippet(backend, {
+        webOrigin: ctx.webOrigin,
+        serveConsole: ctx.serveConsole && mode === "local",
+        serviceTokenVar: ctx.serviceTokenVar,
+      })));
 
   if (web) {
     for (const webStep of webSteps(web, { apiOrigin: ctx.apiOrigin })) {

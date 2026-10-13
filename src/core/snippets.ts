@@ -1,5 +1,5 @@
 import { addPackagesCommand, type DetectedBackend } from "./detect.js";
-import { nativeBackendSnippet } from "./nativeSnippets.js";
+import { nativeBackendSnippet, type SnippetOptions, tokenVar } from "./nativeSnippets.js";
 
 // What `seamless add` prints for the adopter to paste. It never edits their files:
 // these follow the reference apps the conformance suite runs (verify/adapter-app,
@@ -7,7 +7,7 @@ import { nativeBackendSnippet } from "./nativeSnippets.js";
 
 // The env reads both adapters take. `!` only where TypeScript would otherwise
 // object, so the JavaScript version is still valid JavaScript.
-function seamlessOptions(ts: boolean): string {
+function seamlessOptions(ts: boolean, serviceTokenVar: string): string {
   const bang = ts ? "!" : "";
   return `const issuer = process.env.AUTH_SERVER_ISSUER || process.env.AUTH_SERVER_URL${bang};
 const seamless = {
@@ -15,7 +15,7 @@ const seamless = {
   authServerIssuer: issuer,
   audience: issuer,
   cookieSecret: process.env.COOKIE_SIGNING_KEY${bang},
-  serviceSecret: process.env.API_SERVICE_TOKEN${bang},
+  serviceSecret: process.env.${serviceTokenVar}${bang},
   jwksKid: process.env.JWKS_KID${bang},
   // Development only: log one-time codes and magic links instead of sending them,
   // so you can sign in without a mail or SMS provider. Replace before deploying.
@@ -43,7 +43,7 @@ const seamless = {
 
 export function backendSnippet(
   backend: DetectedBackend,
-  opts: { webOrigin: string; serveConsole: boolean },
+  opts: SnippetOptions,
 ): string {
   if (backend.ecosystem !== "node") return nativeBackendSnippet(backend, opts);
   const ts = backend.typescript;
@@ -66,7 +66,7 @@ import createSeamlessAuthServer, {${opts.serveConsole ? "\n  createSeamlessConso
   requireAuth,${ts ? "\n  type SeamlessAuthUser," : ""}
 } from "@seamless-auth/express";
 ${typing}
-${seamlessOptions(ts)}
+${seamlessOptions(ts, tokenVar(opts))}
 ${
   opts.serveConsole
     ? `
@@ -96,7 +96,7 @@ app.get("/api/me", signedIn, (req, res) => res.json({ id: req.user${ts ? "!" : "
   return `import cors from "@fastify/cors";
 import seamlessAuth, { requireAuth${opts.serveConsole ? ", seamlessConsoleProxy" : ""} } from "@seamless-auth/fastify";
 
-${seamlessOptions(ts)}
+${seamlessOptions(ts, tokenVar(opts))}
 ${
   opts.serveConsole
     ? `

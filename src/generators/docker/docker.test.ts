@@ -217,7 +217,7 @@ describe("generateDockerCompose", () => {
     expect(compose).toContain("env_file:\n      - ./auth/.env");
     expect(compose).toContain("DB_HOST: db");
     expect(compose).toContain("ISSUER: http://auth:5312");
-    expect(compose).toContain("API_SERVICE_TOKEN: existing-token");
+    expect(compose).toContain("SEAMLESS_SERVICE_TOKEN: existing-token");
     expect(compose).toContain("JWKS_KID: existing-kid");
     expect(compose).toContain("container_name: web");
     expect(compose).toContain(`image: ${SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE}`);
@@ -350,8 +350,14 @@ describe("generateDockerCompose", () => {
 
     expect(compose).toContain(`image: ${SEAMLESS_AUTH_API_IMAGE}`);
     expect(compose).not.toContain("build:\n      context: ./auth");
-    expect(compose).toContain(`API_SERVICE_TOKEN: "${shared.apiToken}"`);
-    expect(compose).toContain(`API_SERVICE_TOKEN: ${shared.apiToken}`);
+    // The auth server keeps API_SERVICE_TOKEN; the app reads the same value
+    // under SEAMLESS_SERVICE_TOKEN, and the file says why there are two names.
+    const auth = compose.slice(compose.indexOf("\n  auth:"), compose.indexOf("\n  api:"));
+    const api = compose.slice(compose.indexOf("\n  api:"));
+    expect(auth).toContain(`API_SERVICE_TOKEN: "${shared.apiToken}"`);
+    expect(api).toContain(`SEAMLESS_SERVICE_TOKEN: ${shared.apiToken}`);
+    expect(api).not.toMatch(/^\s+API_SERVICE_TOKEN:/m);
+    expect(api).toContain("# The same secret as the auth service's API_SERVICE_TOKEN.");
     expect(compose).toContain(`JWKS_KID: ${shared.kid}`);
     expect(compose).toContain("OAUTH_PROVIDERS");
   });
@@ -473,7 +479,8 @@ describe("generateDockerCompose for a full-stack web app", () => {
     expect(compose).not.toContain("\n  admin:");
     expect(web).toContain("- ./web/.env");
     expect(web).toContain("AUTH_SERVER_URL: http://auth:5312");
-    expect(web).toContain("API_SERVICE_TOKEN: existing-token");
+    expect(web).toContain("SEAMLESS_SERVICE_TOKEN: existing-token");
+    expect(web).not.toMatch(/^\s+API_SERVICE_TOKEN:/m);
     expect(web).toContain("JWKS_KID: existing-kid");
     expect(web).toContain('- "127.0.0.1:5173:80"');
     // The bind mount must not hide the container's dependencies or share a

@@ -25,8 +25,8 @@ for `GET <url>/` to answer, and runs `verify/harness/adapter/*.spec.ts` against 
 | `PORT` | your choice | Where the app listens |
 | `AUTH_SERVER_URL` | `http://localhost:5312` from the host, `http://auth-api:5312` inside the compose network | Where the adapter reaches the API and its JWKS |
 | `AUTH_SERVER_ISSUER` | `http://auth-api:5312` | Expected `iss` and `aud` of the API's tokens. It differs from `AUTH_SERVER_URL` when the app runs on the host |
-| `API_SERVICE_TOKEN` | `verify-dev-service-token-not-a-real-secret` | The adapter's service secret. It signs the HS256 service token (`iss: seamless-portal-api`, `aud: seamless-auth`) the adapter sends as `x-seamless-service-token` |
-| `COOKIE_SIGNING_KEY` | the same value as `API_SERVICE_TOKEN` | Signs the session cookies. At least 32 characters |
+| `SEAMLESS_SERVICE_TOKEN` | `verify-dev-service-token-not-a-real-secret` | The adapter's service secret, the value the auth API reads as `API_SERVICE_TOKEN`. It signs the HS256 service token (`iss: seamless-portal-api`, `aud: seamless-auth`) the adapter sends as `x-seamless-service-token`. Reference apps written before the rename read `API_SERVICE_TOKEN`; the harness does not set either, so the name is the reference app's own choice |
+| `COOKIE_SIGNING_KEY` | the same value as `SEAMLESS_SERVICE_TOKEN` | Signs the session cookies. At least 32 characters |
 | `JWKS_KID` | `dev-main` | The `kid` header on the service token |
 
 ### Routes

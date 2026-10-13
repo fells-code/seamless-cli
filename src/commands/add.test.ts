@@ -103,7 +103,7 @@ describe("seamless add --local", () => {
     expect(values).toMatchObject({
       AUTH_SERVER_URL: "http://localhost:5312",
       AUTH_SERVER_ISSUER: "http://auth:5312",
-      API_SERVICE_TOKEN: stackEnv.API_SERVICE_TOKEN,
+      SEAMLESS_SERVICE_TOKEN: stackEnv.API_SERVICE_TOKEN,
       JWKS_KID: "dev-main",
       UI_ORIGINS: "http://localhost:5173",
       SERVE_ADMIN_CONSOLE: "true",
@@ -205,7 +205,7 @@ describe("seamless add --app", () => {
     expect(parseEnv(path.join(root, "api", ".env"))).toMatchObject({
       AUTH_SERVER_URL: "https://acme.auth.example",
       AUTH_SERVER_ISSUER: "https://acme.auth.example",
-      API_SERVICE_TOKEN: "managed-service-token",
+      SEAMLESS_SERVICE_TOKEN: "managed-service-token",
       JWKS_KID: "paidkey1",
       SERVE_ADMIN_CONSOLE: "false",
     });
@@ -260,7 +260,44 @@ describe("seamless add, interactively", () => {
 
     const after = parseEnv(path.join(root, "seamless", ".env")).API_SERVICE_TOKEN;
     expect(after).not.toBe(before);
-    expect(parseEnv(path.join(root, "api", ".env")).API_SERVICE_TOKEN).toBe(after);
+    expect(parseEnv(path.join(root, "api", ".env")).SEAMLESS_SERVICE_TOKEN).toBe(after);
+  });
+});
+
+describe("seamless add, service token variable", () => {
+  it("prints code that reads SEAMLESS_SERVICE_TOKEN for a new project", async () => {
+    await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
+
+    const values = parseEnv(path.join(root, "api", ".env"));
+    expect(values).not.toHaveProperty("API_SERVICE_TOKEN");
+    const out = logs.join("\n");
+    expect(out).toContain("serviceSecret: process.env.SEAMLESS_SERVICE_TOKEN");
+    expect(out).not.toContain("process.env.API_SERVICE_TOKEN");
+  });
+
+  it("updates an earlier project's API_SERVICE_TOKEN in place instead of adding a second variable", async () => {
+    write("api/.env", "PORT=4000\nAPI_SERVICE_TOKEN=old-token\nJWKS_KID=dev-main\n");
+
+    await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
+
+    const stackToken = parseEnv(path.join(root, "seamless", ".env")).API_SERVICE_TOKEN;
+    const apiEnv = fs.readFileSync(path.join(root, "api", ".env"), "utf-8");
+    expect(apiEnv.startsWith(`PORT=4000\nAPI_SERVICE_TOKEN=${stackToken}\n`)).toBe(true);
+    expect(apiEnv).not.toContain("SEAMLESS_SERVICE_TOKEN");
+    const out = logs.join("\n");
+    expect(out).toContain("Updated API_SERVICE_TOKEN in api/.env in place");
+    expect(out).toContain("serviceSecret: process.env.API_SERVICE_TOKEN");
+  });
+
+  it("prints the legacy name in a Go snippet for an earlier project", async () => {
+    fs.rmSync(path.join(root, "api"), { recursive: true });
+    write("api/go.mod", "module example.com/api\n\ngo 1.24\n\nrequire github.com/gin-gonic/gin v1.10.0\n");
+    write("api/main.go", "package main\n");
+    write("api/.env", "API_SERVICE_TOKEN=old-token\n");
+
+    await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
+
+    expect(logs.join("\n")).toContain('os.Getenv("API_SERVICE_TOKEN")');
   });
 });
 

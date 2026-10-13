@@ -108,8 +108,8 @@ What happens:
 - The CLI lists your applications from the control plane and, when you have more than one, asks
   which to connect. Skip the prompt with `--app <id>` (an application id or infra id).
 - It issues the application's service token from the control plane (the real credential, not a
-  locally generated secret) and writes it, the managed auth server URL, and the JWKS key id into
-  `api/.env`. The frontend keeps pointing at your backend, which runs the adapter at `/auth`; the
+  locally generated secret) and writes it as `SEAMLESS_SERVICE_TOKEN`, with the managed auth server
+  URL and the JWKS key id, into `api/.env`. The frontend keeps pointing at your backend, which runs the adapter at `/auth`; the
   browser never talks to the auth server directly.
 - It reads the application's bundled database and writes `DATABASE_URL` into `api/.env` as
   `postgres://USER:PASSWORD@host:port/db?sslmode=require`. **The user and password stay as literal
@@ -123,8 +123,11 @@ Because the service token is shown only once at issue time, `init` confirms befo
 one for an application that already has a token (issuing a new token invalidates the old one).
 
 Run inside an existing project (a non-empty directory) to wire it up in place: `init` updates
-`api/.env` when an `api` directory is present, otherwise it prints the values to set by hand. Your
-own source is never overwritten.
+`api/.env` when an `api` directory is present, otherwise it prints the values to set by hand.
+A project scaffolded before 0.24.0 reads its token from `API_SERVICE_TOKEN`; when `api/.env` has
+that variable and not `SEAMLESS_SERVICE_TOKEN`, the new token goes into `API_SERVICE_TOKEN` in
+place (`seamless add` does the same), so the app keeps reading it. Your own source is never
+overwritten.
 
 ### Seeing your managed applications
 
@@ -279,6 +282,10 @@ one already there when you scaffold into a non-empty directory with `--force`.
 - API communicates with the auth server
 - Auth manages sessions and tokens
 
+The API and the auth server share one service token. The app reads it as `SEAMLESS_SERVICE_TOKEN`
+(in `api/.env`, or `web/.env` for a full-stack app) and the auth server as `API_SERVICE_TOKEN`; the
+generated `docker-compose.yml` sets both to the same value and says so in a comment.
+
 ### Full-stack templates
 
 A full-stack template is the web app and its own backend in one: it serves the `/auth` routes
@@ -316,7 +323,7 @@ It finds a backend and a web app, at the project root or `api/`, `server/`, `bac
 The backend can be Express or Fastify, Go (net/http, Gin, chi or Echo), Rust (Axum), or Python (FastAPI or Django). The web app can be React, Angular, Vue or SvelteKit.
 
 - connects an auth server. `--local` writes `seamless/docker-compose.yml` (the auth server and its Postgres) with its secrets in `seamless/.env`, which is gitignored. The compose file names its project after the repository (`<repo>-seamless`, kept on a re-run), so each repository gets its own database and signing keys. `--app` connects a managed application instead.
-- writes the backend's `.env` (auth server URL, service token, service token kid, and a cookie secret if you have none) and the web app's API URL in `.env.local` (Angular, which does not read `.env`, gets it in the printed code). It keeps every value you already have and every comment.
+- writes the backend's `.env` (auth server URL, service token as `SEAMLESS_SERVICE_TOKEN`, service token kid, and a cookie secret if you have none) and the web app's API URL in `.env.local` (Angular, which does not read `.env`, gets it in the printed code). It keeps every value you already have and every comment.
 - installs the adapter and the web binding (with `react-router-dom`, `vue-router` or `@angular/router` when the app has no router yet, and for Python `python-dotenv`, plus `django-cors-headers` for Django) with your own tool: npm, pnpm, yarn or bun, `go get`, `cargo add`, `uv add` or `poetry add`. A plain pip project gets the `pip install` printed, since only you know which environment it belongs in. `--skip-install` prints every command instead.
 - prints the lines to add to your server and to your web app, file by file: the adapter with credentialed CORS for your web origin, the provider or plugin, the bundled sign-in screens as routes, and guards for signed-in and signed-out pages. Each comes in the project's own language, TypeScript or JavaScript to match it. It never edits your source files.
 

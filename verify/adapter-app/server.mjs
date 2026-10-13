@@ -70,7 +70,7 @@ app.use(
   createSeamlessAuthServer({
     authServerUrl: process.env.AUTH_SERVER_URL,
     cookieSecret: process.env.COOKIE_SIGNING_KEY,
-    serviceSecret: process.env.API_SERVICE_TOKEN,
+    serviceSecret: process.env.SEAMLESS_SERVICE_TOKEN,
     issuer: process.env.APP_ORIGIN,
     authServerIssuer: ISSUER,
     audience: ISSUER,
