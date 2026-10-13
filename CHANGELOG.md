@@ -1,5 +1,25 @@
 # seamless-cli
 
+## 0.23.1
+
+### Patch Changes
+
+- 7cdcaaa: `seamless add --local` now names the Compose project in `seamless/docker-compose.yml` after the repository (`name: <repo>-seamless`, lowercased and reduced to the characters Compose allows). Before, every repository's stack ran as project `seamless`, so two repositories on one machine shared containers, the `seamless_pgdata` database and the `seamless_auth-keys` signing keys. A re-run, with or without `--force`, keeps the name already in the file, including one you edited.
+
+  Upgrading: a stack written by an earlier version keeps working until you re-run `seamless add --local --force`. The new stack starts empty under the new name, and `add` says so when it replaces a file without a name. Stop the old containers first with `docker compose -p seamless -f seamless/docker-compose.yml down`, since they hold port 5312. The old data stays in the `seamless_pgdata` and `seamless_auth-keys` volumes, which may hold another repository's data too; remove them with `docker volume rm` once no repository uses them.
+
+- 585f79f: `seamless add` fixes from writing its docs:
+
+  - The backend origin (`--api-url`) now defaults by ecosystem when the backend's `.env` has no `PORT`: the port in the entry file's listen call when there is one, otherwise 3000 for Node, 8000 for FastAPI and Django (the uvicorn and `runserver` defaults), and 8080 for Go and Rust (the adapters' own examples). It was 3000 for every backend, which pointed FastAPI and Django apps, and the auth server's `APP_ORIGINS`, at the wrong port.
+  - The "Found no backend" error, `seamless help add` and the README list the folders detection searches from the same list detection uses, so they now include `app/` (and `web/`, `client/` and `frontend/` in the error).
+  - Go, Axum and Django get working credentialed CORS for `UI_ORIGINS`, like Express, Fastify and FastAPI: net/http middleware for net/http and chi, a Gin middleware, Echo's CORS middleware, a tower-http `CorsLayer` (`cargo add tower-http --features cors` is now part of the install), and django-cors-headers (now installed with the Django adapter).
+  - FastAPI and Django install `python-dotenv`, and the printed code calls `load_dotenv()` before reading the environment. The hint no longer suggests `uvicorn --env-file .env`, which needed python-dotenv without installing it.
+  - React gets the bundled sign-in screens: `BrowserRouter` around `AuthProvider`, then `AuthRoutes` from `@seamless-auth/react/routes` with guards for signed-in and signed-out pages, in `src/App` when it exists. `react-router-dom` is installed when the app does not have it.
+  - Removed the em dashes from `seamless <command> --help` headers, the top-level help, the `verify` summary and the admin dashboard prompt.
+
+- 99f7c3b: Describe `JWKS_KID` correctly. It is the `kid` header on the service tokens the adapter signs with `API_SERVICE_TOKEN`, and the auth server does not check it. The warning printed when a managed instance's key id cannot be read no longer says the adapter warns "until it matches", and `seamless help add` and the README call it the service token kid instead of the signing key id.
+- 0fc9b73: Security: new projects scaffold the starters from `seamless-templates` `v0.19.1` (was `v0.19.0`). The Express, Fastify, and Next.js starters there depend on `@seamless-auth/express` `^0.20.0`, `@seamless-auth/fastify` `^0.11.1`, and `@seamless-auth/nextjs` `^0.4.0`, on `@seamless-auth/core` 0.20.0. Earlier starters resolved core 0.19.1, whose cookie guard accepted the pre-auth cookie `/login` issues from an email address alone as a signed-in session for that account (fixed in fells-code/seamless-auth-server#211). Projects scaffolded by an earlier CLI should move to those adapter versions.
+
 ## 0.23.0
 
 ### Minor Changes
