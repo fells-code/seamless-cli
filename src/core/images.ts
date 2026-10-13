@@ -28,6 +28,6 @@ export const SEAMLESS_AUTH_ADMIN_DASHBOARD_REF = SEAMLESS_AUTH_ADMIN_DASHBOARD_V
 // point at a local checkout with SEAMLESS_TEMPLATES_DIR.
 export const SEAMLESS_TEMPLATES_REPO = "fells-code/seamless-templates";
 
-export const SEAMLESS_TEMPLATES_REF = "v0.19.0";
+export const SEAMLESS_TEMPLATES_REF = "v0.19.1";
 
-export const SEAMLESS_TEMPLATES_COMMIT = "350b9cbfb208b3e8341deada8f8759d0d64aae69";
+export const SEAMLESS_TEMPLATES_COMMIT = "89ebd0f6e21d3e95bf7304754db667910451c2ca";
