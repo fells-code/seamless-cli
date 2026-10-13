@@ -309,7 +309,17 @@ async function connectLocal(
     serveConsole: origins.serveConsole,
     ownerEmail,
   });
-  console.log(kleur.green(`Wrote ${AUTH_STACK_DIR}/`) + kleur.dim(": docker-compose.yml, .env, .gitignore"));
+  console.log(
+    kleur.green(`Wrote ${AUTH_STACK_DIR}/`) +
+      kleur.dim(`: docker-compose.yml (Compose project ${stack.projectName}), .env, .gitignore`),
+  );
+  if (stack.replacedUnnamed) {
+    console.log(
+      kleur.yellow(
+        `  The old stack ran as Compose project "seamless", shared with every other repository that used seamless add. Stop it with docker compose -p seamless -f ${AUTH_STACK_DIR}/docker-compose.yml down; its data stays in the seamless_pgdata and seamless_auth-keys volumes.`,
+      ),
+    );
+  }
 
   return {
     authServerUrl: LOCAL_AUTH_SERVER_URL,

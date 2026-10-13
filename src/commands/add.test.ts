@@ -134,6 +134,37 @@ describe("seamless add --local", () => {
     expect(logs.join("\n")).toContain("cd api && npm install @seamless-auth/express cookie-parser cors");
   });
 
+  it("gives each repository its own Compose project", async () => {
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "seamless-other-"));
+    try {
+      fs.cpSync(root, other, { recursive: true });
+      await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
+      await addSeamlessAuth({ dir: other, local: true, yes: true, email: "owner@x.test", install: false });
+      const nameOf = (dir: string) =>
+        /^name: (.+)$/m.exec(fs.readFileSync(path.join(dir, "seamless", "docker-compose.yml"), "utf-8"))?.[1];
+      expect(nameOf(root)).toBe(`${path.basename(root).toLowerCase()}-seamless`);
+      expect(nameOf(other)).toBe(`${path.basename(other).toLowerCase()}-seamless`);
+      expect(nameOf(root)).not.toBe(nameOf(other));
+      expect(logs.join("\n")).toContain(`Compose project ${nameOf(root)}`);
+    } finally {
+      fs.rmSync(other, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the project name across --force, and says when it replaces an unnamed stack", async () => {
+    await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
+    const composePath = path.join(root, "seamless", "docker-compose.yml");
+    const first = fs.readFileSync(composePath, "utf-8").match(/^name: .+$/m)?.[0];
+    await addSeamlessAuth({ dir: root, local: true, yes: true, force: true, email: "owner@x.test", install: false });
+    expect(fs.readFileSync(composePath, "utf-8").match(/^name: .+$/m)?.[0]).toBe(first);
+    expect(logs.join("\n")).not.toContain("docker compose -p seamless");
+
+    fs.writeFileSync(composePath, fs.readFileSync(composePath, "utf-8").replace(/^name: .+\n/m, ""));
+    await addSeamlessAuth({ dir: root, local: true, yes: true, force: true, email: "owner@x.test", install: false });
+    expect(fs.readFileSync(composePath, "utf-8").match(/^name: .+$/m)?.[0]).toBe(first);
+    expect(logs.join("\n")).toContain("docker compose -p seamless -f seamless/docker-compose.yml down");
+  });
+
   it("warns when the backend .env is not gitignored", async () => {
     fs.rmSync(path.join(root, ".gitignore"));
     await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
