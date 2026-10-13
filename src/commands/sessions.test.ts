@@ -90,7 +90,7 @@ function errOutput(): string {
   return errors.join("\n");
 }
 
-describe("runSessions — dispatch", () => {
+describe("runSessions: dispatch", () => {
   it("prints a yellow message and exits 1 on ReauthRequiredError", async () => {
     vi.mocked(createAuthClient).mockRejectedValue(
       new ReauthRequiredError("No active profile is configured."),

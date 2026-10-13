@@ -9,10 +9,12 @@ import { CancelledError, orCancel } from "../core/cancel.js";
 import { getPortalSession, normalizeInstanceUrl } from "../core/config.js";
 import {
   addPackagesCommand,
+  backendListenPort,
   detectProject,
   type DetectedBackend,
   type DetectedProject,
   type DetectedWeb,
+  searchedDirsText,
 } from "../core/detect.js";
 import { parseEnv } from "../core/env.js";
 import { mergeEnvFile } from "../core/envFile.js";
@@ -124,7 +126,7 @@ export async function addSeamlessAuth(opts: AddOptions) {
   const { backend, web } = project;
   if (!backend) {
     throw new Error(
-      "Found no backend to add Seamless Auth to. seamless add wires Express or Fastify (package.json), Go with net/http, Gin, chi or Echo (go.mod), Axum (Cargo.toml), and FastAPI or Django (pyproject.toml or requirements.txt), at the project root or in api/, server/, backend/, apps/* and packages/*. To start a new project instead, run seamless init.",
+      `Found no backend to add Seamless Auth to. seamless add wires Express or Fastify (package.json), Go with net/http, Gin, chi or Echo (go.mod), Axum (Cargo.toml), and FastAPI or Django (pyproject.toml or requirements.txt), at ${searchedDirsText()}. To start a new project instead, run seamless init.`,
     );
   }
 
@@ -357,7 +359,7 @@ function backendPort(root: string, backend: DetectedBackend): string {
     const port = parseEnv(envPath).PORT;
     if (port && /^\d+$/.test(port)) return port;
   }
-  return "3000";
+  return String(backendListenPort(root, backend));
 }
 
 function defaultWebOrigin(web: DetectedWeb | undefined): string {
@@ -424,7 +426,7 @@ function printNextSteps(ctx: {
     heading("Install the packages");
     for (const install of ctx.installs) console.log(`   ${install}`);
     if (backend.packageManager === "pip") {
-      console.log(kleur.dim("   Install it into your project's environment, and add it to requirements.txt."));
+      console.log(kleur.dim("   Install them into your project's environment, and add them to requirements.txt."));
     }
   }
 

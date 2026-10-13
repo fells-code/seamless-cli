@@ -70,7 +70,7 @@ function logs(): string {
   return logSpy.mock.calls.map((c) => String(c[0])).join("\n");
 }
 
-describe("runUsers — top-level routing", () => {
+describe("runUsers: top-level routing", () => {
   it("prints usage and exits 1 on an unknown subcommand", async () => {
     await expect(runUsers(["bogus"])).rejects.toBeInstanceOf(ExitError);
     expect(errorSpy).toHaveBeenCalledWith(

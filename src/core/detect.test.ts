@@ -3,7 +3,15 @@ import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { addPackagesCommand, detectJsPackageManager, detectProject } from "./detect.js";
+import {
+  addPackagesCommand,
+  backendListenPort,
+  DEFAULT_BACKEND_PORTS,
+  type DetectedBackend,
+  detectJsPackageManager,
+  detectProject,
+  searchedDirsText,
+} from "./detect.js";
 
 let root: string;
 
@@ -38,7 +46,16 @@ describe("detectProject", () => {
       packageManager: "npm",
     });
     expect(project.web).toMatchObject({ framework: "react", bundler: "vite", dir: "web", entry: "src/main.tsx" });
+    expect(project.web?.router).toBeUndefined();
+    expect(project.web?.missingPeers).toEqual(["react-router-dom"]);
     expect(project.unsupported).toEqual([]);
+  });
+
+  it("finds a React app's App component, and its router when it has one", () => {
+    write("package.json", { dependencies: { react: "^19", "react-router-dom": "^7" }, devDependencies: { vite: "^7" } });
+    write("src/main.jsx", "");
+    write("src/App.jsx", "");
+    expect(detectProject(root).web).toMatchObject({ entry: "src/main.jsx", router: "src/App.jsx", missingPeers: [] });
   });
 
   it("finds Fastify in a workspace package and the root lock file's package manager", () => {
@@ -250,5 +267,59 @@ describe("detectProject, Angular, Vue and SvelteKit", () => {
   it("reports Svelte without SvelteKit, which needs a router of its own", () => {
     write("web/package.json", { devDependencies: { svelte: "^5" } });
     expect(detectProject(root)).toEqual({ unsupported: ["Svelte without SvelteKit"] });
+  });
+});
+
+describe("searchedDirsText", () => {
+  it("names every folder detection looks in", () => {
+    expect(searchedDirsText()).toBe(
+      "the project root or api/, server/, backend/, web/, client/, frontend/, app/, apps/* or packages/*",
+    );
+  });
+
+  it("matches where detection actually looks", () => {
+    for (const dir of ["api", "server", "backend", "web", "client", "frontend", "app", "apps/one", "packages/two"]) {
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.mkdirSync(root);
+      write(`${dir}/package.json`, { dependencies: { express: "^5" } });
+      expect(detectProject(root).backend?.dir).toBe(dir);
+      expect(searchedDirsText()).toContain(dir.includes("/") ? `${dir.split("/")[0]}/*` : `${dir}/`);
+    }
+  });
+});
+
+describe("backendListenPort", () => {
+  const backend = (ecosystem: DetectedBackend["ecosystem"], entry?: string): DetectedBackend => ({
+    framework: "express",
+    ecosystem,
+    dir: ".",
+    typescript: false,
+    entry,
+    packageManager: "npm",
+  });
+
+  it("defaults by ecosystem", () => {
+    expect(DEFAULT_BACKEND_PORTS).toEqual({ node: 3000, python: 8000, go: 8080, rust: 8080 });
+    for (const ecosystem of ["node", "python", "go", "rust"] as const) {
+      expect(backendListenPort(root, backend(ecosystem))).toBe(DEFAULT_BACKEND_PORTS[ecosystem]);
+    }
+  });
+
+  it.each([
+    ["node", "app.listen(4000, () => {});", 4000],
+    ["node", "app.listen({ port: 4100, host: '0.0.0.0' });", 4100],
+    ["node", "app.listen(port);", 3000],
+    ["go", 'log.Fatal(http.ListenAndServe(":8081", mux))', 8081],
+    ["go", 'r.Run(":9000")', 9000],
+    ["go", 'e.Logger.Fatal(e.Start(":1323"))', 1323],
+    ["go", 'srv := &http.Server{Addr: "localhost:7070"}', 7070],
+    ["go", "r.Run()", 8080],
+    ["rust", 'let listener = TcpListener::bind("0.0.0.0:3000").await?;', 3000],
+    ["rust", "let addr = SocketAddr::from(([127, 0, 0, 1], 4001));", 4001],
+    ["python", 'uvicorn.run(app, host="0.0.0.0", port=8001)', 8001],
+    ["python", "app = FastAPI()", 8000],
+  ] as const)("reads a %s listen call: %s", (ecosystem, source, port) => {
+    write("entry", source);
+    expect(backendListenPort(root, backend(ecosystem, "entry"))).toBe(port);
   });
 });

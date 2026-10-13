@@ -41,7 +41,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("promptLogin — the code prompt", () => {
+describe("promptLogin: the code prompt", () => {
   it.each([
     ["a six-letter code", "ABCDEF"],
     ["an alphanumeric code", "A1B2C3"],

@@ -99,7 +99,7 @@ function errOutput(): string {
   return errors.join("\n");
 }
 
-describe("runConfig — dispatch", () => {
+describe("runConfig: dispatch", () => {
   it("prints usage and exits 1 for an unknown subcommand", async () => {
     vi.mocked(createAuthClient).mockResolvedValue(fakeClient(() => response(200, {})).client);
 
