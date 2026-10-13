@@ -316,7 +316,7 @@ It finds a backend and a web app, at the project root or in `api/`, `server/`, `
 The backend can be Express or Fastify, Go (net/http, Gin, chi or Echo), Rust (Axum), or Python (FastAPI or Django). The web app can be React, Angular, Vue or SvelteKit.
 
 - connects an auth server. `--local` writes `seamless/docker-compose.yml` (the auth server and its Postgres) with its secrets in `seamless/.env`, which is gitignored. `--app` connects a managed application instead.
-- writes the backend's `.env` (auth server URL, service token, signing key id, and a cookie secret if you have none) and the web app's API URL in `.env.local` (Angular, which does not read `.env`, gets it in the printed code). It keeps every value you already have and every comment.
+- writes the backend's `.env` (auth server URL, service token, service token kid, and a cookie secret if you have none) and the web app's API URL in `.env.local` (Angular, which does not read `.env`, gets it in the printed code). It keeps every value you already have and every comment.
 - installs the adapter and the web binding (with `vue-router` or `@angular/router` when the app has no router yet) with your own tool: npm, pnpm, yarn or bun, `go get`, `cargo add`, `uv add` or `poetry add`. A plain pip project gets the `pip install` printed, since only you know which environment it belongs in. `--skip-install` prints every command instead.
 - prints the lines to add to your server and to your web app, file by file: the provider or plugin, the bundled sign-in screens as routes, and guards for signed-in and signed-out pages. Each comes in the project's own language, TypeScript or JavaScript to match it. It never edits your source files.
 
