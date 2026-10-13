@@ -129,6 +129,8 @@ api/, server/, backend/, web/, client/, frontend/, apps/* or packages/*, then:
   • Run the auth server on this machine: seamless/docker-compose.yml with its
     secrets in seamless/.env (gitignored). Start it with
     docker compose -f seamless/docker-compose.yml up -d
+  • Its Compose project is named after the repository (<repo>-seamless), so
+    each repository gets its own database and signing keys. A re-run keeps it
 
 --app <id>
   • Connect a managed application instead (needs seamless login). Issuing the

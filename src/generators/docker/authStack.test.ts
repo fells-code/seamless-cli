@@ -9,7 +9,7 @@ vi.mock("../../core/fetch.js", () => ({
 
 import { parseEnv } from "../../core/env.js";
 import { SEAMLESS_AUTH_API_IMAGE } from "../../core/images.js";
-import { generateAuthStack } from "./authStack.js";
+import { composeProjectName, generateAuthStack } from "./authStack.js";
 
 let root: string;
 beforeEach(() => {
@@ -60,5 +60,67 @@ describe("generateAuthStack", () => {
     expect(env.ORIGINS).toBe("http://localhost:5173");
     expect(env.SERVE_ADMIN_DASHBOARD).toBe("false");
     expect(env.OWNER_EMAIL).toBeUndefined();
+  });
+
+  it("names the Compose project after the repository, not the seamless/ folder", async () => {
+    const stack = await generateAuthStack(root, {
+      apiOrigin: "http://localhost:3000",
+      webOrigins: ["http://localhost:5173"],
+      serveConsole: false,
+    });
+    const compose = fs.readFileSync(path.join(root, "seamless", "docker-compose.yml"), "utf-8");
+    expect(stack.projectName).toBe(composeProjectName(root));
+    expect(compose).toMatch(new RegExp(`^name: ${stack.projectName}$`, "m"));
+    expect(stack.replacedUnnamed).toBe(false);
+  });
+
+  it("keeps the project name a re-run or a hand edit left", async () => {
+    const options = { apiOrigin: "http://localhost:3000", webOrigins: ["http://localhost:5173"], serveConsole: false };
+    const first = await generateAuthStack(root, options);
+    const second = await generateAuthStack(root, options);
+    expect(second.projectName).toBe(first.projectName);
+    expect(second.replacedUnnamed).toBe(false);
+
+    const composePath = path.join(root, "seamless", "docker-compose.yml");
+    fs.writeFileSync(composePath, fs.readFileSync(composePath, "utf-8").replace(/^name: .*$/m, 'name: "my_stack"'));
+    const third = await generateAuthStack(root, options);
+    expect(third.projectName).toBe("my_stack");
+    expect(fs.readFileSync(composePath, "utf-8")).toMatch(/^name: my_stack$/m);
+  });
+
+  it("reports replacing a stack written before the compose file named its project", async () => {
+    fs.mkdirSync(path.join(root, "seamless"));
+    fs.writeFileSync(path.join(root, "seamless", "docker-compose.yml"), "services:\n  db:\n    image: postgres\n");
+    const stack = await generateAuthStack(root, {
+      apiOrigin: "http://localhost:3000",
+      webOrigins: ["http://localhost:5173"],
+      serveConsole: false,
+    });
+    expect(stack.replacedUnnamed).toBe(true);
+    expect(stack.projectName).toBe(composeProjectName(root));
+  });
+});
+
+describe("composeProjectName", () => {
+  it("gives differently named repositories different projects", () => {
+    expect(composeProjectName("/work/shop")).toBe("shop-seamless");
+    expect(composeProjectName("/work/blog")).toBe("blog-seamless");
+    expect(composeProjectName("/work/shop/")).toBe("shop-seamless");
+  });
+
+  it.each([
+    ["/w/My Project", "my-project-seamless"],
+    ["/w/API_Server", "api_server-seamless"],
+    ["/w/.dotfiles", "dotfiles-seamless"],
+    ["/w/--weird--", "weird-seamless"],
+    ["/w/_private", "private-seamless"],
+    ["/w/Café Résumé", "cafe-resume-seamless"],
+    ["/w/日本語", "app-seamless"],
+    ["/w/app (copy) 2", "app-copy-2-seamless"],
+    ["/w/v2.0", "v2-0-seamless"],
+  ])("reduces %s to a valid Compose name", (dir, expected) => {
+    const name = composeProjectName(dir);
+    expect(name).toBe(expected);
+    expect(name).toMatch(/^[a-z0-9][a-z0-9_-]*$/);
   });
 });
