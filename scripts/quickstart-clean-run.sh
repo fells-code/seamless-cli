@@ -39,8 +39,8 @@ cleanup() {
     fi
     (cd "$APP_DIR" && docker compose down -v --rmi local --remove-orphans >/dev/null 2>&1) || true
   fi
-  # On Linux the api container runs as root over the bind-mounted api/, so files it
-  # wrote (api/logs) are root's. Removing them from a container needs no sudo.
+  # Only for a run that failed before the removal check below. Files a container
+  # wrote as root over a bind mount can still be removed from a container.
   if ! rm -rf "$WORKDIR" 2>/dev/null; then
     docker run --rm -v "$WORKDIR:/w" alpine:3 rm -rf /w/my-app >/dev/null 2>&1 || true
     rm -rf "$WORKDIR" || true
@@ -123,6 +123,16 @@ esac
 end_phase "Owner signed in through /auth"
 
 total=$(($(date +%s) - run_start))
+
+# On a Linux host the dev containers run as root over bind mounts, so anything they
+# write into the project is root's, and a user cannot delete the project without sudo.
+echo "==> Removing the project"
+docker compose down -v --rmi local --remove-orphans >/dev/null 2>&1
+cd "$WORKDIR"
+if ! rm -rf "$APP_DIR"; then
+  find "$APP_DIR" -user 0 >&2 || true
+  fail "the project could not be removed without root. The files above were written by a container."
+fi
 
 {
   echo "### Quickstart clean run: $CLI ($cli_version)"
