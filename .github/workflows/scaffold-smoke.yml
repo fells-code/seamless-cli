@@ -1,4 +1,5 @@
-# Brings up what `seamless init` writes, and asserts the database keeps its data.
+# Brings up what `seamless init` writes: asserts the database keeps its data, and drives
+# the instance commands (profile login, users, org, migrate, sessions) against it.
 #
 # Everything else in CI checks the generated files as strings. This is the only job
 # that hands them to Docker, so it is the only one that can catch a compose file that
@@ -45,3 +46,39 @@ jobs:
 
       - name: Scaffold, bring up, and assert persistence
         run: ./scripts/scaffold-smoke.sh
+
+  cli-commands:
+    name: CLI commands
+    # A runner of its own: the generated compose pins the same container names and
+    # ports as the smoke job.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HUSKY: 0
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # profile login stores tokens in the OS keychain, which on Linux is the Secret
+      # Service. The runner has none, so gnome-keyring provides one for this step.
+      - name: Install a Secret Service
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gnome-keyring dbus-x11
+
+      - name: Scaffold, sign in, and drive the instance commands
+        run: |
+          dbus-run-session -- bash -c '
+            echo -n ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+            ./scripts/cli-commands-e2e.sh
+          '
