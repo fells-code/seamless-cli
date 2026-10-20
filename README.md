@@ -496,8 +496,9 @@ for the owner. It waits for the auth server, defaults to the project's `OWNER_EM
 to a local auth server (`--url`, default `http://localhost:5312`). The code replaces any code sent
 before, so run it after the page asks, and enter it within 5 minutes.
 
-Both signup paths (email OTP and a verified OAuth profile) establish control of the address before
-the account is created, so only someone who actually receives mail there can claim it.
+The owner gets `admin:write` (or `admin` on an instance whose available roles list only that). Email
+OTP registration creates the account before the address is verified, but an unverified account
+cannot sign in, so only someone who receives the code at that address can use it.
 
 **The grant is signup-time only.** Changing `OWNER_EMAIL` after an account already exists promotes
 nobody. To hand ownership to a different address, set it in `auth/` (or the compose file) before that
