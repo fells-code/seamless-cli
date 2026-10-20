@@ -365,6 +365,27 @@ describe("runOrg members add", () => {
     expect(vi.mocked(addMember)).not.toHaveBeenCalled();
   });
 
+  it("tells the user they are already a member when the API answers 409", async () => {
+    const actual =
+      await vi.importActual<typeof import("../core/admin.js")>("../core/admin.js");
+    vi.mocked(addMember).mockImplementation(actual.addMember);
+    vi.mocked(fakeClient.request).mockResolvedValue({
+      ok: false,
+      status: 409,
+      data: { error: "User is already an organization member" },
+      headers: new Headers(),
+    });
+
+    await expect(
+      runOrg(["members", "add", "o1", "--user", "u1"]),
+    ).rejects.toBeInstanceOf(ExitError);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "That user is already a member of organization o1 (409: User is already an organization member).",
+      ),
+    );
+  });
+
   it("adds a member by --user with roles and scopes", async () => {
     vi.mocked(addMember).mockResolvedValue(apiMembership({ roles: ["admin"] }));
     await runOrg([

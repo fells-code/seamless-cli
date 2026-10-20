@@ -80,6 +80,25 @@ function parse<T>(schema: z.ZodType<T>, data: unknown, what: string): T {
   return parsed.data;
 }
 
+function apiMessage(data: unknown): string | undefined {
+  if (data && typeof data === "object") {
+    const record = data as Record<string, unknown>;
+    for (const value of [record.error, record.message]) {
+      if (typeof value === "string" && value.trim()) {
+        return value.trim().replace(/\.$/, "");
+      }
+    }
+  }
+  return undefined;
+}
+
+function apiError(res: ApiResponse<unknown>, summary: string): AdminApiError {
+  const detail = apiMessage(res.data);
+  return new AdminApiError(
+    `${summary} (${res.status}${detail ? `: ${detail}` : ""}).`,
+  );
+}
+
 async function call<T>(
   client: AuthClient,
   method: string,
@@ -120,15 +139,15 @@ export async function listUsers(
   const suffix = query.size ? `?${query}` : "";
 
   const res = await call<unknown>(client, "GET", `/admin/users${suffix}`);
-  if (!res.ok) throw new AdminApiError(`Could not list users (${res.status}).`);
+  if (!res.ok) throw apiError(res, "Could not list users");
   // `total` counts every user, not just this page, so callers can report position.
   return parse(UserListSchema, res.data, "a user list");
 }
 
 export async function deleteUser(client: AuthClient, id: string): Promise<void> {
   const res = await call(client, "DELETE", "/admin/users", { userId: id });
-  if (res.status === 404) throw new AdminApiError(`No user found with id ${id}.`);
-  if (!res.ok) throw new AdminApiError(`Could not delete user (${res.status}).`);
+  if (res.status === 404) throw apiError(res, `No user found with id ${id}`);
+  if (!res.ok) throw apiError(res, "Could not delete user");
 }
 
 export type UserDetail = z.infer<typeof UserDetailSchema>;
@@ -142,8 +161,8 @@ export async function getUserDetail(
     "GET",
     `/admin/users/${encodeURIComponent(id)}`,
   );
-  if (res.status === 404) throw new AdminApiError(`No user found with id ${id}.`);
-  if (!res.ok) throw new AdminApiError(`Could not load user (${res.status}).`);
+  if (res.status === 404) throw apiError(res, `No user found with id ${id}`);
+  if (!res.ok) throw apiError(res, "Could not load user");
   return parse(UserDetailSchema, res.data, "a user");
 }
 
@@ -166,17 +185,13 @@ export async function prepareDeviceReplacement(
       body: JSON.stringify(opts),
     },
   );
-  if (res.status === 404) throw new AdminApiError(`No user found with id ${id}.`);
+  if (res.status === 404) throw apiError(res, `No user found with id ${id}`);
   if (res.status === 401 || res.status === 403) {
     throw new PermissionError(
       "Admin-assisted device replacement requires an elevated step-up admin session, which the CLI cannot establish yet. Use the dashboard for this action.",
     );
   }
-  if (!res.ok) {
-    throw new AdminApiError(
-      `Could not prepare device replacement (${res.status}).`,
-    );
-  }
+  if (!res.ok) throw apiError(res, "Could not prepare device replacement");
   return parse(
     DeviceReplacementRecoveryResponseSchema,
     res.data,
@@ -205,13 +220,16 @@ export async function listOrgs(
   const suffix = query.size ? `?${query}` : "";
 
   const res = await call<unknown>(client, "GET", `/admin/organizations${suffix}`);
-  if (!res.ok) throw new AdminApiError(`Could not list organizations (${res.status}).`);
+  if (!res.ok) throw apiError(res, "Could not list organizations");
   // `total` counts every match, not just this page, so callers can report position.
   return parse(OrgListSchema, res.data, "an organization list");
 }
 
-function orgEnvelope(res: ApiResponse<unknown>): AdminOrganization {
-  if (!res.ok) throw new AdminApiError(`Request failed (${res.status}).`);
+function orgEnvelope(
+  res: ApiResponse<unknown>,
+  summary: string,
+): AdminOrganization {
+  if (!res.ok) throw apiError(res, summary);
   return parse(
     z.object({ organization: OrgSchema }),
     res.data,
@@ -229,7 +247,7 @@ export async function createOrg(
     "/admin/organizations",
     body,
   );
-  return orgEnvelope(res);
+  return orgEnvelope(res, "Could not create organization");
 }
 
 export async function getOrg(
@@ -242,9 +260,9 @@ export async function getOrg(
     `/admin/organizations/${encodeURIComponent(id)}`,
   );
   if (res.status === 404) {
-    throw new AdminApiError(`No organization found with id ${id}.`);
+    throw apiError(res, `No organization found with id ${id}`);
   }
-  return orgEnvelope(res);
+  return orgEnvelope(res, "Could not load organization");
 }
 
 export async function updateOrg(
@@ -259,9 +277,9 @@ export async function updateOrg(
     body,
   );
   if (res.status === 404) {
-    throw new AdminApiError(`No organization found with id ${id}.`);
+    throw apiError(res, `No organization found with id ${id}`);
   }
-  return orgEnvelope(res);
+  return orgEnvelope(res, "Could not update organization");
 }
 
 export type MemberList = z.infer<typeof MemberListSchema>;
@@ -276,14 +294,17 @@ export async function listMembers(
     `/admin/organizations/${encodeURIComponent(orgId)}/members`,
   );
   if (res.status === 404) {
-    throw new AdminApiError(`No organization found with id ${orgId}.`);
+    throw apiError(res, `No organization found with id ${orgId}`);
   }
-  if (!res.ok) throw new AdminApiError(`Could not list members (${res.status}).`);
+  if (!res.ok) throw apiError(res, "Could not list members");
   return parse(MemberListSchema, res.data, "a member list");
 }
 
-function membershipEnvelope(res: ApiResponse<unknown>): AdminMembership {
-  if (!res.ok) throw new AdminApiError(`Request failed (${res.status}).`);
+function membershipEnvelope(
+  res: ApiResponse<unknown>,
+  summary: string,
+): AdminMembership {
+  if (!res.ok) throw apiError(res, summary);
   return parse(
     z.object({ membership: MembershipSchema }),
     res.data,
@@ -302,10 +323,15 @@ export async function addMember(
     `/admin/organizations/${encodeURIComponent(orgId)}/members`,
     body,
   );
-  if (res.status === 404) {
-    throw new AdminApiError(`No organization found with id ${orgId}.`);
+  // The API answers 404 for a missing user as well as a missing organization.
+  if (res.status === 404) throw apiError(res, "No such organization or user");
+  if (res.status === 409) {
+    throw apiError(
+      res,
+      `That user is already a member of organization ${orgId}`,
+    );
   }
-  return membershipEnvelope(res);
+  return membershipEnvelope(res, "Could not add member");
 }
 
 export async function updateMember(
@@ -320,10 +346,8 @@ export async function updateMember(
     `/admin/organizations/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`,
     body,
   );
-  if (res.status === 404) {
-    throw new AdminApiError(`No such organization or member.`);
-  }
-  return membershipEnvelope(res);
+  if (res.status === 404) throw apiError(res, "No such organization or member");
+  return membershipEnvelope(res, "Could not update member");
 }
 
 export async function removeMember(
@@ -336,8 +360,6 @@ export async function removeMember(
     "DELETE",
     `/admin/organizations/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`,
   );
-  if (res.status === 404) {
-    throw new AdminApiError(`No such organization or member.`);
-  }
-  if (!res.ok) throw new AdminApiError(`Could not remove member (${res.status}).`);
+  if (res.status === 404) throw apiError(res, "No such organization or member");
+  if (!res.ok) throw apiError(res, "Could not remove member");
 }
