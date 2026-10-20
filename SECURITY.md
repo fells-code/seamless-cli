@@ -13,7 +13,7 @@ We appreciate responsible disclosure and will work quickly with researchers and 
 
 If you believe you have found a security vulnerability, please report it privately by emailing:
 
-security@seamlessauth.com
+security@fellscode.com
 
 Include as much detail as possible:
 
