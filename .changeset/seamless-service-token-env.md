@@ -2,9 +2,9 @@
 "seamless-cli": minor
 ---
 
-Applications now read their service token as `SEAMLESS_SERVICE_TOKEN`, the name the managed portal already uses. The auth server keeps reading `API_SERVICE_TOKEN`.
+Applications now read their service token as `SEAMLESS_SERVICE_TOKEN`, the name the managed portal already uses and the auth server's own name for it since 0.19.0. The generated auth server environment uses it too.
 
-- `seamless init`: the generated `docker-compose.yml` gives the `api` service (or a full-stack `web` service) `SEAMLESS_SERVICE_TOKEN`, with a comment saying it is the same secret as the `auth` service's `API_SERVICE_TOKEN`. Connecting a managed application writes `SEAMLESS_SERVICE_TOKEN` into `api/.env`, and the values printed when there is no `api/` directory use the new name.
+- `seamless init`: the generated `docker-compose.yml` gives the `api` service (or a full-stack `web` service) `SEAMLESS_SERVICE_TOKEN`, with a comment saying it is the same secret as the `auth` service's. Connecting a managed application writes `SEAMLESS_SERVICE_TOKEN` into `api/.env`, and the values printed when there is no `api/` directory use the new name.
 - `seamless add`: the backend's `.env` gets `SEAMLESS_SERVICE_TOKEN`, and the printed Node, Go, Rust and Python code reads it.
 - `seamless verify`: the Express and Fastify reference apps read `SEAMLESS_SERVICE_TOKEN`, and the Next.js starter is given both names so starters from before the rename still run.
 
