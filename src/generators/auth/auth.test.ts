@@ -82,7 +82,7 @@ describe("generateAuthServer local mode", () => {
       "utf-8",
     );
     expect(written).toContain("SOME_KEY=placeholder");
-    expect(written).toContain(`API_SERVICE_TOKEN=${shared.apiToken}`);
+    expect(written).toContain(`SEAMLESS_SERVICE_TOKEN=${shared.apiToken}`);
   });
 
   it("writes the full-stack origins when the web app serves the console", async () => {

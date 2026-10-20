@@ -103,7 +103,7 @@ describe("seamless add --local", () => {
     expect(values).toMatchObject({
       AUTH_SERVER_URL: "http://localhost:5312",
       AUTH_SERVER_ISSUER: "http://auth:5312",
-      SEAMLESS_SERVICE_TOKEN: stackEnv.API_SERVICE_TOKEN,
+      SEAMLESS_SERVICE_TOKEN: stackEnv.SEAMLESS_SERVICE_TOKEN,
       JWKS_KID: "dev-main",
       UI_ORIGINS: "http://localhost:5173",
       SERVE_ADMIN_CONSOLE: "true",
@@ -253,12 +253,12 @@ describe("seamless add, interactively", () => {
 
   it("replaces the stack when confirmed", async () => {
     await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
-    const before = parseEnv(path.join(root, "seamless", ".env")).API_SERVICE_TOKEN;
+    const before = parseEnv(path.join(root, "seamless", ".env")).SEAMLESS_SERVICE_TOKEN;
     vi.mocked(confirm).mockResolvedValueOnce(true);
 
     await addSeamlessAuth({ dir: root, local: true, email: "owner@x.test", install: false });
 
-    const after = parseEnv(path.join(root, "seamless", ".env")).API_SERVICE_TOKEN;
+    const after = parseEnv(path.join(root, "seamless", ".env")).SEAMLESS_SERVICE_TOKEN;
     expect(after).not.toBe(before);
     expect(parseEnv(path.join(root, "api", ".env")).SEAMLESS_SERVICE_TOKEN).toBe(after);
   });
@@ -280,7 +280,7 @@ describe("seamless add, service token variable", () => {
 
     await addSeamlessAuth({ dir: root, local: true, yes: true, email: "owner@x.test", install: false });
 
-    const stackToken = parseEnv(path.join(root, "seamless", ".env")).API_SERVICE_TOKEN;
+    const stackToken = parseEnv(path.join(root, "seamless", ".env")).SEAMLESS_SERVICE_TOKEN;
     const apiEnv = fs.readFileSync(path.join(root, "api", ".env"), "utf-8");
     expect(apiEnv.startsWith(`PORT=4000\nAPI_SERVICE_TOKEN=${stackToken}\n`)).toBe(true);
     expect(apiEnv).not.toContain("SEAMLESS_SERVICE_TOKEN");

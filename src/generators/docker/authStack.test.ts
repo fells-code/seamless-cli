@@ -40,7 +40,7 @@ describe("generateAuthStack", () => {
 
     expect(fs.readFileSync(path.join(dir, ".gitignore"), "utf-8")).toBe(".env\n");
     const env = parseEnv(path.join(dir, ".env"));
-    expect(env.API_SERVICE_TOKEN).toBe(stack.apiToken);
+    expect(env.SEAMLESS_SERVICE_TOKEN).toBe(stack.apiToken);
     expect(env.APP_ORIGINS).toBe("http://localhost:4000");
     expect(env.ORIGINS).toBe("http://localhost:5173,http://localhost:4000");
     expect(env.SERVE_ADMIN_DASHBOARD).toBe("true");
