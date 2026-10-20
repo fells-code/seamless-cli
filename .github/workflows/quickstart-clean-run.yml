@@ -1,0 +1,43 @@
+# The Self-Hosted Quickstart on a fresh machine, timed, with the CLI as published on npm.
+# Each run is a clean machine: no npm cache, no Docker images. The timings land in the
+# job summary.
+name: quickstart-clean-run
+
+on:
+  workflow_dispatch:
+    inputs:
+      cli:
+        description: The CLI to run, as an npm spec
+        default: seamless-cli@latest
+  pull_request:
+    paths:
+      - scripts/quickstart-clean-run.sh
+      - .github/workflows/quickstart-clean-run.yml
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: Quickstart (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # GitHub's macOS runners cannot run Docker, so the macOS run is done by hand.
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # The quickstart's minimum, rather than whatever the runner image carries.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run the quickstart
+        env:
+          QUICKSTART_CLI: ${{ inputs.cli || 'seamless-cli@latest' }}
+        run: ./scripts/quickstart-clean-run.sh
