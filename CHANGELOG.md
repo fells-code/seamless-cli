@@ -1,5 +1,30 @@
 # seamless-cli
 
+## 0.24.0
+
+### Minor Changes
+
+- 9e63557: New `seamless owner-code` command prints a one-time code for the owner of a local stack, so the first admin finishes registering without reading container logs. Register in the browser with the owner address, and when the page asks for a code, run `npx seamless-cli owner-code` from the project directory. It waits for the auth server, reads `OWNER_EMAIL` from `auth/.env` or `docker-compose.yml` (or takes an address), and only talks to a local auth server.
+
+  `seamless init` now ends with that step, and the generated AGENTS.md names it in its first admin section.
+
+- 59d583d: Applications now read their service token as `SEAMLESS_SERVICE_TOKEN`, the name the managed portal already uses and the auth server's own name for it since 0.19.0. The generated auth server environment uses it too.
+
+  - `seamless init`: the generated `docker-compose.yml` gives the `api` service (or a full-stack `web` service) `SEAMLESS_SERVICE_TOKEN`, with a comment saying it is the same secret as the `auth` service's. Connecting a managed application writes `SEAMLESS_SERVICE_TOKEN` into `api/.env`, and the values printed when there is no `api/` directory use the new name.
+  - `seamless add`: the backend's `.env` gets `SEAMLESS_SERVICE_TOKEN`, and the printed Node, Go, Rust and Python code reads it.
+  - `seamless verify`: the Express and Fastify reference apps read `SEAMLESS_SERVICE_TOKEN`, and the Next.js starter is given both names so starters from before the rename still run.
+
+  Existing projects keep working. When a project's `.env` already has `API_SERVICE_TOKEN` and not `SEAMLESS_SERVICE_TOKEN`, `seamless add` and `seamless init` (connecting a managed application) update `API_SERVICE_TOKEN` in place, say so, and print code that reads that name, rather than adding a second variable the app does not read.
+
+  The starters in `seamless-templates` that read `SEAMLESS_SERVICE_TOKEN` require this version.
+
+### Patch Changes
+
+- e781293: `seamless org members add` now says the user is already a member when the instance answers 409, instead of a bare `Request failed (409).` (an organization's creator is a member automatically, so adding yourself after `org create` hits this). A 404 on add no longer claims the organization is missing when it is the user. The other `org` and `users` commands name the action that failed and include the instance's own error message, for example `Could not update member (400: Organization must keep at least one owner).`
+- a672c49: New projects scaffold auth server v0.19.1, admin dashboard v0.10.0 and seamless-templates v0.20.0. The auth server includes the fixes for GHSA-9jg2-jjqq-3346 and GHSA-66gq-4pwg-33jq, and the starters are on the SDKs that work with its cross-device magic link confirmation.
+
+  The generated auth server environment now holds the service token as `SEAMLESS_SERVICE_TOKEN`, the auth server's own name for it since 0.19.0, instead of `API_SERVICE_TOKEN`. The auth server's `.env.example` carries a placeholder under the new name, and the server refuses to start when the two names hold different values, so writing only the old name left `seamless init --auth=local` (which clones the auth server's main branch) unable to start. Re-running against an existing `auth/.env` reads either name.
+
 ## 0.23.1
 
 ### Patch Changes
