@@ -20,6 +20,7 @@ import { runApps } from "./commands/apps.js";
 import { runMigrate } from "./commands/migrate.js";
 import { runTemplates } from "./commands/templates.js";
 import { runAdd } from "./commands/add.js";
+import { runOwnerCode } from "./commands/ownerCode.js";
 import { isCancelled } from "./core/cancel.js";
 import kleur from "kleur";
 
@@ -80,6 +81,11 @@ async function main() {
 
   if (command === "check") {
     await runCheck(args.slice(1));
+    return;
+  }
+
+  if (command === "owner-code") {
+    await runOwnerCode(args.slice(1));
     return;
   }
 

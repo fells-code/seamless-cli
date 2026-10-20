@@ -46,7 +46,10 @@ describe("printSuccessOutput", () => {
     expect(out).toContain("Admin console");
     expect(out).toContain("1. Start services");
     expect(out).toContain("docker compose up");
-    expect(out).toContain("2. Register in the browser with");
+    expect(out).toContain("2. Open http://localhost:5173 and register with");
+    expect(out).toContain("3. When it asks for a code");
+    expect(out).toContain("cd my-app && npx seamless-cli owner-code");
+    expect(out).not.toContain("docker compose logs");
     expect(out).toContain("dev@example.com");
     expect(out).toContain("http://localhost:5312");
     expect(out).toContain("http://localhost:3000");

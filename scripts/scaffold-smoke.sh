@@ -21,6 +21,8 @@ APP_DIR="$WORKDIR/smoke"
 # Lets a developer run this beside a stack that already holds 5432 or 5312. CI
 # gets its own runner and needs nothing here.
 EXTRA_COMPOSE="${SMOKE_EXTRA_COMPOSE:-}"
+# Where that override publishes the auth server, when it moves it off 5312.
+AUTH_URL="${SMOKE_AUTH_URL:-http://localhost:5312}"
 
 compose() {
   local args=(compose -p "$PROJECT_NAME" -f "$APP_DIR/docker-compose.yml")
@@ -139,4 +141,32 @@ if [ "$key_probe" != "42" ]; then
 fi
 
 echo "==> Signing keys survived the recreate"
+
+# The first admin path the quickstart gives: the browser registers the owner, and
+# `owner-code` prints the code it then asks for. The registration here stands in
+# for the browser, and its pre-auth token is what the code is verified under, so a
+# pass means the printed code works on the page that asked for it.
+echo "==> Registering the owner as the browser would"
+ephemeral="$(curl -fsS -X POST "$AUTH_URL/registration/register" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"smoke@example.com"}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).token))')"
+
+echo "==> Reading the code with owner-code"
+code="$(cd "$APP_DIR" && node "$REPO_ROOT/dist/index.js" owner-code --url "$AUTH_URL" --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).code))')"
+
+echo "==> Verifying the code under the browser's registration"
+roles="$(curl -fsS -X POST "$AUTH_URL/otp/verify-email-otp" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $ephemeral" \
+  -d "{\"verificationToken\":\"$code\"}" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log((JSON.parse(s).roles||[]).join(",")))')"
+
+case ",$roles," in
+  *,admin:write,*|*,admin,*) ;;
+  *)
+    echo "FAIL: the owner signed in without an admin role (roles: '${roles}')." >&2
+    exit 1
+    ;;
+esac
+
+echo "==> The owner is an admin (${roles})"
 echo "PASS"

@@ -82,7 +82,7 @@ interface StartedLogin {
 
 // An SMS code arrives as a number (the API generates it with randomInt), so a check
 // for a string alone dropped every phone code and failed `--local` phone logins.
-function deliveryCode(data: Record<string, unknown> | null): string | undefined {
+export function deliveryCode(data: Record<string, unknown> | null): string | undefined {
   const parsed = AuthDeliverySchema.safeParse(data?.delivery);
   if (!parsed.success) return undefined;
   const delivery = parsed.data;

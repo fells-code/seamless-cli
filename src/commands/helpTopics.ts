@@ -218,6 +218,35 @@ Every check runs, so one failure does not hide the rest.
     ],
   },
   {
+    name: "owner-code",
+    usage: ["seamless owner-code [email] [--url <auth-url>] [--json]"],
+    sections: [
+      {
+        heading: "owner-code [email]",
+        body: `Print a one-time code for the owner of a local stack, so the first admin
+can finish registering without reading container logs.
+
+Register in the browser with the owner address first. When the page asks
+for a code, run this from the project directory and enter what it prints.
+The code replaces any code sent before and expires in 5 minutes.
+
+[email]
+  • Defaults to OWNER_EMAIL from auth/.env or docker-compose.yml
+
+--url <auth-url>
+  • The auth server (default: http://localhost:5312). Only a local address
+    is accepted: the server returns the code because the dev stack allows it
+
+--json
+  • Print { "email", "code" } as JSON`,
+      },
+    ],
+    examples: [
+      `seamless owner-code
+  → Waits for the auth server, then prints the owner's code`,
+    ],
+  },
+  {
     name: "verify",
     usage: [
       "seamless verify [--local] [--api-only] [--no-react] [--dev] [--filter=<flow>] [--keep-up]",

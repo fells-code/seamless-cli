@@ -61,6 +61,7 @@ GETTING STARTED
   1. seamless init
   2. docker compose up
   3. Register in the browser with the email you gave init
+  4. When it asks for a code: seamless owner-code
 
     → That address is the owner, so it becomes an admin
 
