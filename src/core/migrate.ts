@@ -286,7 +286,9 @@ export interface ReportRow {
   row: number;
   email: string;
   externalId?: string;
-  status: UserImportResult["status"] | "invalid";
+  // "skipped" rows are left out on purpose (a disabled directory account), so unlike
+  // "invalid" they do not fail the run.
+  status: UserImportResult["status"] | "invalid" | "skipped";
   userId?: string;
   changes?: string[];
   reason?: string;
@@ -296,6 +298,7 @@ export interface ReportRow {
 export function buildReport(
   outcomes: MigrationOutcome[],
   invalid: InvalidRow[],
+  skipped: InvalidRow[] = [],
 ): ReportRow[] {
   const rows: ReportRow[] = [
     ...outcomes.map(({ row, result }) => ({
@@ -315,12 +318,26 @@ export function buildReport(
       status: "invalid" as const,
       detail: r.detail,
     })),
+    ...skipped.map((r) => ({
+      row: r.row,
+      email: r.email,
+      ...(r.externalId ? { externalId: r.externalId } : {}),
+      status: "skipped" as const,
+      detail: r.detail,
+    })),
   ];
   return rows.sort((a, b) => a.row - b.row);
 }
 
 export function summarize(report: ReportRow[]) {
-  const summary = { created: 0, updated: 0, unchanged: 0, rejected: 0, invalid: 0 };
+  const summary = {
+    created: 0,
+    updated: 0,
+    unchanged: 0,
+    rejected: 0,
+    invalid: 0,
+    skipped: 0,
+  };
   for (const row of report) summary[row.status] += 1;
   return summary;
 }

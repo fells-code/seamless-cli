@@ -151,11 +151,182 @@ describe("seamless migrate csv", () => {
     await expect(runMigrate(["csv"])).rejects.toThrow("process.exit(1)");
   });
 
+  it("explains a CSV with no data rows", async () => {
+    const file = writeCsv(["email"]);
+
+    await expect(runMigrate(["csv", file])).rejects.toThrow("process.exit(1)");
+
+    expect(vi.mocked(console.error).mock.calls[0][0]).toMatch(/has no data rows/);
+  });
+
   it("explains a CSV without an email column", async () => {
     const file = writeCsv(["name", "Ada"]);
 
     await expect(runMigrate(["csv", file])).rejects.toThrow("process.exit(1)");
 
     expect(vi.mocked(console.error).mock.calls[0][0]).toMatch(/No email column/);
+  });
+});
+
+describe("seamless migrate entra-id", () => {
+  const ENTRA_ENV = {
+    ENTRA_TENANT_ID: "contoso.onmicrosoft.com",
+    ENTRA_CLIENT_ID: "client",
+    ENTRA_CLIENT_SECRET: "graph-s3cret",
+  };
+  const GROUP = "11111111-1111-1111-1111-111111111111";
+
+  const directory = [
+    { id: "oid-ada", mail: "ada@contoso.com", accountEnabled: true },
+    { id: "oid-off", mail: "off@contoso.com", accountEnabled: false },
+    { id: "oid-grace", mail: "grace@contoso.com", mobilePhone: "+1 425 555 0100", accountEnabled: true },
+  ];
+
+  // Microsoft sign-in, then Graph, answered by URL.
+  function fakeMicrosoft(groupMembers: string[] = []) {
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      const reply = (body: unknown) =>
+        new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (url.startsWith("https://login.microsoftonline.com/")) {
+        return reply({ access_token: "graph-token" });
+      }
+      if (url.includes(`/groups/${GROUP}/transitiveMembers`)) {
+        return reply({ value: groupMembers.map((id) => directory.find((u) => u.id === id)) });
+      }
+      if (url.startsWith("https://graph.microsoft.com/v1.0/users")) {
+        return reply({ value: directory });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  beforeEach(() => {
+    for (const [key, value] of Object.entries(ENTRA_ENV)) vi.stubEnv(key, value);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("dry-runs every enabled user with their object id, and lists the disabled one as skipped", async () => {
+    fakeMicrosoft();
+    respond(
+      [
+        { index: 0, email: "ada@contoso.com", externalId: "oid-ada", status: "created" },
+        { index: 1, email: "grace@contoso.com", externalId: "oid-grace", status: "created" },
+      ],
+      true,
+    );
+    const base = path.join(dir, "plan");
+
+    await runMigrate(["entra-id", "--report", base]);
+
+    const body = JSON.parse(request.mock.calls[0][1].body);
+    expect(body).toEqual({
+      source: "entra-id",
+      dryRun: true,
+      users: [
+        { externalId: "oid-ada", email: "ada@contoso.com" },
+        { externalId: "oid-grace", email: "grace@contoso.com", phone: "+14255550100" },
+      ],
+    });
+
+    const report = JSON.parse(fs.readFileSync(`${base}.json`, "utf-8"));
+    expect(report.input).toBe("entra-id:contoso.onmicrosoft.com");
+    expect(report.summary).toMatchObject({ created: 2, skipped: 1, invalid: 0 });
+    expect(report.rows.find((r: { status: string }) => r.status === "skipped")).toMatchObject({
+      externalId: "oid-off",
+      detail: "disabled in Entra ID",
+    });
+    expect(output()).toMatch(/Dry run: nothing was written/);
+  });
+
+  it("reports a re-run as unchanged and exits 0 with only skipped rows", async () => {
+    fakeMicrosoft();
+    respond(
+      [
+        { index: 0, email: "ada@contoso.com", externalId: "oid-ada", status: "unchanged" },
+        { index: 1, email: "grace@contoso.com", externalId: "oid-grace", status: "unchanged" },
+      ],
+      false,
+    );
+
+    await runMigrate(["entra-id", "--apply", "--json", "--report", path.join(dir, "result")]);
+
+    expect(JSON.parse(request.mock.calls[0][1].body).dryRun).toBe(false);
+    const printed = JSON.parse(String(logSpy.mock.calls.at(-1)![0]));
+    expect(printed.summary).toMatchObject({ unchanged: 2, skipped: 1 });
+    expect(process.exit).not.toHaveBeenCalled();
+  });
+
+  it("imports one group's members with --group", async () => {
+    const fetchMock = fakeMicrosoft(["oid-grace"]);
+    respond([{ index: 0, email: "grace@contoso.com", status: "created" }], true);
+
+    await runMigrate(["entra-id", "--group", GROUP, "--report", path.join(dir, "plan")]);
+
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/v1.0/users?"))).toBe(false);
+    expect(JSON.parse(request.mock.calls[0][1].body).users).toEqual([
+      { externalId: "oid-grace", email: "grace@contoso.com", phone: "+14255550100" },
+    ]);
+  });
+
+  it("maps groups to organizations and roles", async () => {
+    fakeMicrosoft(["oid-ada"]);
+    const groups = path.join(dir, "groups.json");
+    fs.writeFileSync(
+      groups,
+      JSON.stringify({ groups: [{ id: GROUP, organization: "engineering", roles: ["staff"] }] }),
+    );
+    respond([], true);
+
+    await runMigrate(["entra-id", "--groups", groups, "--report", path.join(dir, "plan")]);
+
+    const [ada, grace] = JSON.parse(request.mock.calls[0][1].body).users;
+    expect(ada).toMatchObject({ roles: ["staff"], organizations: [{ slug: "engineering" }] });
+    expect(grace).not.toHaveProperty("organizations");
+  });
+
+  it("asks for the credentials before contacting anything", async () => {
+    vi.unstubAllEnvs();
+    vi.stubEnv("ENTRA_TENANT_ID", "");
+    vi.stubEnv("ENTRA_CLIENT_ID", "");
+    vi.stubEnv("ENTRA_CLIENT_SECRET", "");
+    const fetchMock = fakeMicrosoft();
+
+    await expect(runMigrate(["entra-id"])).rejects.toThrow("process.exit(1)");
+
+    expect(vi.mocked(console.error).mock.calls[0][0]).toMatch(/ENTRA_TENANT_ID/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(createAuthClient).not.toHaveBeenCalled();
+  });
+
+  it("refuses an invalid source and an empty group", async () => {
+    fakeMicrosoft([]);
+
+    await expect(runMigrate(["entra-id", "--source", "Entra ID"])).rejects.toThrow(
+      "process.exit(1)",
+    );
+    expect(vi.mocked(console.error).mock.calls[0][0]).toMatch(/Invalid source/);
+
+    await expect(runMigrate(["entra-id", "--group", GROUP])).rejects.toThrow("process.exit(1)");
+    expect(vi.mocked(console.error).mock.calls[1][0]).toMatch(/has no users/);
+    expect(createAuthClient).not.toHaveBeenCalled();
+  });
+
+  it("never writes the client secret to the report or the output", async () => {
+    fakeMicrosoft();
+    respond([], true);
+    const base = path.join(dir, "plan");
+
+    await runMigrate(["entra-id", "--report", base]);
+
+    expect(fs.readFileSync(`${base}.json`, "utf-8")).not.toContain("graph-s3cret");
+    expect(fs.readFileSync(`${base}.csv`, "utf-8")).not.toContain("graph-s3cret");
+    expect(output()).not.toContain("graph-s3cret");
   });
 });

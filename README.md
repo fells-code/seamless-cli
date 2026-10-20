@@ -743,6 +743,38 @@ time by registering with the imported email, which proves they control it. Roles
 only ever added, an existing account's email is never changed, and admin roles are refused (grant
 admin to individuals afterwards).
 
+### From Microsoft Entra ID
+
+`seamless migrate entra-id` reads users straight from Entra ID through Microsoft Graph, so the
+directory's object id becomes each user's `externalId` and re-runs stay safe without a hand-edited
+export in the middle. It has the same dry run, batches and report as `migrate csv`.
+
+It signs in as an app registration with app-only permissions: `User.Read.All`, plus
+`GroupMember.Read.All` for `--group` and `--groups`, with admin consent granted. The tenant id,
+client id and secret come from the environment, never flags:
+
+```bash
+export ENTRA_TENANT_ID=<directory id> ENTRA_CLIENT_ID=<application id>
+export ENTRA_CLIENT_SECRET=<secret>                           # better: load it from a secret store
+seamless migrate entra-id                                     # dry run of the whole directory
+seamless migrate entra-id --group <group id> --apply          # import one department first
+seamless migrate entra-id --groups entra-groups.json --apply  # map groups to organizations and roles
+```
+
+Email is `mail` and phone is `mobilePhone`. A user with no `mail` is reported invalid unless you pass
+`--allow-upn`, because a `userPrincipalName` is not always a mailbox and the imported address is how
+the user first signs in. Disabled accounts and guests are skipped and listed in the report (guests
+are imported with `--include-guests`). A group mapping names groups by object id:
+
+```json
+{
+  "groups": [
+    { "id": "<group id>", "organization": "engineering", "organizationRoles": ["member"] },
+    { "id": "<group id>", "roles": ["staff"] }
+  ]
+}
+```
+
 ## What is configured for you
 
 Seamless CLI handles the parts that are usually difficult to get right:
