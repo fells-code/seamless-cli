@@ -39,7 +39,12 @@ cleanup() {
     fi
     (cd "$APP_DIR" && docker compose down -v --rmi local --remove-orphans >/dev/null 2>&1) || true
   fi
-  rm -rf "$WORKDIR"
+  # On Linux the api container runs as root over the bind-mounted api/, so files it
+  # wrote (api/logs) are root's. Removing them from a container needs no sudo.
+  if ! rm -rf "$WORKDIR" 2>/dev/null; then
+    docker run --rm -v "$WORKDIR:/w" alpine:3 rm -rf /w/my-app >/dev/null 2>&1 || true
+    rm -rf "$WORKDIR" || true
+  fi
   exit "$status"
 }
 trap cleanup EXIT
