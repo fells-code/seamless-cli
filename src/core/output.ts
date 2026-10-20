@@ -103,9 +103,21 @@ export function printSuccessOutput(config: {
   console.log("  1. Start services");
   console.log(kleur.cyan("     docker compose up\n"));
 
-  console.log("  2. Register in the browser with " + kleur.bold(ownerEmail));
+  console.log(
+    "  2. Open " +
+      kleur.cyan("http://localhost:5173") +
+      " and register with " +
+      kleur.bold(ownerEmail),
+  );
   console.log(
     kleur.dim("     That address is the owner, so it becomes an admin\n"),
+  );
+
+  console.log("  3. When it asks for a code, get it with");
+  console.log(
+    kleur.cyan(
+      `     ${projectName ? `cd ${projectName} && ` : ""}npx seamless-cli owner-code\n`,
+    ),
   );
 
   console.log(kleur.bold("Available services:\n"));

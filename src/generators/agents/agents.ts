@@ -132,7 +132,8 @@ export function buildAgentsMd(opts: AgentsDocOptions): string {
       "",
       `\`${opts.ownerEmail}\` is the owner: registering with it grants the admin role. The grant`,
       `happens at signup, so change \`OWNER_EMAIL\` in ${where}`,
-      "before registering if it is wrong.",
+      "before registering if it is wrong. When the page asks for a code, `npx seamless-cli owner-code`",
+      "prints it, so nobody needs the container logs.",
     );
   }
 

@@ -487,8 +487,14 @@ scaffolded web app is all it takes:
 seamless init my-app
 cd my-app
 docker compose up
-# register at http://localhost:5173 with the email you gave init
+# register at http://localhost:5173 with the email you gave init, then:
+seamless owner-code
 ```
+
+The local stack sends no email, so when the page asks for a code, `seamless owner-code` prints one
+for the owner. It waits for the auth server, defaults to the project's `OWNER_EMAIL`, and only talks
+to a local auth server (`--url`, default `http://localhost:5312`). The code replaces any code sent
+before, so run it after the page asks, and enter it within 5 minutes.
 
 Both signup paths (email OTP and a verified OAuth profile) establish control of the address before
 the account is created, so only someone who actually receives mail there can claim it.
