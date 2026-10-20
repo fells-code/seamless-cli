@@ -198,7 +198,14 @@ describe("reports", () => {
       [{ row: 3, email: "bad", detail: "email: Invalid email" }],
     );
     expect(report.map((r) => r.status)).toEqual(["created", "invalid", "rejected"]);
-    expect(summarize(report)).toEqual({ created: 1, updated: 0, unchanged: 0, rejected: 1, invalid: 1 });
+    expect(summarize(report)).toEqual({
+      created: 1,
+      updated: 0,
+      unchanged: 0,
+      rejected: 1,
+      invalid: 1,
+      skipped: 0,
+    });
 
     const base = path.join(tmpDir(), "users.migrate-plan");
     const written = writeReport(base, { source: "csv", dryRun: true, input: "users.csv" }, report);

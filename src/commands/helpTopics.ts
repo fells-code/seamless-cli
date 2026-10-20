@@ -500,6 +500,7 @@ users prepare-device-replacement <id> [--force] [--keep-sessions] [--keep-passke
     name: "migrate",
     usage: [
       "seamless migrate csv <file> [--map <mapping.json>] [--source <name>] [--apply] [--report <path>] [--json]",
+      "seamless migrate entra-id [--group <id>] [--groups <mapping.json>] [--allow-upn] [--include-guests] [--source <name>] [--apply] [--report <path>] [--json]",
     ],
     sections: [
       {
@@ -530,6 +531,40 @@ Imports carry no passwords. Each user signs in for the first time by
 registering with their email. Roles and memberships are only added, never
 removed, and admin roles are refused. Exits 1 when any row is rejected or
 invalid.`,
+      },
+      {
+        heading: "migrate entra-id",
+        body: `Import users straight from Microsoft Entra ID through Microsoft Graph, with
+the same dry run, batching and report as migrate csv (requires an admin role).
+
+Signs in as an app registration with app-only permissions: User.Read.All, and
+GroupMember.Read.All for --group or --groups, with admin consent. Its values
+come from ENTRA_TENANT_ID, ENTRA_CLIENT_ID and ENTRA_CLIENT_SECRET, never
+flags, so the secret stays out of shell history and the report.
+
+Each user's object id is the externalId, so re-runs match people even when
+their address changes. Email is mail, phone is mobilePhone. Disabled accounts
+and guests are skipped and listed in the report.
+
+--group <id>
+  • Import only that group's members (nested groups included), so a pilot
+    department can go first
+--groups <mapping.json>
+  • Turn group membership into organizations and roles, for example:
+    { "groups": [
+        { "id": "<group id>", "organization": "engineering",
+          "organizationRoles": ["member"] },
+        { "id": "<group id>", "roles": ["staff"] } ] }
+--allow-upn
+  • Use userPrincipalName for a user with no mail. A UPN is not always a
+    mailbox, and the imported address is how the user first signs in
+--include-guests
+  • Import guest accounts too
+--source <name>
+  • Default entra-id. Keep it stable across re-runs
+--apply, --report <path>, --json
+  • As for migrate csv. The report defaults to entra-id.migrate-plan
+    (or entra-id.migrate-result) in the current directory`,
       },
     ],
   },
