@@ -210,17 +210,17 @@ describe("organizations", () => {
     [
       "listing organizations",
       (c: AuthClient) => listOrgs(c),
-      /Could not list organizations \(500\)/,
+      /Could not list organizations \(500: boom\)/,
     ],
     [
       "listing members",
       (c: AuthClient) => listMembers(c, "o1"),
-      /Could not list members \(500\)/,
+      /Could not list members \(500: boom\)/,
     ],
     [
       "removing a member",
       (c: AuthClient) => removeMember(c, "o1", "u1"),
-      /Could not remove member \(500\)/,
+      /Could not remove member \(500: boom\)/,
     ],
   ])("reports the status when %s fails", async (_label, run, message) => {
     const { client } = fakeClient(() => response(500, { error: "boom" }));
@@ -342,7 +342,67 @@ describe("organizations", () => {
     const { client } = fakeClient(() => response(404, { error: "not found" }));
     await expect(
       addMember(client, "missing", { email: "x@example.com" }),
-    ).rejects.toThrow(/No organization found/);
+    ).rejects.toThrow(/No such organization or user \(404: not found\)/);
+  });
+
+  it("says the user is already a member on a 409 add, with the API's reason", async () => {
+    const { client } = fakeClient(() =>
+      response(409, { error: "User is already an organization member" }),
+    );
+    await expect(addMember(client, "o1", { userId: "u1" })).rejects.toThrow(
+      "That user is already a member of organization o1 (409: User is already an organization member).",
+    );
+  });
+
+  it("says the user is already a member on a 409 add with no body", async () => {
+    const { client } = fakeClient(() => response(409, null));
+    await expect(addMember(client, "o1", { userId: "u1" })).rejects.toThrow(
+      "That user is already a member of organization o1 (409).",
+    );
+  });
+
+  it("does not blame the organization when the user to add is missing", async () => {
+    const { client } = fakeClient(() => response(404, { error: "User not found" }));
+    await expect(addMember(client, "o1", { userId: "nobody" })).rejects.toThrow(
+      "No such organization or user (404: User not found).",
+    );
+  });
+
+  it.each([
+    ["creating an organization", (c: AuthClient) => createOrg(c, { name: "Acme" }), "Could not create organization"],
+    ["loading an organization", (c: AuthClient) => getOrg(c, "o1"), "Could not load organization"],
+    ["updating an organization", (c: AuthClient) => updateOrg(c, "o1", { name: "x" }), "Could not update organization"],
+    ["listing organizations", (c: AuthClient) => listOrgs(c), "Could not list organizations"],
+    ["listing members", (c: AuthClient) => listMembers(c, "o1"), "Could not list members"],
+    ["adding a member", (c: AuthClient) => addMember(c, "o1", { userId: "u1" }), "Could not add member"],
+    ["updating a member", (c: AuthClient) => updateMember(c, "o1", "u1", { roles: [] }), "Could not update member"],
+    ["removing a member", (c: AuthClient) => removeMember(c, "o1", "u1"), "Could not remove member"],
+    ["listing users", (c: AuthClient) => listUsers(c), "Could not list users"],
+    ["deleting a user", (c: AuthClient) => deleteUser(c, "u1"), "Could not delete user"],
+    ["loading a user", (c: AuthClient) => getUserDetail(c, "u1"), "Could not load user"],
+  ])("names the action and the API's reason when %s fails", async (_label, run, summary) => {
+    const { client } = fakeClient(() =>
+      response(400, { error: "Organization must keep at least one owner" }),
+    );
+    await expect(run(client)).rejects.toThrow(
+      `${summary} (400: Organization must keep at least one owner).`,
+    );
+  });
+
+  it("falls back to the API's message field and drops its trailing period", async () => {
+    const { client } = fakeClient(() =>
+      response(422, { message: "Slug is taken." }),
+    );
+    await expect(createOrg(client, { name: "Acme" })).rejects.toThrow(
+      "Could not create organization (422: Slug is taken).",
+    );
+  });
+
+  it("keeps the CLI's 404 wording and adds the API's reason", async () => {
+    const { client } = fakeClient(() => response(404, { error: "User not found." }));
+    await expect(deleteUser(client, "u9")).rejects.toThrow(
+      "No user found with id u9 (404: User not found).",
+    );
   });
 
   it("maps a 404 on updateMember to a clear error", async () => {
