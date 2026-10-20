@@ -65,6 +65,19 @@ describe("envToDockerBlock", () => {
   });
 });
 describe("buildAuthEnv", () => {
+  // The auth server's .env.example ships a placeholder under the preferred name, and
+  // the server refuses to start when the two names hold different values.
+  it("replaces the example's service token placeholder and drops the legacy name", () => {
+    const { env, shared } = buildAuthEnv(
+      { SEAMLESS_SERVICE_TOKEN: "32-byte-hex-string", API_SERVICE_TOKEN: "old" },
+      "docker",
+    );
+
+    expect(env.SEAMLESS_SERVICE_TOKEN).toBe(shared.apiToken);
+    expect(env.SEAMLESS_SERVICE_TOKEN).toMatch(/^[0-9a-f]{64}$/);
+    expect(env).not.toHaveProperty("API_SERVICE_TOKEN");
+  });
+
   it("wires docker-mode networking values", () => {
     const { env, shared } = buildAuthEnv({}, "docker");
 
@@ -79,7 +92,8 @@ describe("buildAuthEnv", () => {
     // Nothing in the ecosystem reads AUTH_MODE, so the scaffold does not write it.
     expect(env.AUTH_MODE).toBeUndefined();
     expect("bootstrapSecret" in shared).toBe(false);
-    expect(env.API_SERVICE_TOKEN).toBe(shared.apiToken);
+    expect(env.SEAMLESS_SERVICE_TOKEN).toBe(shared.apiToken);
+    expect(env.API_SERVICE_TOKEN).toBeUndefined();
     expect(env.REFRESH_TOKEN_LOOKUP_SECRET).toMatch(/^[0-9a-f]{64}$/);
     expect(env.TOTP_SECRET_ENCRYPTION_KEY).toMatch(/^[0-9a-f]{64}$/);
     expect(env.APP_ORIGINS).toBe("http://localhost:3000");
@@ -155,6 +169,15 @@ describe("extractSharedFromExistingEnv", () => {
     });
   });
 
+  it("reads the token under the auth server's preferred name", () => {
+    fs.mkdirSync(path.join(tmpDir, "auth"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, "auth", ".env"),
+      "SEAMLESS_SERVICE_TOKEN=new-token\n",
+    );
+    expect(extractSharedFromExistingEnv(tmpDir).apiToken).toBe("new-token");
+  });
+
   it("defaults kid to dev-main when neither is present", () => {
     writeAuthEnvFixture(tmpDir);
     expect(extractSharedFromExistingEnv(tmpDir)).toEqual({
@@ -186,7 +209,8 @@ describe("configureAuthLocalEnv", () => {
     expect(shared.apiToken).toMatch(/^[0-9a-f]{64}$/);
 
     const written = fs.readFileSync(path.join(tmpDir, "auth", ".env"), "utf-8");
-    expect(written).toContain(`API_SERVICE_TOKEN=${shared.apiToken}`);
+    expect(written).toContain(`SEAMLESS_SERVICE_TOKEN=${shared.apiToken}`);
+    expect(written).not.toMatch(/^API_SERVICE_TOKEN=/m);
     expect(written).toContain("SOME_KEY=placeholder");
     expect(written).not.toContain("AUTH_MODE");
     expect(written).toContain("ISSUER=http://localhost:5312");
@@ -350,14 +374,14 @@ describe("generateDockerCompose", () => {
 
     expect(compose).toContain(`image: ${SEAMLESS_AUTH_API_IMAGE}`);
     expect(compose).not.toContain("build:\n      context: ./auth");
-    // The auth server keeps API_SERVICE_TOKEN; the app reads the same value
-    // under SEAMLESS_SERVICE_TOKEN, and the file says why there are two names.
+    // The auth server and the app both read the secret as SEAMLESS_SERVICE_TOKEN.
     const auth = compose.slice(compose.indexOf("\n  auth:"), compose.indexOf("\n  api:"));
     const api = compose.slice(compose.indexOf("\n  api:"));
-    expect(auth).toContain(`API_SERVICE_TOKEN: "${shared.apiToken}"`);
+    expect(auth).toContain(`SEAMLESS_SERVICE_TOKEN: "${shared.apiToken}"`);
+    expect(auth).not.toMatch(/^\s+API_SERVICE_TOKEN:/m);
     expect(api).toContain(`SEAMLESS_SERVICE_TOKEN: ${shared.apiToken}`);
     expect(api).not.toMatch(/^\s+API_SERVICE_TOKEN:/m);
-    expect(api).toContain("# The same secret as the auth service's API_SERVICE_TOKEN.");
+    expect(api).toContain("# The same secret as the auth service's SEAMLESS_SERVICE_TOKEN.");
     expect(compose).toContain(`JWKS_KID: ${shared.kid}`);
     expect(compose).toContain("OAUTH_PROVIDERS");
   });

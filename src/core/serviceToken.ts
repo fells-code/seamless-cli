@@ -1,6 +1,6 @@
-// The variable an application reads its Seamless service token from. The auth
-// server reads the same value as API_SERVICE_TOKEN, which is also what apps read
-// before seamless-cli 0.24.0 and seamless-templates' rename.
+// The variable an application reads its Seamless service token from, and since 0.19.0
+// the auth server's own name for it. API_SERVICE_TOKEN is the legacy name: apps read it
+// before seamless-cli 0.24.0 and seamless-templates' rename, the auth server before 0.19.0.
 export const SERVICE_TOKEN_VAR = "SEAMLESS_SERVICE_TOKEN";
 export const LEGACY_SERVICE_TOKEN_VAR = "API_SERVICE_TOKEN";
 

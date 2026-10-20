@@ -133,7 +133,7 @@ async function authService(
   if (mode === "local") {
     // auth/.env was already written by generateAuthServer (with its secrets and any
     // OAuth config). Read those values back rather than regenerating, which would mint
-    // a new API_SERVICE_TOKEN that no longer matches the one the API was given.
+    // a new service token that no longer matches the one the API was given.
     const shared = extractSharedFromExistingEnv(root);
 
     return {
@@ -176,8 +176,7 @@ function apiUiOrigins(adminMode: AdminMode): string {
 
 // Written above the app's token in the generated compose file, where both
 // names sit side by side and a reader would otherwise wonder which is right.
-const SERVICE_TOKEN_COMMENT = `      # The same secret as the auth service's API_SERVICE_TOKEN. Apps read it
-      # as SEAMLESS_SERVICE_TOKEN; the auth server keeps its own name.`;
+const SERVICE_TOKEN_COMMENT = `      # The same secret as the auth service's SEAMLESS_SERVICE_TOKEN.`;
 
 function apiService(shared: any, adminMode: AdminMode) {
   return `
@@ -389,7 +388,11 @@ export function buildAuthEnv(
   env.DB_HOST = mode === "docker" ? "db" : "localhost";
   env.DB_PORT = "5432";
 
-  env.API_SERVICE_TOKEN = apiToken;
+  // The auth server's preferred name since 0.19.0, which refuses to start when both
+  // names are set to different values. Its .env.example carries a placeholder under
+  // that name, so the legacy name is dropped rather than written beside it.
+  env.SEAMLESS_SERVICE_TOKEN = apiToken;
+  delete env.API_SERVICE_TOKEN;
 
   // Dedicated secrets the auth server otherwise leaves empty (falling back to the
   // service token). Generate real ones so a scaffolded stack is production-shaped.
@@ -506,7 +509,7 @@ export function extractSharedFromExistingEnv(root: string) {
   const env = parseEnv(path.join(root, "auth", ".env"));
 
   return {
-    apiToken: env.API_SERVICE_TOKEN,
+    apiToken: env.SEAMLESS_SERVICE_TOKEN || env.API_SERVICE_TOKEN,
     kid: env.SEAMLESS_JWKS_ACTIVE_KID || env.JWKS_ACTIVE_KID || "dev-main",
   };
 }
