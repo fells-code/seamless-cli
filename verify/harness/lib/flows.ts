@@ -149,7 +149,7 @@ export async function oauthLogin(
 ): Promise<SessionTokens & { email?: string }> {
   const start = await ctx.post(`${pathPrefix}/oauth/${providerId}/start`, { data: {} });
   expect(start.ok(), `oauth start -> ${start.status()} ${await start.text()}`).toBeTruthy();
-  const { authorizationUrl } = await start.json();
+  const { authorizationUrl, binding } = await start.json();
 
   const authorize = await ctx.get(authorizationUrl, { maxRedirects: 0 });
   expect(authorize.status(), `authorize redirects with a code (got ${authorize.status()})`).toBe(
@@ -161,7 +161,7 @@ export async function oauthLogin(
   expect(code, 'authorize returns an auth code').toBeTruthy();
 
   const callback = await ctx.post(`${pathPrefix}/oauth/${providerId}/callback`, {
-    data: { code, state },
+    data: { code, state, binding },
   });
   expect(callback.ok(), `oauth callback -> ${callback.status()} ${await callback.text()}`).toBeTruthy();
   const body = await callback.json();
