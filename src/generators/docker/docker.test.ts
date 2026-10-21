@@ -8,6 +8,7 @@ import {
   envToDockerBlock,
   extractSharedFromExistingEnv,
   generateDockerCompose,
+  isolatedMountpoints,
   LOCAL_AUTH_ISSUER,
 } from "./docker.js";
 import {
@@ -574,5 +575,74 @@ describe("generateDockerCompose for a full-stack web app", () => {
 
     expect(compose).toContain("\n  api:");
     expect(compose).toContain("API_URL: http://localhost:3000/");
+  });
+});
+
+// On a Linux host Docker creates a missing mountpoint as root, and the user can then
+// not `npm install` into it on the host. A directory that already exists keeps its owner.
+describe("isolated mountpoints", () => {
+  it("reads each anonymous volume under a bind-mounted source tree", () => {
+    const compose = [
+      "services:",
+      "  web:",
+      "    volumes:",
+      "      - ./web:/app",
+      "      - /app/node_modules",
+      "      - /app/.next",
+      "    depends_on:",
+      "      - db",
+      "  auth:",
+      "    volumes:",
+      "      - auth-keys:/app/keys",
+    ].join("\n");
+
+    expect(isolatedMountpoints(compose)).toEqual([
+      "web/node_modules",
+      "web/.next",
+    ]);
+  });
+
+  it("creates them, as the user running init, for a split stack with a source admin", async () => {
+    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
+
+    await generateDockerCompose(tmpDir, {
+      authMode: "local",
+      adminMode: "source",
+    });
+
+    for (const dir of [
+      "auth/node_modules",
+      "api/node_modules",
+      "web/node_modules",
+      "admin/node_modules",
+    ]) {
+      expect(fs.statSync(path.join(tmpDir, dir)).isDirectory()).toBe(true);
+    }
+  });
+
+  it("creates .next for a full-stack web app", async () => {
+    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
+
+    await generateDockerCompose(tmpDir, {
+      authMode: "local",
+      adminMode: "none",
+      fullStack: true,
+    });
+
+    expect(fs.existsSync(path.join(tmpDir, "web/node_modules"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, "web/.next"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, "api"))).toBe(false);
+  });
+
+  it("leaves an existing directory and its contents alone", async () => {
+    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
+    fs.mkdirSync(path.join(tmpDir, "api/node_modules"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "api/node_modules/keep"), "x");
+
+    await generateDockerCompose(tmpDir, { authMode: "local", adminMode: "api" });
+
+    expect(
+      fs.readFileSync(path.join(tmpDir, "api/node_modules/keep"), "utf-8"),
+    ).toBe("x");
   });
 });

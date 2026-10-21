@@ -39,8 +39,37 @@ export async function generateDockerCompose(
     compose.trim() + "\n",
   );
 
+  // Docker creates a missing mountpoint inside a bind mount as root, which on a
+  // Linux host leaves e.g. api/node_modules unwritable by the user. One that
+  // already exists keeps its owner.
+  for (const mountpoint of isolatedMountpoints(compose)) {
+    fs.mkdirSync(path.join(root, mountpoint), { recursive: true });
+  }
+
   console.log("Docker compose created.");
   return shared;
+}
+
+// The paths an anonymous volume keeps out of a bind-mounted source tree, relative
+// to the project root: `- ./api:/app` then `- /app/node_modules` is api/node_modules.
+// Read from the compose text itself so it cannot disagree with what Docker mounts.
+export function isolatedMountpoints(compose: string): string[] {
+  const mountpoints: string[] = [];
+  let source: string | undefined;
+  for (const line of compose.split("\n")) {
+    const bind = line.match(/^\s+- \.\/([^:\s]+):\/app$/);
+    if (bind) {
+      source = bind[1];
+      continue;
+    }
+    const isolated = line.match(/^\s+- \/app\/(\S+)$/);
+    if (isolated && source) {
+      mountpoints.push(`${source}/${isolated[1]}`);
+      continue;
+    }
+    if (!/^\s+- /.test(line)) source = undefined;
+  }
+  return mountpoints;
 }
 
 async function buildCompose(
