@@ -458,6 +458,21 @@ describe("generateDockerCompose output shape", () => {
     expect(compose).toMatch(/\nvolumes:\n  pgdata:\n  auth-keys:\n$/);
   });
 
+  // A clone leaves validateEnvs.sh at mode 644 and has no dist/, and the bind
+  // mount hides whatever the image did about either, so the image entrypoint
+  // fails with "permission denied" and then MODULE_NOT_FOUND.
+  it("runs the source-built auth server without the image entrypoint", async () => {
+    const compose = await render("local", "api", false);
+    const auth = compose.slice(compose.indexOf("\n  auth:"), compose.indexOf("\n  api:"));
+
+    expect(auth).toContain('entrypoint: ["/bin/sh", "-c"]');
+    expect(auth).toContain("sh ./syncDevDeps.sh &&");
+    expect(auth).toContain("npm run migrate:up || (npm run db:create && npm run migrate:up)");
+    expect(auth).toContain("npm run dev:container");
+    expect(auth).not.toContain("validateEnvs.sh &&");
+    expect(auth).not.toContain("dist/server.js");
+  });
+
   // The local auth server bind-mounts ./auth over /app, so its keys already
   // land on the host and a named volume would only shadow them.
   it("declares no key volume for the source-built auth server", async () => {
