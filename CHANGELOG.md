@@ -1,5 +1,20 @@
 # seamless-cli
 
+## 0.25.0
+
+### Minor Changes
+
+- e768ec0: New `seamless migrate entra-id` imports users straight from Microsoft Entra ID through Microsoft Graph, with the same dry run, batches and report as `migrate csv`. Each user's Entra object id becomes their `externalId`, so re-runs match people without a hand-edited export. It signs in as an app registration with app-only `User.Read.All` (and `GroupMember.Read.All` for groups), reading `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID` and `ENTRA_CLIENT_SECRET` from the environment only. `--group` imports one group's members, `--groups` maps groups to organizations and roles, disabled accounts and guests are skipped and reported, and `--allow-upn` uses the `userPrincipalName` for users with no mail.
+
+  Migration reports gain a `skipped` count and status, for rows left out on purpose. Skipped rows do not make the command exit 1.
+
+### Patch Changes
+
+- ce96113: `seamless init` now creates the directories the generated compose file keeps in a volume (`node_modules` under each bind-mounted source tree, and `.next` for the Next.js full-stack layout) before Docker does. On a Linux host Docker created them as root, so `npm install` on the host in `api/` or `web/` failed with `EACCES` until they were removed with sudo. A directory that already exists keeps its owner.
+- 1ce71d7: `seamless verify` now forwards the `binding` that `POST /oauth/:providerId/start` returns in the body of its OAuth callbacks, so the OAuth specs pass against an auth API that ties the callback to the browser that started the flow. Older API images ignore the extra field.
+- bce0a9b: `seamless init --auth=local` now produces an auth service that starts. The generated compose bind-mounts `./auth` over `/app`, which hid the image's `chmod +x ./validateEnvs.sh` (the script is mode 644 in the clone) and left the entrypoint looking for a `dist/server.js` that `Dockerfile.dev` never builds. The auth service now runs the same command as the auth server's own `docker-compose.dev.yml`: sync dependencies, run migrations (creating the database on first boot), then watch the TypeScript sources.
+- 888a781: Depend on `@seamless-auth/types` 0.29.0, which adds the OAuth state `binding` field.
+
 ## 0.24.0
 
 ### Minor Changes
