@@ -87,7 +87,8 @@ export async function legacySignIn(
   });
   expect(start.ok(), `oauth start -> ${start.status()} ${await start.text()}`).toBeTruthy();
 
-  const authorizationUrl = new URL((await start.json()).authorizationUrl);
+  const { authorizationUrl: startUrl, binding } = await start.json();
+  const authorizationUrl = new URL(startUrl);
   authorizationUrl.searchParams.set('mock_sub', profile.sub);
   authorizationUrl.searchParams.set('mock_oid', profile.oid);
   authorizationUrl.searchParams.set('mock_email', profile.email);
@@ -100,6 +101,7 @@ export async function legacySignIn(
     data: {
       code: redirected.searchParams.get('code'),
       state: redirected.searchParams.get('state'),
+      binding,
     },
   });
 }
