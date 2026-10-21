@@ -174,6 +174,16 @@ async function authService(
       dockerfile: Dockerfile.dev
     ports:
       - "127.0.0.1:5312:5312"
+    # The bind mount hides the image's chmod of validateEnvs.sh, and Dockerfile.dev
+    # builds no dist/, so its entrypoint cannot run here. This mirrors the auth
+    # server's own docker-compose.dev.yml: sync dependencies, migrate (creating the
+    # database on first boot), then watch the TypeScript sources.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        sh ./syncDevDeps.sh &&
+        (npm run migrate:up || (npm run db:create && npm run migrate:up)) &&
+        npm run dev:container
     env_file:
       - ./auth/.env
     environment:
