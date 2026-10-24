@@ -1,4 +1,13 @@
-import { createHash, generateKeyPairSync, KeyObject, randomBytes } from 'crypto';
+import {
+  createECDH,
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  KeyObject,
+  randomBytes,
+  sign,
+} from 'crypto';
 
 // A minimal ES256 authenticator with `fmt: 'none'` attestation, enough to enroll a
 // passkey through the API without a browser. The browser layer covers the real
@@ -37,16 +46,48 @@ function clientData(type: string, challenge: string, origin: string): Buffer {
 }
 
 export class SoftwareAuthenticator {
-  private readonly credentialId = randomBytes(32);
+  private readonly credentialId: Buffer;
+  private readonly privateKey: KeyObject;
   private readonly publicKey: KeyObject;
-  private counter = 0;
 
-  constructor() {
-    this.publicKey = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).publicKey;
+  /**
+   * With a seed, the key and credential id are derived from it, so a later process
+   * (a Playwright worker restarted after a failure) can still sign for a passkey an
+   * earlier one enrolled.
+   */
+  constructor(seed?: string) {
+    if (!seed) {
+      this.credentialId = randomBytes(32);
+      ({ privateKey: this.privateKey, publicKey: this.publicKey } = generateKeyPairSync('ec', {
+        namedCurve: 'prime256v1',
+      }));
+      return;
+    }
+
+    this.credentialId = createHash('sha256').update(`credential:${seed}`).digest();
+    const d = createHash('sha256').update(`key:${seed}`).digest();
+    const ecdh = createECDH('prime256v1');
+    ecdh.setPrivateKey(d);
+    const point = ecdh.getPublicKey();
+    this.privateKey = createPrivateKey({
+      key: {
+        kty: 'EC',
+        crv: 'P-256',
+        d: d.toString('base64url'),
+        x: point.subarray(1, 33).toString('base64url'),
+        y: point.subarray(33).toString('base64url'),
+      },
+      format: 'jwk',
+    });
+    this.publicKey = createPublicKey(this.privateKey);
+  }
+
+  get id() {
+    return this.credentialId.toString('base64url');
   }
 
   register(params: { challenge: string; origin: string; rpId: string }) {
-    const id = this.credentialId.toString('base64url');
+    const id = this.id;
     const attestationObject = cbor(
       new Map<Cbor, Cbor>([
         ['fmt', 'none'],
@@ -70,9 +111,42 @@ export class SoftwareAuthenticator {
     };
   }
 
-  private authData(rpId: string): Buffer {
+  /** An assertion for `navigator.credentials.get`, signed with this credential's key. */
+  authenticate(params: { challenge: string; origin: string; rpId: string }) {
+    const authenticatorData = Buffer.concat([
+      createHash('sha256').update(params.rpId).digest(),
+      Buffer.from([0x05]), // UP | UV
+      this.signCount(),
+    ]);
+    const clientDataJSON = clientData('webauthn.get', params.challenge, params.origin);
+    const signature = sign(
+      'sha256',
+      Buffer.concat([authenticatorData, createHash('sha256').update(clientDataJSON).digest()]),
+      this.privateKey,
+    );
+
+    return {
+      id: this.id,
+      rawId: this.id,
+      type: 'public-key',
+      clientExtensionResults: {},
+      response: {
+        clientDataJSON: clientDataJSON.toString('base64url'),
+        authenticatorData: authenticatorData.toString('base64url'),
+        signature: signature.toString('base64url'),
+      },
+    };
+  }
+
+  // Seconds since the epoch: always increasing, even across processes sharing a seed.
+  private signCount(): Buffer {
     const counter = Buffer.alloc(4);
-    counter.writeUInt32BE(++this.counter);
+    counter.writeUInt32BE(Math.floor(Date.now() / 1000));
+    return counter;
+  }
+
+  private authData(rpId: string): Buffer {
+    const counter = this.signCount();
     const idLength = Buffer.alloc(2);
     idLength.writeUInt16BE(this.credentialId.length);
 

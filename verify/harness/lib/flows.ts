@@ -1,6 +1,7 @@
 import { APIRequestContext, expect } from '@playwright/test';
 
 import { EXTERNAL_DELIVERY } from './env';
+import { stepUpOwner } from './stepUp';
 
 export interface SessionTokens {
   token: string; // signed access token
@@ -169,9 +170,9 @@ export async function oauthLogin(
 }
 
 /**
- * An access token for the tenant owner (OWNER_EMAIL, admin at signup), for the
- * admin API. Signs the owner in when the account exists (the api layer usually
- * registered it earlier in the run) and registers it otherwise. An unknown
+ * An access token for the tenant owner (OWNER_EMAIL, admin at signup), stepped up
+ * for the admin API. Signs the owner in when the account exists (the api layer
+ * usually registered it earlier in the run) and registers it otherwise. An unknown
  * identifier gets a decoy OTP send that delivers nothing, which is how the two
  * cases are told apart.
  */
@@ -189,10 +190,14 @@ export async function ownerAccessToken(ctx: APIRequestContext, ownerEmail: strin
       data: { verificationToken: String(code) },
     });
     expect(res.ok(), `verify-login-email-otp -> ${res.status()} ${await res.text()}`).toBeTruthy();
-    return (await res.json()).token as string;
+    const { token } = (await res.json()) as { token: string };
+    await stepUpOwner(ctx, token);
+    return token;
   }
 
-  return (await registerAndVerifyEmail(ctx, ownerEmail)).token;
+  const { token } = await registerAndVerifyEmail(ctx, ownerEmail);
+  await stepUpOwner(ctx, token);
+  return token;
 }
 
 /** Replace a user's roles through the admin API. */
