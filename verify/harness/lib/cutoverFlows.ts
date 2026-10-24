@@ -6,13 +6,12 @@ import { MOCK_OIDC_ISSUER } from '../mock-oidc';
 import { MOCK_OIDC_PORT, OWNER_EMAIL } from './env';
 import { registerEmail, requestEmailOtp, verifyEmailOtp } from './flows';
 import { SoftwareAuthenticator } from './softwareAuthenticator';
+import { registerPasskey, stepUpOwner } from './stepUp';
 
 // Helpers for the migration cutover path (fells-code/seamless-auth-api#337): a legacy
 // OIDC provider that links imported users by their directory id, prompts them into
 // passkey enrollment, and can be retired per organization.
 
-// The browser origin the stack accepts for WebAuthn (ORIGINS / RPID in the compose file).
-const WEBAUTHN_ORIGIN = 'http://localhost:5173';
 const REDIRECT_URI = 'http://localhost:5173/oauth/callback';
 
 export function bearer(token: string) {
@@ -20,7 +19,7 @@ export function bearer(token: string) {
 }
 
 /**
- * An admin access token. Only OWNER_EMAIL is granted admin at signup, so this signs
+ * An admin access token, stepped up for admin writes. Only OWNER_EMAIL is granted admin at signup, so this signs
  * in as the owner; registering an address that already has an account continues
  * that account, so it works whether or not the owner spec has run first.
  */
@@ -29,7 +28,9 @@ export async function ownerAdminToken(ctx: APIRequestContext): Promise<string> {
   const code = await requestEmailOtp(ctx, ephemeral);
   const res = await verifyEmailOtp(ctx, ephemeral, code);
   expect(res.ok(), `owner sign-in -> ${res.status()} ${await res.text()}`).toBeTruthy();
-  return (await res.json()).token as string;
+  const { token } = (await res.json()) as { token: string };
+  await stepUpOwner(ctx, token);
+  return token;
 }
 
 /** Adds an OIDC provider that verifies the mock's ID tokens and links on `oid`. */
@@ -108,27 +109,5 @@ export async function legacySignIn(
 
 /** Enrolls a passkey on the account the access token belongs to. */
 export async function enrollPasskey(ctx: APIRequestContext, accessToken: string): Promise<void> {
-  const start = await ctx.get('/webAuthn/register/start', { headers: bearer(accessToken) });
-  expect(start.ok(), `register start -> ${start.status()} ${await start.text()}`).toBeTruthy();
-  const options = await start.json();
-
-  const attestationResponse = new SoftwareAuthenticator().register({
-    challenge: options.challenge,
-    origin: WEBAUTHN_ORIGIN,
-    rpId: options.rp.id,
-  });
-
-  const finish = await ctx.post('/webAuthn/register/finish', {
-    headers: bearer(accessToken),
-    data: {
-      attestationResponse,
-      metadata: {
-        friendlyName: 'verify harness',
-        platform: 'node',
-        browser: 'none',
-        deviceInfo: 'software authenticator',
-      },
-    },
-  });
-  expect(finish.ok(), `register finish -> ${finish.status()} ${await finish.text()}`).toBeTruthy();
+  await registerPasskey(ctx, accessToken, new SoftwareAuthenticator());
 }
