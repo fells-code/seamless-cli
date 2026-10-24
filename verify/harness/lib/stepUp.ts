@@ -6,6 +6,9 @@ import { SoftwareAuthenticator } from './softwareAuthenticator';
 // The browser origin the stack accepts for WebAuthn (ORIGINS / RPID in the compose file).
 export const WEBAUTHN_ORIGIN = 'http://localhost:5173';
 
+// One instance per worker, so its sign count keeps growing between owner sign-ins.
+const ownerAuthenticator = new SoftwareAuthenticator(`verify-owner:${OWNER_EMAIL}`);
+
 function bearer(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
@@ -44,8 +47,6 @@ export async function registerPasskey(
  * derived from OWNER_EMAIL, enrolled the first time it is needed.
  */
 export async function stepUpOwner(ctx: APIRequestContext, accessToken: string): Promise<void> {
-  const authenticator = new SoftwareAuthenticator(`verify-owner:${OWNER_EMAIL}`);
-
   const begin = async () => {
     const res = await ctx.post('/step-up/webauthn/start', {
       headers: bearer(accessToken),
@@ -55,14 +56,14 @@ export async function stepUpOwner(ctx: APIRequestContext, accessToken: string): 
     expect(res.ok(), `step-up start -> ${res.status()} ${await res.text()}`).toBeTruthy();
     const options = await res.json();
     const enrolled = (options.allowCredentials ?? []).some(
-      (credential: { id: string }) => credential.id === authenticator.id,
+      (credential: { id: string }) => credential.id === ownerAuthenticator.id,
     );
     return enrolled ? options : null;
   };
 
   let options = await begin();
   if (!options) {
-    await registerPasskey(ctx, accessToken, authenticator);
+    await registerPasskey(ctx, accessToken, ownerAuthenticator);
     options = await begin();
   }
   expect(options, 'step-up offers the owner passkey').toBeTruthy();
@@ -70,7 +71,7 @@ export async function stepUpOwner(ctx: APIRequestContext, accessToken: string): 
   const finish = await ctx.post('/step-up/webauthn/finish', {
     headers: bearer(accessToken),
     data: {
-      assertionResponse: authenticator.authenticate({
+      assertionResponse: ownerAuthenticator.authenticate({
         challenge: options.challenge,
         origin: WEBAUTHN_ORIGIN,
         rpId: options.rpId,

@@ -49,6 +49,7 @@ export class SoftwareAuthenticator {
   private readonly credentialId: Buffer;
   private readonly privateKey: KeyObject;
   private readonly publicKey: KeyObject;
+  private counter = 0;
 
   /**
    * With a seed, the key and credential id are derived from it, so a later process
@@ -138,10 +139,12 @@ export class SoftwareAuthenticator {
     };
   }
 
-  // Seconds since the epoch: always increasing, even across processes sharing a seed.
+  // Seconds since the epoch, so it keeps increasing across processes sharing a seed,
+  // and at least one past the last use, since the API refuses a count that does not grow.
   private signCount(): Buffer {
+    this.counter = Math.max(Math.floor(Date.now() / 1000), this.counter + 1);
     const counter = Buffer.alloc(4);
-    counter.writeUInt32BE(Math.floor(Date.now() / 1000));
+    counter.writeUInt32BE(this.counter);
     return counter;
   }
 
