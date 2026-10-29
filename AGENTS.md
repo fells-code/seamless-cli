@@ -202,6 +202,12 @@ Templates are not in this repo — they live in the `seamless-templates` monorep
   `.loose()`d: a key the schema does not know is kept (and reaches `--json` output) rather than
   stripped, or rejected by a strict schema such as `ApiUserSchema`. A response missing a required
   field fails with the path that tripped it. See [src/core/admin.ts](src/core/admin.ts).
+- **Admin writes step up in the client, not in each wrapper.** From auth server v0.20 an admin write
+  answers `403 step_up_required` until the session has a fresh step-up. `createAuthClient` gives
+  every instance client a handler ([src/core/stepUp.ts](src/core/stepUp.ts)) that verifies an
+  authenticator app code on the same session and retries the request once, so a new admin call
+  needs nothing extra. Wrappers still map a 403 with `forbidden(res)`, which tells a missing
+  step-up apart from a missing admin role.
 - **Shared test fixtures** live in `src/**/*.fixtures.ts` (for example
   [src/core/admin.fixtures.ts](src/core/admin.fixtures.ts)). That suffix is excluded from the build
   and from coverage; a `*.test.ts` helper would instead run as an empty test file.

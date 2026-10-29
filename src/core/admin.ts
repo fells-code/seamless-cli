@@ -12,6 +12,7 @@ import {
   UsersListResponseSchema,
   type AddOrganizationMemberRequest,
   type CreateOrganizationRequest,
+  type DeviceReplacementRecoveryRequest,
   type DeviceReplacementRecoveryResponse,
   type UpdateOrganizationMemberRequest,
   type UpdateOrganizationRequest,
@@ -19,7 +20,8 @@ import {
 import { z } from "zod";
 import type { AuthClient } from "./authClient.js";
 import type { ApiResponse } from "./http.js";
-import { PermissionError } from "./systemConfig.js";
+import { PermissionError } from "./permissionError.js";
+import { forbidden } from "./stepUp.js";
 
 export { PermissionError };
 
@@ -116,7 +118,7 @@ async function call<T>(
     }
     res = await client.request<T>(path, init);
   }
-  if (res.status === 403) throw new PermissionError();
+  if (res.status === 403) throw forbidden(res);
   return res;
 }
 
@@ -166,31 +168,20 @@ export async function getUserDetail(
   return parse(UserDetailSchema, res.data, "a user");
 }
 
-export interface DeviceReplacementOptions {
-  revokeSessions: boolean;
-  removePasskeys: boolean;
-  disableTotp: boolean;
-}
+export type DeviceReplacementOptions = DeviceReplacementRecoveryRequest;
 
 export async function prepareDeviceReplacement(
   client: AuthClient,
   id: string,
   opts: DeviceReplacementOptions,
 ): Promise<DeviceReplacementRecoveryResponse> {
-  const res = await client.request<unknown>(
+  const res = await call<unknown>(
+    client,
+    "POST",
     `/admin/users/${encodeURIComponent(id)}/recovery/device-replacement`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(opts),
-    },
+    opts,
   );
   if (res.status === 404) throw apiError(res, `No user found with id ${id}`);
-  if (res.status === 401 || res.status === 403) {
-    throw new PermissionError(
-      "Admin-assisted device replacement requires an elevated step-up admin session, which the CLI cannot establish yet. Use the dashboard for this action.",
-    );
-  }
   if (!res.ok) throw apiError(res, "Could not prepare device replacement");
   return parse(
     DeviceReplacementRecoveryResponseSchema,

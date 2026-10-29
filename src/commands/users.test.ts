@@ -313,6 +313,8 @@ describe("runUsers credentials", () => {
   });
 });
 
+const PROOF = ["--proofing", "in_person", "--evidence-ref", "CASE-42"];
+
 describe("runUsers prepare-device-replacement", () => {
   it("prints usage and exits 1 when no id is given", async () => {
     await expect(
@@ -325,14 +327,14 @@ describe("runUsers prepare-device-replacement", () => {
 
   it("cancels when the prompt is cancelled", async () => {
     vi.mocked(isCancel).mockReturnValue(true);
-    await runUsers(["prepare-device-replacement", "u1"]);
+    await runUsers(["prepare-device-replacement", "u1", ...PROOF]);
     expect(logs()).toContain("Cancelled.");
     expect(vi.mocked(prepareDeviceReplacement)).not.toHaveBeenCalled();
   });
 
   it("cancels when the user declines", async () => {
     vi.mocked(confirm).mockResolvedValue(false);
-    await runUsers(["prepare-device-replacement", "u1"]);
+    await runUsers(["prepare-device-replacement", "u1", ...PROOF]);
     expect(logs()).toContain("Cancelled.");
     expect(vi.mocked(prepareDeviceReplacement)).not.toHaveBeenCalled();
   });
@@ -344,7 +346,7 @@ describe("runUsers prepare-device-replacement", () => {
       removedCredentials: 1,
       disabledTotpCredentials: 1,
     });
-    await runUsers(["prepare-device-replacement", "u1"]);
+    await runUsers(["prepare-device-replacement", "u1", ...PROOF]);
     expect(vi.mocked(confirm)).toHaveBeenCalledWith({
       message:
         "Prepare device replacement for u1? This will revoke all sessions, remove passkeys, disable TOTP.",
@@ -354,6 +356,7 @@ describe("runUsers prepare-device-replacement", () => {
       revokeSessions: true,
       removePasskeys: true,
       disableTotp: true,
+      proofing: { method: "in_person", evidenceRef: "CASE-42" },
     });
     expect(logs()).toContain("Prepared device replacement for u1.");
     expect(logs()).toContain("Revoked sessions: 2, removed credentials: 1, disabled TOTP: 1");
@@ -369,6 +372,7 @@ describe("runUsers prepare-device-replacement", () => {
     await runUsers([
       "prepare-device-replacement",
       "u1",
+      ...PROOF,
       "--keep-sessions",
       "--keep-passkeys",
       "--keep-totp",
@@ -381,8 +385,52 @@ describe("runUsers prepare-device-replacement", () => {
       revokeSessions: false,
       removePasskeys: false,
       disableTotp: false,
+      proofing: { method: "in_person", evidenceRef: "CASE-42" },
     });
     expect(logs()).toContain("Revoked sessions: 0, removed credentials: 0, disabled TOTP: 0");
+  });
+  it("records a remote exception with its approver", async () => {
+    vi.mocked(prepareDeviceReplacement).mockResolvedValue({
+      userId: "u1",
+      revokedSessions: 0,
+      removedCredentials: 0,
+      disabledTotpCredentials: 0,
+    });
+    await runUsers([
+      "prepare-device-replacement",
+      "u1",
+      "--proofing=remote_exception",
+      "--evidence-ref=INC-7",
+      "--approver",
+      "security-lead",
+      "--force",
+    ]);
+    expect(vi.mocked(prepareDeviceReplacement)).toHaveBeenCalledWith(fakeClient, "u1", {
+      revokeSessions: true,
+      removePasskeys: true,
+      disableTotp: true,
+      proofing: {
+        method: "remote_exception",
+        evidenceRef: "INC-7",
+        approver: "security-lead",
+      },
+    });
+  });
+
+  it.each([
+    ["no proofing at all", ["u1"], "--proofing is required"],
+    ["an unknown proofing method", ["u1", "--proofing", "video", "--evidence-ref", "C-1"], "--proofing is required"],
+    ["no evidence reference", ["u1", "--proofing", "in_person"], "--evidence-ref is required"],
+    ["a blank evidence reference", ["u1", "--proofing", "in_person", "--evidence-ref", "  "], "--evidence-ref is required"],
+    ["a blank approver", ["u1", ...["--proofing", "in_person", "--evidence-ref", "C-1"], "--approver", " "], "--approver must be"],
+  ])("refuses %s before asking anything", async (_label, args, message) => {
+    await expect(
+      runUsers(["prepare-device-replacement", ...args]),
+    ).rejects.toBeInstanceOf(ExitError);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(message));
+    expect(logs()).toContain("--proofing <in_person|remote_exception> --evidence-ref <ref>");
+    expect(vi.mocked(confirm)).not.toHaveBeenCalled();
+    expect(vi.mocked(prepareDeviceReplacement)).not.toHaveBeenCalled();
   });
 });
 
@@ -402,7 +450,7 @@ describe("users --force", () => {
   it("prepares a device replacement without confirming when forced", async () => {
     vi.mocked(prepareDeviceReplacement).mockResolvedValue({} as never);
 
-    await runUsers(["prepare-device-replacement", "u1", "--force"]);
+    await runUsers(["prepare-device-replacement", "u1", ...PROOF, "--force"]);
 
     expect(vi.mocked(confirm)).not.toHaveBeenCalled();
     expect(vi.mocked(prepareDeviceReplacement)).toHaveBeenCalled();

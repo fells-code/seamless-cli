@@ -15,6 +15,8 @@ import {
   writeReport,
   type PreparedRow,
 } from "./migrate.js";
+import { PermissionError } from "./permissionError.js";
+import { STEP_UP_REQUIRED_MESSAGE, StepUpError } from "./stepUp.js";
 
 const tmp: string[] = [];
 function tmpDir() {
@@ -185,6 +187,57 @@ describe("runImport", () => {
     expect(err).toBeInstanceOf(ImportBatchError);
     expect(err.outcomes).toHaveLength(200);
     expect(err.message).toMatch(/after 200 of 250 rows/);
+  });
+
+  const stepUpRequired = {
+    ok: false,
+    status: 403,
+    data: { error: "step_up_required", fresh: false, maxAgeSeconds: 300 },
+  };
+
+  it("reports a missing step-up on the first batch as a StepUpError", async () => {
+    const c = client([stepUpRequired]);
+    const err = await runImport(c, "csv", rowsOf(10), true).catch((e) => e);
+
+    expect(err).toBeInstanceOf(StepUpError);
+    expect(err.message).toBe(STEP_UP_REQUIRED_MESSAGE);
+  });
+
+  it("keeps earlier batches when a later one still lacks a step-up", async () => {
+    const c = client([okBatch(200), stepUpRequired]);
+    const err = await runImport(c, "csv", rowsOf(250), false).catch((e) => e);
+
+    expect(err).toBeInstanceOf(ImportBatchError);
+    expect(err.outcomes).toHaveLength(200);
+    expect(err.message).toBe(
+      `${STEP_UP_REQUIRED_MESSAGE} Stopped after 200 of 250 rows.`,
+    );
+  });
+
+  it("keeps earlier batches when the step-up for a later one fails", async () => {
+    const c = client([okBatch(200)]);
+    c.request.mockRejectedValueOnce(new StepUpError("Too many code attempts."));
+    const err = await runImport(c, "csv", rowsOf(250), false).catch((e) => e);
+
+    expect(err).toBeInstanceOf(ImportBatchError);
+    expect(err.outcomes).toHaveLength(200);
+    expect(err.message).toBe("Too many code attempts. Stopped after 200 of 250 rows.");
+  });
+
+  it("passes a failure on the first batch through unchanged", async () => {
+    const c = client([]);
+    const cause = new StepUpError("Too many code attempts.");
+    c.request.mockRejectedValueOnce(cause);
+
+    await expect(runImport(c, "csv", rowsOf(10), false)).rejects.toBe(cause);
+  });
+
+  it("maps a missing admin role to a PermissionError", async () => {
+    const c = client([{ ok: false, status: 403, data: { error: "Forbidden" } }]);
+    const err = await runImport(c, "csv", rowsOf(10), false).catch((e) => e);
+
+    expect(err).toBeInstanceOf(PermissionError);
+    expect(err).not.toBeInstanceOf(StepUpError);
   });
 });
 

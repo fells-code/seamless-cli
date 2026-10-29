@@ -586,3 +586,160 @@ describe("a headless session", () => {
     );
   });
 });
+
+describe("step-up on admin writes", () => {
+  const stepUpRequired = () =>
+    json({ error: "step_up_required", fresh: false, maxAgeSeconds: 300 }, 403);
+
+  beforeEach(async () => {
+    await saveTokens(profile, { accessToken: "access", refreshToken: "refresh" });
+  });
+
+  it("steps up the same session and retries the request once", async () => {
+    const calls = mockFetch([stepUpRequired, () => json({ success: true })]);
+    const stepUp = vi.fn(async () => {});
+
+    const client = await createAuthClient({ stepUp });
+    const res = await client.request("/admin/users", {
+      method: "DELETE",
+      body: JSON.stringify({ userId: "u1" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(stepUp).toHaveBeenCalledWith(client);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].init.method).toBe("DELETE");
+    expect(calls[1].init.body).toBe(JSON.stringify({ userId: "u1" }));
+    expect(authHeader(calls[1])).toBe("Bearer access");
+  });
+
+  it("returns a second refusal to the caller instead of looping", async () => {
+    const calls = mockFetch([stepUpRequired]);
+    const stepUp = vi.fn(async () => {});
+
+    const client = await createAuthClient({ stepUp });
+    const res = await client.post("/admin/organizations", { name: "Acme" });
+
+    expect(res.status).toBe(403);
+    expect(stepUp).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("steps up again when a later request finds the window lapsed", async () => {
+    mockFetch([
+      stepUpRequired,
+      () => json({ ok: 1 }),
+      () => json({ ok: 2 }),
+      stepUpRequired,
+      () => json({ ok: 3 }),
+    ]);
+    const stepUp = vi.fn(async () => {});
+
+    const client = await createAuthClient({ stepUp });
+    for (let i = 0; i < 3; i++) {
+      expect((await client.post("/admin/users/import", {})).ok).toBe(true);
+    }
+
+    expect(stepUp).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares one step-up between concurrent refusals", async () => {
+    mockFetch([stepUpRequired, stepUpRequired, () => json({ ok: true })]);
+    let release!: () => void;
+    const stepUp = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    const client = await createAuthClient({ stepUp });
+    const both = Promise.all([client.post("/a"), client.post("/b")]);
+    await vi.waitFor(() => expect(stepUp).toHaveBeenCalled());
+    release();
+    const results = await both;
+
+    expect(stepUp).toHaveBeenCalledTimes(1);
+    expect(results.every((r) => r.ok)).toBe(true);
+  });
+
+  it("does not retry when the step-up fails", async () => {
+    const calls = mockFetch([stepUpRequired]);
+    const stepUp = vi.fn(async () => {
+      throw new Error("no code");
+    });
+
+    const client = await createAuthClient({ stepUp });
+    await expect(client.post("/admin/organizations", {})).rejects.toThrow("no code");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("leaves a 403 for a missing admin role alone", async () => {
+    const calls = mockFetch([() => json({ error: "Forbidden" }, 403)]);
+    const stepUp = vi.fn(async () => {});
+
+    const client = await createAuthClient({ stepUp });
+    const res = await client.get("/admin/users");
+
+    expect(res.status).toBe(403);
+    expect(stepUp).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(1);
+  });
+
+  it("returns a rejected code without refreshing or clearing the session", async () => {
+    const calls = mockFetch([() => json({ error: "totp_verification_failed" }, 401)]);
+
+    const client = await createAuthClient({ stepUp: vi.fn() });
+    const res = await client.post("/totp/verify-mfa", { code: "123456" });
+
+    expect(res.status).toBe(401);
+    expect(calls).toHaveLength(1);
+    expect((await getTokens(profile))?.refreshToken).toBe("refresh");
+  });
+
+  it("steps up with the authenticator app by default", async () => {
+    vi.stubEnv("SEAMLESS_TOTP_CODE", "123456");
+    const calls = mockFetch([
+      stepUpRequired,
+      () => json({ enabled: true, verifiedAt: null, lastUsedAt: null }),
+      () =>
+        json({
+          message: "Success",
+          fresh: true,
+          method: "totp",
+          verifiedAt: "2026-10-28T00:00:00.000Z",
+          expiresAt: "2026-10-28T00:05:00.000Z",
+          maxAgeSeconds: 300,
+        }),
+      () => json({ success: true }),
+    ]);
+
+    const client = await createAuthClient();
+    const res = await client.post("/admin/organizations", { name: "Acme" });
+    vi.unstubAllEnvs();
+
+    expect(res.ok).toBe(true);
+    expect(calls.map((c) => c.url)).toEqual([
+      "https://auth.example.com/admin/organizations",
+      "https://auth.example.com/totp/status",
+      "https://auth.example.com/totp/verify-mfa",
+      "https://auth.example.com/admin/organizations",
+    ]);
+    expect(calls[2].init.body).toBe(JSON.stringify({ code: "123456" }));
+  });
+
+  it("never steps up a portal session", async () => {
+    process.env.SEAMLESS_PORTAL_AUTH_URL = "https://portal.example.com";
+    const portal = { name: PORTAL_PROFILE_NAME, instanceUrl: "https://portal.example.com" };
+    savePortalSession({ instanceUrl: portal.instanceUrl });
+    await saveTokens(portal, { accessToken: "pa", refreshToken: "pr" });
+    const calls = mockFetch([stepUpRequired]);
+
+    const client = await createPortalClient();
+    const res = await client.post("/anything");
+    delete process.env.SEAMLESS_PORTAL_AUTH_URL;
+
+    expect(res.status).toBe(403);
+    expect(calls).toHaveLength(1);
+  });
+});
