@@ -259,12 +259,13 @@ Depending on your selections, the CLI generates a project like this:
 
 ```text
 my-app/
-├─ auth/                  # Seamless Auth server (local auth mode only)
+├─ auth/                  # Seamless Auth server source (local auth mode), or just its .env
 ├─ web/                   # React web application, or a full-stack app (see below)
 ├─ api/                   # Express or Fastify API server (not for a full-stack app)
 ├─ mobile/                # Expo mobile app (--mobile only)
 ├─ admin/                 # Admin console source (--admin=source only)
-├─ docker-compose.yml     # not written for a managed project
+├─ docker-compose.yml     # not written for a managed project; holds no secrets
+├─ .gitignore             # keeps every .env and key file out of git
 ├─ seamless.config.json
 ├─ AGENTS.md              # guide for coding agents, written from your choices
 └─ CLAUDE.md              # "See @AGENTS.md", so Claude Code loads it
@@ -282,9 +283,10 @@ one already there when you scaffold into a non-empty directory with `--force`.
 - API communicates with the auth server
 - Auth manages sessions and tokens
 
-The API and the auth server share one service token. The app reads it as `SEAMLESS_SERVICE_TOKEN`
-(in `api/.env`, or `web/.env` for a full-stack app) and the auth server as `API_SERVICE_TOKEN`; the
-generated `docker-compose.yml` sets both to the same value and says so in a comment.
+The API and the auth server share one service token, `SEAMLESS_SERVICE_TOKEN`, written to
+`auth/.env` and to `api/.env` (or `web/.env` for a full-stack app). Every secret lives in those
+`.env` files, written with mode 0600 and loaded by compose through `env_file:`, so the generated
+`docker-compose.yml` holds none and the root `.gitignore` keeps them out of git.
 
 ### Full-stack templates
 
@@ -501,7 +503,7 @@ OTP registration creates the account before the address is verified, but an unve
 cannot sign in, so only someone who receives the code at that address can use it.
 
 **The grant is signup-time only.** Changing `OWNER_EMAIL` after an account already exists promotes
-nobody. To hand ownership to a different address, set it in `auth/` (or the compose file) before that
+nobody. To hand ownership to a different address, set it in `auth/.env` before that
 person registers.
 
 ## Authenticating against an instance

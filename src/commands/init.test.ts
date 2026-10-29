@@ -34,6 +34,8 @@ import {
   confirmLocalFallback,
 } from "../prompts/initMode.js";
 import { parseEnv, writeEnv } from "../core/env.js";
+import { mergeEnvFile } from "../core/envFile.js";
+import { ensureGitignore, SECRET_IGNORES } from "../core/gitignore.js";
 import { fetchActiveJwksKid } from "../core/jwksKid.js";
 
 import { CancelledError } from "../core/cancel.js";
@@ -128,6 +130,13 @@ vi.mock("../core/config.js", () => ({
 vi.mock("../core/env.js", () => ({
   parseEnv: vi.fn(() => ({})),
   writeEnv: vi.fn(),
+}));
+vi.mock("../core/envFile.js", () => ({
+  mergeEnvFile: vi.fn(),
+}));
+vi.mock("../core/gitignore.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../core/gitignore.js")>()),
+  ensureGitignore: vi.fn(),
 }));
 vi.mock("../core/secrets.js", () => ({
   generateSecret: vi.fn(() => "generated-secret"),
@@ -521,6 +530,32 @@ describe("scaffoldLocal", () => {
       }),
     );
     expect(printSuccessOutput).toHaveBeenCalled();
+  });
+
+  it("puts the app's service token in api/.env and git-ignores every .env", async () => {
+    vi.mocked(runProjectSetupPrompts).mockResolvedValue({
+      webTemplateId: "web-basic",
+      apiTemplateId: "api-express",
+      authMode: "docker",
+      adminMode: "api",
+      includeAdmin: true,
+      ownerEmail: "dev@example.com",
+    } as never);
+    vi.mocked(generateDockerCompose).mockResolvedValue({
+      apiToken: "docker-token",
+      kid: "docker-kid",
+    } as never);
+
+    await runCLI(undefined, []);
+
+    expect(mergeEnvFile).toHaveBeenCalledWith("/work/api/.env", {
+      set: { SEAMLESS_SERVICE_TOKEN: "docker-token" },
+    });
+    expect(ensureGitignore).toHaveBeenCalledWith("/work", SECRET_IGNORES);
+    expect(SECRET_IGNORES).toEqual(expect.arrayContaining([".env", ".env.*", "keys/"]));
+    expect(vi.mocked(mergeEnvFile).mock.invocationCallOrder[0]).toBeGreaterThan(
+      vi.mocked(applyTemplateEnv).mock.invocationCallOrder.at(-1)!,
+    );
   });
 
   it("places the mobile starter and records it when one is chosen", async () => {
@@ -2186,6 +2221,8 @@ describe("full-stack templates", () => {
 
   it("scaffolds the full-stack compose stack and config, with no api", async () => {
     await runCLI(undefined, ["nextjs"], { local: true, yes: true });
+
+    expect(vi.mocked(mergeEnvFile).mock.calls[0][0]).toBe("/work/web/.env");
 
     expect(generateDockerCompose).toHaveBeenCalledWith(
       CWD,

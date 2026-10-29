@@ -68,12 +68,17 @@ export function buildAgentsMd(opts: AgentsDocOptions): string {
       "- `auth/`: a clone of the Seamless Auth server source, run in development mode by compose",
       "  (`auth/Dockerfile.dev`, source mounted). Its settings are in `auth/.env`.",
     );
+  } else if (!managed) {
+    add("- `auth/.env`: the auth server's settings and secrets, loaded by compose.");
   }
   if (adminMode === "source") {
     add("- `admin/`: the admin console source, built by compose. Yours to edit.");
   }
   if (!managed) {
-    add("- `docker-compose.yml`: the whole local stack. Ports are bound to 127.0.0.1 only.");
+    add(
+      "- `docker-compose.yml`: the whole local stack. Ports are bound to 127.0.0.1 only. It holds",
+      "  no secrets: each service loads them from its own `.env`, which `.gitignore` keeps out of git.",
+    );
   }
   add("- `seamless.config.json`: the choices init made. `seamless check` reads it.", "", "## Services", "");
 
@@ -124,14 +129,12 @@ export function buildAgentsMd(opts: AgentsDocOptions): string {
   );
 
   if (!managed && opts.ownerEmail) {
-    const where =
-      authMode === "local" ? "`auth/.env`" : "the `auth` service of `docker-compose.yml`";
     add(
       "",
       "## First admin",
       "",
       `\`${opts.ownerEmail}\` is the owner: registering with it grants the admin role. The grant`,
-      `happens at signup, so change \`OWNER_EMAIL\` in ${where}`,
+      "happens at signup, so change `OWNER_EMAIL` in `auth/.env`",
       "before registering if it is wrong. When the page asks for a code, `npx seamless-cli owner-code`",
       "prints it, so nobody needs the container logs.",
     );

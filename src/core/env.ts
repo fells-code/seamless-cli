@@ -68,5 +68,12 @@ export function writeEnv(filePath: string, env: Record<string, string>) {
     .map(([k, v]) => `${k}=${formatValue(v)}`)
     .join("\n");
 
-  fs.writeFileSync(filePath, content + "\n");
+  writePrivateFile(filePath, content + "\n");
+}
+
+// The mode option only applies when the file is created, so an existing file
+// (an earlier scaffold, or one written under the default umask) is chmodded too.
+export function writePrivateFile(filePath: string, content: string) {
+  fs.writeFileSync(filePath, content, { mode: 0o600 });
+  fs.chmodSync(filePath, 0o600);
 }

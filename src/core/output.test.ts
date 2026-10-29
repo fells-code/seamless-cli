@@ -55,6 +55,9 @@ describe("printSuccessOutput", () => {
     expect(out).toContain("http://localhost:3000");
     expect(out).toContain("http://localhost:5173");
     expect(out).toContain("http://localhost:5174");
+    expect(out).toContain(
+      "Secrets are generated into auth/.env and api/.env, which .gitignore keeps out of git",
+    );
     expect(out).toContain("Docs: ");
     expect(out).toContain("https://docs.seamlessauth.com");
     expect(out).toContain("Setup complete.");

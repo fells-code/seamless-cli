@@ -37,8 +37,8 @@ function composeFileOf(root: string): string {
 }
 
 /**
- * The owner address init wrote: in auth/.env when the auth server runs from source
- * (--auth=local), otherwise inline in the compose file's auth service.
+ * The owner address init wrote to auth/.env. Projects scaffolded before that file
+ * existed for --auth=docker have it inline in the compose file's auth service.
  */
 export function findOwnerEmail(root: string): string | undefined {
   const envPath = path.join(root, "auth", ".env");

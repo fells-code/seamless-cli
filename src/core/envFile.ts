@@ -1,6 +1,6 @@
 import fs from "fs";
 
-import { formatValue, parseEnvString } from "./env.js";
+import { formatValue, parseEnvString, writePrivateFile } from "./env.js";
 
 export interface EnvMergeResult {
   // Keys written with a new value.
@@ -59,7 +59,7 @@ export function mergeEnvFile(
 
   result.written = Object.keys(wanted);
   if (result.written.length > 0 || existing === "") {
-    fs.writeFileSync(filePath, out.join("\n") + "\n");
+    writePrivateFile(filePath, out.join("\n") + "\n");
   }
   return result;
 }

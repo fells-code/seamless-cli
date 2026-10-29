@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fetchEnvExample } from "../../core/fetch.js";
-import { parseEnv, parseEnvString } from "../../core/env.js";
+import { parseEnv, parseEnvString, writePrivateFile } from "../../core/env.js";
 import { generateSecret } from "../../core/secrets.js";
 import {
   buildOAuthAuthEnv,
@@ -200,7 +200,7 @@ async function authService(
     };
   }
 
-  return await authServiceDocker(oauth, adminMode, ownerEmail, fullStack);
+  return await authServiceDocker(root, oauth, adminMode, ownerEmail, fullStack);
 }
 
 // The app API's CORS allowlist. The console is same-origin here in API-served
@@ -212,10 +212,6 @@ function apiUiOrigins(adminMode: AdminMode): string {
   }
   return web;
 }
-
-// Written above the app's token in the generated compose file, where both
-// names sit side by side and a reader would otherwise wonder which is right.
-const SERVICE_TOKEN_COMMENT = `      # The same secret as the auth service's SEAMLESS_SERVICE_TOKEN.`;
 
 function apiService(shared: any, adminMode: AdminMode) {
   return `
@@ -231,8 +227,6 @@ function apiService(shared: any, adminMode: AdminMode) {
       AUTH_SERVER_ISSUER: ${LOCAL_AUTH_ISSUER}
       UI_ORIGINS: ${apiUiOrigins(adminMode)}
       DB_HOST: db
-${SERVICE_TOKEN_COMMENT}
-      SEAMLESS_SERVICE_TOKEN: ${shared.apiToken}
       JWKS_KID: ${shared.kid}
     volumes:
       - ./api:/app
@@ -285,8 +279,6 @@ function fullStackWebService(shared: any) {
     environment:
       AUTH_SERVER_URL: ${LOCAL_AUTH_ISSUER}
       AUTH_SERVER_ISSUER: ${LOCAL_AUTH_ISSUER}
-${SERVICE_TOKEN_COMMENT}
-      SEAMLESS_SERVICE_TOKEN: ${shared.apiToken}
       JWKS_KID: ${shared.kid}
     volumes:
       - ./web:/app
@@ -306,6 +298,7 @@ ${SERVICE_TOKEN_COMMENT}
 }
 
 async function authServiceDocker(
+  root: string,
   oauth: CollectedOAuthProvider[] = [],
   adminMode: AdminMode = "api",
   ownerEmail?: string,
@@ -323,7 +316,10 @@ async function authServiceDocker(
     fullStack,
   );
 
-  const envBlock = envToDockerBlock(env);
+  // The image needs no source tree, so auth/ holds only its environment here,
+  // beside where --auth=local keeps it.
+  fs.mkdirSync(path.join(root, "auth"), { recursive: true });
+  writeEnvFile(path.join(root, "auth", ".env"), env);
 
   return {
     service: `
@@ -332,8 +328,8 @@ async function authServiceDocker(
     container_name: seamless-auth
     ports:
       - "127.0.0.1:5312:5312"
-    environment:
-${envBlock}
+    env_file:
+      - ./auth/.env
     volumes:
       # The dev signing key pair is generated into /app/keys on first use. Without
       # a volume a recreated container mints a new pair under the same kid, and
@@ -433,10 +429,12 @@ export function buildAuthEnv(
   env.SEAMLESS_SERVICE_TOKEN = apiToken;
   delete env.API_SERVICE_TOKEN;
 
-  // Dedicated secrets the auth server otherwise leaves empty (falling back to the
-  // service token). Generate real ones so a scaffolded stack is production-shaped.
+  // The auth server's own secrets (its AUTH_SECRETS). Before v0.20 an unset one
+  // fell back to the service token; v0.20 requires each one whose feature is in
+  // use. OAUTH_STATE_SECRET comes from buildOAuthAuthEnv when providers are set.
   env.REFRESH_TOKEN_LOOKUP_SECRET = generateSecret(32);
   env.TOTP_SECRET_ENCRYPTION_KEY = generateSecret(32);
+  env.DECOY_SUBJECT_SECRET = generateSecret(32);
 
   env.APP_ORIGINS = "http://localhost:3000";
   env.ORIGINS = adminOrigins(adminMode, fullStack);
@@ -472,26 +470,6 @@ export function buildAuthEnv(
       kid,
     },
   };
-}
-
-export function envToDockerBlock(env: Record<string, string>) {
-  return Object.entries(env)
-    .map(([k, v]) => {
-      if (v.includes("\n")) {
-        return `      ${k}: |\n${indentMultiline(v, 8)}`;
-      }
-
-      return `      ${k}: ${JSON.stringify(v)}`;
-    })
-    .join("\n");
-}
-
-function indentMultiline(value: string, spaces: number) {
-  const indent = " ".repeat(spaces);
-  return value
-    .split("\n")
-    .map((line) => `${indent}${line}`)
-    .join("\n");
 }
 
 export async function configureAuthLocalEnv(
@@ -537,7 +515,7 @@ function writeEnvFile(filePath: string, env: Record<string, string>) {
     })
     .join("\n");
 
-  fs.writeFileSync(filePath, content + "\n");
+  writePrivateFile(filePath, content + "\n");
 }
 
 function escapeMultiline(value: string) {

@@ -58,7 +58,9 @@ describe("buildAgentsMd", () => {
     expect(doc).toContain("`docker compose up`");
     expect(doc).toContain("`you@example.com` is the owner");
     expect(doc).toContain("`npx seamless-cli owner-code`");
-    expect(doc).toContain("the `auth` service of `docker-compose.yml`");
+    expect(doc).toContain("change `OWNER_EMAIL` in `auth/.env`");
+    expect(doc).toContain("- `auth/.env`: the auth server's settings and secrets");
+    expect(doc).toContain("It holds\n  no secrets");
     expect(doc).toContain("Use the SDK in `web/` and the adapter in `api/`.");
     expect(doc).not.toContain("`auth/`");
   });

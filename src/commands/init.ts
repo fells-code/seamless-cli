@@ -65,7 +65,10 @@ import {
   appServiceTokenVar,
   LEGACY_SERVICE_TOKEN_VAR,
   legacyServiceTokenNote,
+  SERVICE_TOKEN_VAR,
 } from "../core/serviceToken.js";
+import { mergeEnvFile } from "../core/envFile.js";
+import { ensureGitignore, SECRET_IGNORES } from "../core/gitignore.js";
 import { fetchActiveJwksKid } from "../core/jwksKid.js";
 import {
   buildScaffoldDatabaseUrl,
@@ -623,6 +626,17 @@ async function scaffoldLocal(
   for (const { manifest, dir } of selected) {
     applyTemplateEnv(dir, manifest, ctx);
   }
+
+  // The compose file references the app's env_file and no longer sets the token
+  // inline, so the backend's .env carries it under the name apps read.
+  const backendEnv = path.join(
+    root,
+    answers.apiTemplateId === undefined ? "web" : "api",
+    ".env",
+  );
+  mergeEnvFile(backendEnv, { set: { [SERVICE_TOKEN_VAR]: sharedConfig.apiToken } });
+
+  ensureGitignore(root, SECRET_IGNORES);
 
   const webEntry = findEntry(source.registry.templates, answers.webTemplateId);
   const apiEntry = answers.apiTemplateId
