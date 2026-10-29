@@ -24,6 +24,7 @@ import {
   apiUser,
   apiUserDetail,
 } from "./admin.fixtures.js";
+import { STEP_UP_REQUIRED_MESSAGE, StepUpError } from "./stepUp.js";
 
 function response<T>(status: number, data: T | null): ApiResponse<T> {
   return { ok: status >= 200 && status < 300, status, data, headers: new Headers() };
@@ -136,21 +137,54 @@ describe("users", () => {
     expect(detail.credentials).toHaveLength(2);
   });
 
-  it("explains the step-up requirement for device replacement", async () => {
-    const { client, calls } = fakeClient(() => response(401, { error: "step up" }));
+  const proofing = { method: "in_person" as const, evidenceRef: "CASE-42" };
+
+  it("sends the device replacement options with the proofing record", async () => {
+    const counts = {
+      userId: "u1",
+      revokedSessions: 0,
+      removedCredentials: 0,
+      disabledTotpCredentials: 0,
+    };
+    const { client, calls } = fakeClient(() => response(200, counts));
+    await prepareDeviceReplacement(client, "u1", {
+      revokeSessions: true,
+      removePasskeys: true,
+      disableTotp: true,
+      proofing,
+    });
+    expect(calls[0]).toEqual({
+      method: "POST",
+      path: "/admin/users/u1/recovery/device-replacement",
+      body: {
+        revokeSessions: true,
+        removePasskeys: true,
+        disableTotp: true,
+        proofing,
+      },
+    });
+  });
+
+  it("reports a missing user on device replacement", async () => {
+    const { client } = fakeClient(() => response(404, { error: "User not found" }));
     await expect(
       prepareDeviceReplacement(client, "u1", {
         revokeSessions: true,
         removePasskeys: true,
         disableTotp: true,
+        proofing,
       }),
-    ).rejects.toThrow(/step-up/i);
-    expect(calls[0].path).toBe("/admin/users/u1/recovery/device-replacement");
-    expect(calls[0].body).toEqual({
-      revokeSessions: true,
-      removePasskeys: true,
-      disableTotp: true,
-    });
+    ).rejects.toThrow("No user found with id u1 (404: User not found).");
+  });
+
+  it("maps a step_up_required 403 to a StepUpError, not the admin-role message", async () => {
+    const { client } = fakeClient(() =>
+      response(403, { error: "step_up_required", fresh: false, maxAgeSeconds: 300 }),
+    );
+    const err = await deleteUser(client, "u1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepUpError);
+    expect(err).toBeInstanceOf(PermissionError);
+    expect((err as Error).message).toBe(STEP_UP_REQUIRED_MESSAGE);
   });
 
   it("maps 403 to a PermissionError", async () => {
@@ -170,6 +204,7 @@ describe("users", () => {
       revokeSessions: true,
       removePasskeys: false,
       disableTotp: false,
+      proofing,
     });
     expect(result).toEqual(counts);
   });
@@ -181,6 +216,7 @@ describe("users", () => {
         revokeSessions: false,
         removePasskeys: false,
         disableTotp: false,
+        proofing,
       }),
     ).rejects.toThrow(/Could not prepare device replacement/);
   });

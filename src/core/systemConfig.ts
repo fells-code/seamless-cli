@@ -10,7 +10,11 @@ import {
 } from "@seamless-auth/types";
 import { z } from "zod";
 import type { AuthClient } from "./authClient.js";
+import { PermissionError } from "./permissionError.js";
 import { scrubTokens } from "./redact.js";
+import { forbidden } from "./stepUp.js";
+
+export { PermissionError };
 
 // What an instance stores, typed with the shared schema's input side but every key
 // optional and others allowed: the instance may be older or newer than this CLI's
@@ -67,15 +71,6 @@ const WRITABLE = new Set<string>(WRITABLE_KEYS);
 
 const KNOWN = new Set<string>(Object.keys(SystemConfigSchema.shape));
 
-export class PermissionError extends Error {
-  constructor(
-    message = "You do not have permission for this action. It requires an admin role on the instance.",
-  ) {
-    super(message);
-    this.name = "PermissionError";
-  }
-}
-
 export class ConfigApiError extends Error {
   constructor(message: string) {
     super(message);
@@ -89,7 +84,7 @@ export async function getSystemConfig(
   client: AuthClient,
 ): Promise<SystemConfig> {
   const res = await client.get<unknown>("/system-config/admin");
-  if (res.status === 403) throw new PermissionError();
+  if (res.status === 403) throw forbidden(res);
   if (!res.ok) {
     throw new ConfigApiError(`Could not read system config (${res.status}).`);
   }
@@ -104,7 +99,7 @@ export async function getSystemConfig(
 
 export async function getRoles(client: AuthClient): Promise<string[]> {
   const res = await client.get<unknown>("/system-config/roles");
-  if (res.status === 403) throw new PermissionError();
+  if (res.status === 403) throw forbidden(res);
   if (!res.ok) {
     throw new ConfigApiError(`Could not read roles (${res.status}).`);
   }
@@ -132,7 +127,7 @@ export async function patchSystemConfig(
     body: JSON.stringify(patch),
   });
 
-  if (res.status === 403) throw new PermissionError();
+  if (res.status === 403) throw forbidden(res);
   if (res.status === 400) {
     const reason = res.data?.error ?? "Invalid configuration";
     const details = res.data?.details
@@ -174,7 +169,7 @@ function providerMutationError(
   action: string,
   id?: unknown,
 ): never {
-  if (res.status === 403) throw new PermissionError();
+  if (res.status === 403) throw forbidden(res);
 
   const label = id ? ` "${String(id)}"` : "";
   if (res.status === 404) {
@@ -199,7 +194,7 @@ export async function listOAuthProviders(
   client: AuthClient,
 ): Promise<OAuthProvider[]> {
   const res = await client.get<unknown>(OAUTH_PROVIDERS_PATH);
-  if (res.status === 403) throw new PermissionError();
+  if (res.status === 403) throw forbidden(res);
   if (!res.ok) {
     throw new ConfigApiError(`Could not list OAuth providers (${res.status}).`);
   }

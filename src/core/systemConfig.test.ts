@@ -22,6 +22,7 @@ import {
   updateOAuthProvider,
   WRITABLE_KEYS,
 } from "./systemConfig.js";
+import { STEP_UP_REQUIRED_MESSAGE, StepUpError } from "./stepUp.js";
 
 function response<T>(status: number, data: T | null): ApiResponse<T> {
   return { ok: status >= 200 && status < 300, status, data, headers: new Headers() };
@@ -148,6 +149,20 @@ describe("patchSystemConfig", () => {
     await expect(
       patchSystemConfig(client, { app_name: "x" }),
     ).rejects.toBeInstanceOf(PermissionError);
+  });
+
+  it.each([
+    ["a config patch", (c: AuthClient) => patchSystemConfig(c, { app_name: "x" })],
+    ["adding an OAuth provider", (c: AuthClient) => createOAuthProvider(c, { id: "google" })],
+    ["updating an OAuth provider", (c: AuthClient) => updateOAuthProvider(c, "google", {})],
+    ["removing an OAuth provider", (c: AuthClient) => deleteOAuthProvider(c, "google")],
+  ])("reports a missing step-up on %s as a StepUpError", async (_label, run) => {
+    const { client } = fakeClient(() =>
+      response(403, { error: "step_up_required", fresh: false, maxAgeSeconds: 300 }),
+    );
+    const err = await run(client).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StepUpError);
+    expect((err as Error).message).toBe(STEP_UP_REQUIRED_MESSAGE);
   });
 
   it("throws a ConfigApiError on other failures", async () => {

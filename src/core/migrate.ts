@@ -8,10 +8,13 @@ import {
   type UserImportResult,
   type UserImportRow,
 } from "@seamless-auth/types";
-import { AdminApiError, PermissionError } from "./admin.js";
+import { AdminApiError } from "./admin.js";
 import type { AuthClient } from "./authClient.js";
 import type { CsvRecord } from "./csv.js";
 import { toCsv } from "./csv.js";
+import { errorMessage } from "./errors.js";
+import type { ApiResponse } from "./http.js";
+import { forbidden } from "./stepUp.js";
 
 export type MappedField =
   | "externalId"
@@ -246,13 +249,28 @@ export async function runImport(
 
   for (let start = 0; start < rows.length; start += USER_IMPORT_MAX_ROWS) {
     const batch = rows.slice(start, start + USER_IMPORT_MAX_ROWS);
-    const res = await client.request<ImportUsersResponse>("/admin/users/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, dryRun, users: batch.map((r) => r.user) }),
-    });
+    // A step-up can lapse between batches, and one that fails part way through
+    // must still leave a report of the rows that were applied.
+    const stopped = (err: unknown): unknown =>
+      outcomes.length === 0
+        ? err
+        : new ImportBatchError(
+            `${errorMessage(err)} Stopped after ${outcomes.length} of ${rows.length} rows.`,
+            outcomes,
+          );
 
-    if (res.status === 403) throw new PermissionError();
+    let res: ApiResponse<ImportUsersResponse>;
+    try {
+      res = await client.request<ImportUsersResponse>("/admin/users/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source, dryRun, users: batch.map((r) => r.user) }),
+      });
+    } catch (err) {
+      throw stopped(err);
+    }
+
+    if (res.status === 403) throw stopped(forbidden(res));
     if (res.status === 404 && outcomes.length === 0) {
       throw new AdminApiError(
         "This instance does not support user import. Upgrade the auth server to a release with POST /admin/users/import.",
