@@ -114,8 +114,22 @@ echo "==> users list"
 seamless users list --json | jq -e --arg e "$OWNER" 'any(.[]; .email == $e)' >/dev/null ||
   fail "users list does not include the owner."
 
+# From auth server v0.20 every admin write needs a fresh step-up, which the CLI does
+# with a code from the user's authenticator app. Give the owner one, check that a
+# write without a code is refused with the step-up message, then let the first write
+# step up from SEAMLESS_TOTP_CODE. The step-up then covers the rest of the run.
+echo "==> admin step-up with an authenticator app"
+TOTP_STATE="$WORKDIR/totp.json"
+node "$REPO_ROOT/scripts/e2e-authenticator.mjs" enroll "$TOTP_STATE"
+if refused="$(seamless org create "No Step-up" --slug no-step-up 2>&1 </dev/null)"; then
+  fail "an admin write without a step-up succeeded."
+fi
+grep -q "needs a recent step-up" <<<"$refused" ||
+  fail "an admin write without a step-up was not refused with the step-up message: $refused"
+
 echo "==> org create, get, update, list"
-created="$(seamless org create "E2E Org" --slug e2e-org)"
+created="$(SEAMLESS_TOTP_CODE="$(node "$REPO_ROOT/scripts/e2e-authenticator.mjs" code "$TOTP_STATE")" \
+  seamless org create "E2E Org" --slug e2e-org </dev/null)"
 org_id="$(sed -n 's/^Created organization \(.*\)\.$/\1/p' <<<"$created")"
 [ -n "$org_id" ] || fail "org create printed no id: $created"
 seamless org get "$org_id" --json | jq -e '.slug == "e2e-org"' >/dev/null ||
