@@ -1,3 +1,4 @@
+import { RecoveryProofingSchema } from "@seamless-auth/types";
 import kleur from "kleur";
 import { extractFlag } from "../core/args.js";
 import { createAuthClient, type AuthClient } from "../core/authClient.js";
@@ -126,22 +127,51 @@ async function usersCredentials(
   }
 }
 
+const DEVICE_REPLACEMENT_USAGE =
+  "seamless users prepare-device-replacement <id> --proofing <in_person|remote_exception> --evidence-ref <ref> [--approver <name>]";
+
+// The instance records how the user's identity was established before it clears
+// their credentials, so the request cannot be sent without it.
+const PROOFING_ERRORS: Record<string, string> = {
+  method:
+    "--proofing is required: in_person when you verified the user face to face, remote_exception when you did it remotely under an approved exception.",
+  evidenceRef:
+    "--evidence-ref is required (up to 200 characters): a ticket or case number that records the proofing. It is written to the audit trail, so do not put personal data in it.",
+  approver: "--approver must be 1 to 200 characters.",
+};
+
 async function usersPrepareDeviceReplacement(
   client: AuthClient,
   rest: string[],
 ): Promise<void> {
-  const id = rest.find((arg) => !arg.startsWith("--"));
+  const method = extractFlag(rest, "proofing");
+  const evidence = extractFlag(method.rest, "evidence-ref");
+  const approver = extractFlag(evidence.rest, "approver");
+  const operands = approver.rest;
+
+  const id = operands.find((arg) => !arg.startsWith("--"));
   if (!id) {
-    console.error(
-      kleur.red("Usage: seamless users prepare-device-replacement <id>"),
-    );
+    console.error(kleur.red(`Usage: ${DEVICE_REPLACEMENT_USAGE}`));
+    process.exit(1);
+  }
+
+  const proofing = RecoveryProofingSchema.safeParse({
+    method: method.value,
+    evidenceRef: evidence.value,
+    ...(approver.value !== undefined ? { approver: approver.value } : {}),
+  });
+  if (!proofing.success) {
+    const field = String(proofing.error.issues[0].path[0]);
+    console.error(kleur.red(PROOFING_ERRORS[field] ?? PROOFING_ERRORS.method));
+    console.log(`Usage: ${DEVICE_REPLACEMENT_USAGE}`);
     process.exit(1);
   }
 
   const opts = {
-    revokeSessions: !rest.includes("--keep-sessions"),
-    removePasskeys: !rest.includes("--keep-passkeys"),
-    disableTotp: !rest.includes("--keep-totp"),
+    revokeSessions: !operands.includes("--keep-sessions"),
+    removePasskeys: !operands.includes("--keep-passkeys"),
+    disableTotp: !operands.includes("--keep-totp"),
+    proofing: proofing.data,
   };
 
   const actions = [
@@ -152,7 +182,7 @@ async function usersPrepareDeviceReplacement(
 
   const proceed = await confirmDestructive({
     message: `Prepare device replacement for ${id}? This will ${actions.join(", ")}.`,
-    force: hasForceFlag(rest),
+    force: hasForceFlag(operands),
     remedy: "Pass --force to prepare the replacement without confirming.",
   });
   if (!proceed) {

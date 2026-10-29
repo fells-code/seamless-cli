@@ -12,6 +12,12 @@ import {
   type TokenBundle,
 } from "./keychain.js";
 import { apiRequest, joinUrl, type ApiResponse } from "./http.js";
+import {
+  authenticatorAppStepUp,
+  isFactorRejection,
+  isStepUpRequired,
+  type StepUpHandler,
+} from "./stepUp.js";
 
 export class ReauthRequiredError extends Error {
   constructor(message: string) {
@@ -102,7 +108,7 @@ export function tokensFromRefreshResponse(
 // profile. Portal calls use createPortalClient instead: the two sessions are
 // different accounts on different hosts and must never be interchanged.
 export async function createAuthClient(
-  opts: { profileFlag?: string } = {},
+  opts: { profileFlag?: string; stepUp?: StepUpHandler } = {},
 ): Promise<AuthClient> {
   const profile = getActiveProfile(opts);
   if (!profile) {
@@ -111,10 +117,14 @@ export async function createAuthClient(
     );
   }
 
-  return createClientForProfile(profile, {
-    label: `profile "${profile.name}"`,
-    reauthCommand: `seamless profile login ${profile.name}`,
-  });
+  return createClientForProfile(
+    profile,
+    {
+      label: `profile "${profile.name}"`,
+      reauthCommand: `seamless profile login ${profile.name}`,
+    },
+    opts.stepUp ?? authenticatorAppStepUp(),
+  );
 }
 
 // A client for the Seamless portal, used for control-plane calls
@@ -143,6 +153,7 @@ interface ReauthCopy {
 async function createClientForProfile(
   profile: Profile,
   copy: ReauthCopy,
+  stepUp?: StepUpHandler,
 ): Promise<AuthClient> {
   const tokens = await getTokens(profile);
   if (!tokens || !tokens.refreshToken) {
@@ -220,9 +231,19 @@ async function createClientForProfile(
     return inFlight;
   };
 
-  const authedFetch = async <T>(
+  let stepUpInFlight: Promise<void> | null = null;
+  const runStepUp = (handler: StepUpHandler): Promise<void> => {
+    if (!stepUpInFlight) {
+      stepUpInFlight = handler(client).finally(() => {
+        stepUpInFlight = null;
+      });
+    }
+    return stepUpInFlight;
+  };
+
+  const send = async <T>(
     path: string,
-    init: RequestInit = {},
+    init: RequestInit,
   ): Promise<ApiResponse<T>> => {
     const build = (): RequestInit => ({
       ...init,
@@ -236,7 +257,7 @@ async function createClientForProfile(
     const sentWith = session.accessToken;
     let res = await apiRequest<T>(url, build());
 
-    if (res.status === 401 && session.refreshToken) {
+    if (res.status === 401 && session.refreshToken && !isFactorRejection(res)) {
       // Only refresh if nothing else already did while this request was in flight.
       // Otherwise a burst of 401s against one stale token would each rotate again.
       if (session.accessToken === sentWith) {
@@ -258,7 +279,19 @@ async function createClientForProfile(
     return res;
   };
 
-  return {
+  // A write the instance refuses for want of a fresh step-up is retried once after
+  // the handler steps up the same session. A second refusal goes back to the caller.
+  const authedFetch = async <T>(
+    path: string,
+    init: RequestInit = {},
+  ): Promise<ApiResponse<T>> => {
+    const res = await send<T>(path, init);
+    if (!stepUp || !isStepUpRequired(res)) return res;
+    await runStepUp(stepUp);
+    return send<T>(path, init);
+  };
+
+  const client: AuthClient = {
     profile,
     request: authedFetch,
     get: (path, init = {}) => authedFetch(path, { ...init, method: "GET" }),
@@ -279,4 +312,5 @@ async function createClientForProfile(
       });
     },
   };
+  return client;
 }

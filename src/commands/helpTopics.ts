@@ -434,6 +434,12 @@ session (or --all) prompts for confirmation and then clears local tokens.
         heading: "config <get|set|roles|diff|apply>",
         body: `Read and write the instance system configuration (requires an admin role).
 
+Writes need a fresh step-up on your session (auth server v0.20 and later).
+The CLI asks for a code from your authenticator app, verifies it, and
+retries the write once. Without a terminal, set SEAMLESS_TOTP_CODE to a
+current code; it is used once per run. An account with no authenticator app
+enrolled must enroll one (dashboard or app) or use the dashboard.
+
 config get [key] [--json]
   • Print the whole config or a single key
 
@@ -443,6 +449,11 @@ config set <key> <value>
     verbatim; every other key parses it as JSON, falling back to a string
     (for example: config set app_name 123 sets the string "123",
     config set login_methods '["email_otp","passkey"]')
+  • recovery_codes and account_recovery (auth server v0.20 and later) are
+    objects. Send the whole object, since a missing field takes its default:
+    config set recovery_codes '{"enabled":true,"requireAtEnrollment":false}'
+    config set account_recovery '{"enabled":true,"delay":"24h"}'
+    (delay is between 1h and 30d)
 
 config roles [--json]
   • List the instance's available roles
@@ -478,6 +489,12 @@ config oauth-providers <list|add|update|remove>
         heading: "users <list|delete|credentials|prepare-device-replacement>",
         body: `Admin user management (requires an admin role).
 
+Writes need a fresh step-up on your session (auth server v0.20 and later).
+The CLI asks for a code from your authenticator app, verifies it, and
+retries the write once. Without a terminal, set SEAMLESS_TOTP_CODE to a
+current code; it is used once per run. An account with no authenticator app
+enrolled must enroll one (dashboard or app) or use the dashboard.
+
 users list [--limit <n>] [--offset <n>] [--json]
   • List users, 50 at a time by default
   • --limit is 1 to 100, --offset is 0 or more; total counts every user, not
@@ -486,8 +503,14 @@ users delete <id> [--force]
   • Delete a user (asks for confirmation)
 users credentials <id> [--json]
   • Show a user's registered credentials
-users prepare-device-replacement <id> [--force] [--keep-sessions] [--keep-passkeys] [--keep-totp]
-  • Admin-assisted account recovery (needs an elevated session)
+users prepare-device-replacement <id> --proofing <method> --evidence-ref <ref>
+    [--approver <name>] [--force] [--keep-sessions] [--keep-passkeys] [--keep-totp]
+  • Admin-assisted account recovery: revokes sessions, removes passkeys and
+    disables TOTP unless kept
+  • --proofing is how you established the user's identity: in_person, or
+    remote_exception under an approved exception
+  • --evidence-ref is a ticket or case number for the audit trail (no
+    personal data); --approver names who approved a remote exception
 
 --force
   • Skips the confirmation on delete and prepare-device-replacement (--yes and
@@ -507,6 +530,9 @@ users prepare-device-replacement <id> [--force] [--keep-sessions] [--keep-passke
         heading: "migrate csv <file>",
         body: `Import users from a CSV export into the instance (requires an admin role).
 Runs as a dry run unless --apply is passed, and writes a report either way.
+Like every admin write, it needs a fresh step-up (see seamless help users).
+A long run that outlasts the step-up window asks for a new code, and one
+that cannot get it stops with a report of the batches already applied.
 
 Columns are found by header name: email (required), externalId (or id,
 employee id), phone, roles, and organizations (or department). Multi-value
@@ -579,6 +605,12 @@ and guests are skipped and listed in the report.
         heading:
           "org <list|create|get|update>, org members <list|add|update|remove>",
         body: `Admin organization management (requires an admin role).
+
+Writes need a fresh step-up on your session (auth server v0.20 and later).
+The CLI asks for a code from your authenticator app, verifies it, and
+retries the write once. Without a terminal, set SEAMLESS_TOTP_CODE to a
+current code; it is used once per run. An account with no authenticator app
+enrolled must enroll one (dashboard or app) or use the dashboard.
 
 org list [--limit <n>] [--offset <n>] [--search <text>] [--json]
   • Lists 50 at a time; --limit is 1 to 100, --offset is 0 or more

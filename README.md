@@ -628,7 +628,7 @@ Manage users and organizations from the terminal (requires an admin role).
 seamless users list --limit 50 --offset 0
 seamless users delete <id>                 # confirms first
 seamless users credentials <id>            # registered credentials for a user
-seamless users prepare-device-replacement <id>   # admin-assisted recovery
+seamless users prepare-device-replacement <id> --proofing in_person --evidence-ref CASE-42
 
 seamless org list
 seamless org create "Acme Inc" --slug acme
@@ -642,6 +642,34 @@ seamless org members remove <orgId> <userId>
 ```
 
 A non-admin user receives a clear permission error rather than a stack trace.
+
+`prepare-device-replacement` clears a user's credentials so they can enroll a new device, which is
+the step social engineering aims at, so the instance records how their identity was established.
+`--proofing` is `in_person` or `remote_exception`, `--evidence-ref` is a ticket or case number for
+the audit trail (never personal data), and `--approver` names who approved a remote exception.
+
+### Step-up for admin writes
+
+From auth server v0.20, every admin write needs a fresh step-up on the session: `config set`,
+`config apply`, `config oauth-providers add|update|remove`, `users delete`,
+`users prepare-device-replacement`, the `org` and `org members` writes, and `migrate`. When the
+instance asks for one, the CLI prompts for the code from your authenticator app, verifies it on the
+same session (`POST /totp/verify-mfa`), and retries the write once.
+
+```text
+This action needs a fresh step-up on your session.
+◆  Enter the code from your authenticator app
+```
+
+- A wrong or already used code can be re-entered, up to three attempts.
+- A locked account or a rate limit stops the command and says how long to wait.
+- An account with no authenticator app enrolled cannot step up from the CLI. Enroll one from the
+  admin dashboard or your app, or make the change from the dashboard.
+- The step-up lasts five minutes. A long `migrate` run that outlasts it asks for a new code before
+  the next batch, and one that cannot get one stops with a report of the batches already applied.
+
+Without a terminal, set `SEAMLESS_TOTP_CODE` to a current code. It is used for the first step-up of
+the run only: a code is single use, so a second one needs a terminal.
 
 ### Token storage and the keychain
 
@@ -702,6 +730,8 @@ The prompts that gather input rather than confirm an action are answered by the 
 commands already take, for example `seamless login --identifier you@example.com` and
 `seamless profile add prod --instance-url https://auth.example.com`. The one-time code at login is
 the exception: it only exists after the code is sent, so that step genuinely needs a terminal.
+The step-up code for an admin write is answered by `SEAMLESS_TOTP_CODE` (see
+[Step-up for admin writes](#step-up-for-admin-writes)).
 
 ---
 
