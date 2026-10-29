@@ -1,5 +1,35 @@
 # seamless-cli
 
+## 0.26.0
+
+### Minor Changes
+
+- 02d9f0e: Admin writes step up with an authenticator app code, which the auth server requires from v0.20 (fells-code/seamless-auth-api#490). When an instance answers `403 step_up_required`, the CLI asks for the code, verifies it with `POST /totp/verify-mfa` on the same session, and retries the write once. This covers `config set`, `config apply`, `config oauth-providers add|update|remove`, `users delete`, `users prepare-device-replacement`, the `org` and `org members` writes, and every batch of `migrate`. A wrong code can be re-entered up to three times; a lockout, a rate limit, and an account with no authenticator app enrolled each get their own message instead of the old "requires an admin role" one. Without a terminal, `SEAMLESS_TOTP_CODE` supplies the code for the first step-up of a run.
+
+  Breaking: `users prepare-device-replacement` now requires `--proofing <in_person|remote_exception>` and `--evidence-ref <ref>` (with an optional `--approver <name>`), because the auth server rejects a device replacement that does not record how the user's identity was established.
+
+- 79590f0: New projects scaffold auth server v0.20.0, admin dashboard v0.11.0 and seamless-templates v0.21.0 (the v0.20 SDKs). These include the fixes for GHSA-qx82-28gf-w744, GHSA-9xg2-j8fg-427c, GHSA-v9q2-hcqj-ggqr, GHSA-v2q2-q246-8chm and GHSA-m5x9-cjv4-6q3w, first shipped in auth server v0.19.4 and seamless-templates v0.20.3.
+
+  `--auth=local` now clones the auth server at the same `v0.20.0` tag the Docker image is built from, instead of the tip of `main`.
+
+- d0f5f9c: `config set` and `config apply` now write `recovery_codes` and `account_recovery`, which auth server v0.20 accepts (#310). Both are objects, and a field left out takes its default, so send the whole object, for example `config set account_recovery '{"enabled":true,"delay":"24h"}'`. An instance older than v0.20 rejects a patch that carries either key.
+- 55a9fd2: `seamless init` keeps every secret out of the generated `docker-compose.yml`.
+
+  - With `--auth=docker`, the auth server's environment is now written to `auth/.env` and loaded with `env_file: ./auth/.env`, the same file `--auth=local` already used. The compose file no longer has an inline `environment:` block for the auth service.
+  - The api service (or the web service of a full-stack app) no longer sets `SEAMLESS_SERVICE_TOKEN` inline. `init` writes it to `api/.env` (or `web/.env`), which compose already loads.
+  - `init` writes a root `.gitignore` covering `.env`, `.env.*` (keeping `.env.example`), `keys/` and `*.pem`. An existing `.gitignore` keeps its lines and gains only the missing patterns.
+  - `seamless owner-code` and the generated `AGENTS.md` point at `auth/.env` for `OWNER_EMAIL` in both auth modes. Projects scaffolded earlier, with the variable inline in compose, still work.
+
+  The scaffold now also generates `DECOY_SUBJECT_SECRET` for the auth server, which v0.20 requires instead of falling back to the service token (`OAUTH_STATE_SECRET` is still generated whenever OAuth providers are configured).
+
+  Every generated `.env` file (from `init`, `add`, template env and env merges) is written with mode 0600, and an existing file is tightened to 0600 when it is rewritten.
+
+### Patch Changes
+
+- 525ed2c: `seamless verify` steps up the owner's admin session with a software passkey before admin writes, which the auth server requires from v0.20 (fells-code/seamless-auth-api#490).
+- 3bd0e2d: Update `@seamless-auth/types` to 0.30.0.
+- 60ee807: Update `@seamless-auth/types` to 0.33.0.
+
 ## 0.25.1
 
 ### Patch Changes
