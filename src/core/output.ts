@@ -197,7 +197,11 @@ export function printSuccessOutput(config: {
       "  • The grant happens at signup, so change OWNER_EMAIL in auth before registering",
     ),
   );
-  console.log(kleur.dim("  • All secrets and keys are pre-configured\n"));
+  console.log(
+    kleur.dim(
+      `  • Secrets are generated into auth/.env and ${webFullStack ? "web/.env" : "api/.env"}, which .gitignore keeps out of git\n`,
+    ),
+  );
 
   console.log(
     kleur.dim("Docs: ") + kleur.cyan("https://docs.seamlessauth.com\n"),

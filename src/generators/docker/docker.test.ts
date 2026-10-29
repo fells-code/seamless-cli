@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildAuthEnv,
   configureAuthLocalEnv,
-  envToDockerBlock,
   extractSharedFromExistingEnv,
   generateDockerCompose,
   isolatedMountpoints,
@@ -18,6 +17,7 @@ import {
 } from "../../core/images.js";
 import type { CollectedOAuthProvider } from "../../core/oauthProviders.js";
 import { OAUTH_PROVIDER_CATALOG } from "../../core/oauthProviders.js";
+import { parseEnv } from "../../core/env.js";
 
 let tmpDir: string;
 let logSpy: ReturnType<typeof vi.spyOn>;
@@ -54,17 +54,6 @@ function stubEnvExampleFetch(content: string) {
   );
 }
 
-describe("envToDockerBlock", () => {
-  it("renders single-line values as quoted JSON strings", () => {
-    const block = envToDockerBlock({ FOO: "bar", BAZ: "1 2 3" });
-    expect(block).toBe('      FOO: "bar"\n      BAZ: "1 2 3"');
-  });
-
-  it("renders multiline values as an indented block scalar", () => {
-    const block = envToDockerBlock({ KEY: "line1\nline2" });
-    expect(block).toBe("      KEY: |\n        line1\n        line2");
-  });
-});
 describe("buildAuthEnv", () => {
   // The auth server's .env.example ships a placeholder under the preferred name, and
   // the server refuses to start when the two names hold different values.
@@ -151,6 +140,35 @@ describe("buildAuthEnv", () => {
     expect(providers[0]).toMatchObject({ id: "google", enabled: true });
     expect(env.LOGIN_METHODS).toBe("passkey,magic_link,email_otp,oauth");
   });
+
+  // The auth server's AUTH_SECRETS. From v0.20 none falls back to the service
+  // token, so each must be generated, and generated apart from it.
+  it.each(["local", "docker"] as const)(
+    "generates each auth server secret, distinct from the service token (%s)",
+    (mode) => {
+      const { env } = buildAuthEnv({}, mode, [googleProvider()]);
+      const names = [
+        "REFRESH_TOKEN_LOOKUP_SECRET",
+        "DECOY_SUBJECT_SECRET",
+        "TOTP_SECRET_ENCRYPTION_KEY",
+        "OAUTH_STATE_SECRET",
+      ];
+      const values = names.map((name) => env[name]);
+
+      for (const value of values) {
+        expect(value).toMatch(/^[0-9a-f]{64}$/);
+        expect(value).not.toBe(env.SEAMLESS_SERVICE_TOKEN);
+      }
+      expect(new Set(values).size).toBe(names.length);
+    },
+  );
+
+  it("generates DECOY_SUBJECT_SECRET without OAuth providers too", () => {
+    const { env } = buildAuthEnv({}, "docker");
+
+    expect(env.DECOY_SUBJECT_SECRET).toMatch(/^[0-9a-f]{64}$/);
+    expect(env.DECOY_SUBJECT_SECRET).not.toBe(env.SEAMLESS_SERVICE_TOKEN);
+  });
 });
 
 describe("extractSharedFromExistingEnv", () => {
@@ -218,6 +236,20 @@ describe("configureAuthLocalEnv", () => {
     expect(written).toContain("DB_HOST=localhost");
     expect(written.endsWith("\n")).toBe(true);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "writes auth/.env with mode 0600, tightening one that already exists",
+    async () => {
+      const authDir = path.join(tmpDir, "auth");
+      fs.mkdirSync(authDir, { recursive: true });
+      fs.writeFileSync(path.join(authDir, ".env.example"), "A=b\n");
+      fs.writeFileSync(path.join(authDir, ".env"), "OLD=1\n", { mode: 0o644 });
+
+      await configureAuthLocalEnv(tmpDir);
+
+      expect(fs.statSync(path.join(authDir, ".env")).mode & 0o777).toBe(0o600);
+    },
+  );
 });
 
 describe("generateDockerCompose", () => {
@@ -242,7 +274,7 @@ describe("generateDockerCompose", () => {
     expect(compose).toContain("env_file:\n      - ./auth/.env");
     expect(compose).toContain("DB_HOST: db");
     expect(compose).toContain("ISSUER: http://auth:5312");
-    expect(compose).toContain("SEAMLESS_SERVICE_TOKEN: existing-token");
+    expect(compose).not.toContain("existing-token");
     expect(compose).toContain("JWKS_KID: existing-kid");
     expect(compose).toContain("container_name: web");
     expect(compose).toContain(`image: ${SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE}`);
@@ -375,16 +407,49 @@ describe("generateDockerCompose", () => {
 
     expect(compose).toContain(`image: ${SEAMLESS_AUTH_API_IMAGE}`);
     expect(compose).not.toContain("build:\n      context: ./auth");
-    // The auth server and the app both read the secret as SEAMLESS_SERVICE_TOKEN.
     const auth = compose.slice(compose.indexOf("\n  auth:"), compose.indexOf("\n  api:"));
-    const api = compose.slice(compose.indexOf("\n  api:"));
-    expect(auth).toContain(`SEAMLESS_SERVICE_TOKEN: "${shared.apiToken}"`);
-    expect(auth).not.toMatch(/^\s+API_SERVICE_TOKEN:/m);
-    expect(api).toContain(`SEAMLESS_SERVICE_TOKEN: ${shared.apiToken}`);
-    expect(api).not.toMatch(/^\s+API_SERVICE_TOKEN:/m);
-    expect(api).toContain("# The same secret as the auth service's SEAMLESS_SERVICE_TOKEN.");
+    expect(auth).toContain("env_file:\n      - ./auth/.env\n");
+    expect(auth).not.toContain("environment:");
     expect(compose).toContain(`JWKS_KID: ${shared.kid}`);
-    expect(compose).toContain("OAUTH_PROVIDERS");
+
+    const env = parseEnv(path.join(tmpDir, "auth", ".env"));
+    expect(env.SEAMLESS_SERVICE_TOKEN).toBe(shared.apiToken);
+    expect(env).not.toHaveProperty("API_SERVICE_TOKEN");
+    expect(env.SOME_VAR).toBe("value");
+    expect(JSON.parse(env.OAUTH_PROVIDERS)[0].clientSecretEnv).toBeTruthy();
+  });
+
+  // #303: the compose file is committed, so no generated secret, and no OAuth
+  // client secret the user typed in, may appear in it.
+  it("keeps every secret out of the compose file, in the 0600 auth/.env", async () => {
+    stubEnvExampleFetch("SOME_VAR=value\n");
+
+    await generateDockerCompose(tmpDir, {
+      authMode: "docker",
+      adminMode: "api",
+      oauth: [googleProvider({ clientSecret: "google-client-secret-value" })],
+    });
+
+    const compose = fs.readFileSync(path.join(tmpDir, "docker-compose.yml"), "utf-8");
+    const envPath = path.join(tmpDir, "auth", ".env");
+    const env = parseEnv(envPath);
+    const secrets = [
+      env.SEAMLESS_SERVICE_TOKEN,
+      env.REFRESH_TOKEN_LOOKUP_SECRET,
+      env.TOTP_SECRET_ENCRYPTION_KEY,
+      env.DECOY_SUBJECT_SECRET,
+      env.OAUTH_STATE_SECRET,
+      "google-client-secret-value",
+    ];
+    expect(Object.values(env)).toContain("google-client-secret-value");
+    for (const secret of secrets) {
+      expect(secret).toBeTruthy();
+      expect(compose).not.toContain(secret);
+    }
+    expect(compose).not.toMatch(/SERVICE_TOKEN|_SECRET|ENCRYPTION_KEY/);
+    if (process.platform !== "win32") {
+      expect(fs.statSync(envPath).mode & 0o777).toBe(0o600);
+    }
   });
 });
 
@@ -398,8 +463,10 @@ describe("generateDockerCompose output shape", () => {
     if (authMode === "local") writeAuthEnvFixture(root, "SEAMLESS_JWKS_ACTIVE_KID");
     else stubEnvExampleFetch("SOME_VAR=value\n");
     await generateDockerCompose(root, { authMode, adminMode, fullStack });
+    renderedRoot = root;
     return fs.readFileSync(path.join(root, "docker-compose.yml"), "utf-8");
   }
+  let renderedRoot = "";
 
   const combos = (["local", "docker"] as const).flatMap((authMode) =>
     (["api", "image", "source", "none"] as const).flatMap((adminMode) =>
@@ -439,11 +506,12 @@ describe("generateDockerCompose output shape", () => {
       expect(app).toContain(
         `AUTH_SERVER_URL: ${LOCAL_AUTH_ISSUER}\n      AUTH_SERVER_ISSUER: ${LOCAL_AUTH_ISSUER}\n`,
       );
-      expect(compose).toContain(
-        authMode === "docker"
-          ? `ISSUER: "${LOCAL_AUTH_ISSUER}"`
-          : `ISSUER: ${LOCAL_AUTH_ISSUER}`,
-      );
+      if (authMode === "docker") {
+        expect(parseEnv(path.join(renderedRoot, "auth", ".env")).ISSUER).toBe(LOCAL_AUTH_ISSUER);
+      } else {
+        expect(compose).toContain(`ISSUER: ${LOCAL_AUTH_ISSUER}`);
+      }
+      expect(app).not.toContain("SERVICE_TOKEN");
     },
   );
 
@@ -519,8 +587,8 @@ describe("generateDockerCompose for a full-stack web app", () => {
     expect(compose).not.toContain("\n  admin:");
     expect(web).toContain("- ./web/.env");
     expect(web).toContain("AUTH_SERVER_URL: http://auth:5312");
-    expect(web).toContain("SEAMLESS_SERVICE_TOKEN: existing-token");
-    expect(web).not.toMatch(/^\s+API_SERVICE_TOKEN:/m);
+    expect(web).not.toContain("existing-token");
+    expect(web).not.toContain("SERVICE_TOKEN");
     expect(web).toContain("JWKS_KID: existing-kid");
     expect(web).toContain('- "127.0.0.1:5173:80"');
     // The bind mount must not hide the container's dependencies or share a
@@ -554,8 +622,10 @@ describe("generateDockerCompose for a full-stack web app", () => {
         compose.indexOf("\n  web:"),
       );
 
-      expect(auth).toContain(`SERVE_ADMIN_DASHBOARD: "${serving}"`);
-      expect(auth).toContain('ORIGINS: "http://localhost:5173"\n');
+      expect(auth).toContain("- ./auth/.env");
+      const env = parseEnv(path.join(tmpDir, "auth", ".env"));
+      expect(env.SERVE_ADMIN_DASHBOARD).toBe(serving);
+      expect(env.ORIGINS).toBe("http://localhost:5173");
       // The web app proxies the console; nothing else is added for it.
       expect(compose).not.toContain("\n  api:");
       expect(compose).not.toContain("\n  admin:");

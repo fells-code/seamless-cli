@@ -39,6 +39,9 @@ describe("generateAuthStack", () => {
     expect(compose).not.toContain(stack.apiToken);
 
     expect(fs.readFileSync(path.join(dir, ".gitignore"), "utf-8")).toBe(".env\n");
+    if (process.platform !== "win32") {
+      expect(fs.statSync(path.join(dir, ".env")).mode & 0o777).toBe(0o600);
+    }
     const env = parseEnv(path.join(dir, ".env"));
     expect(env.SEAMLESS_SERVICE_TOKEN).toBe(stack.apiToken);
     expect(env.APP_ORIGINS).toBe("http://localhost:4000");

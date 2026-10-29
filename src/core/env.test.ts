@@ -142,3 +142,23 @@ describe("writeEnv", () => {
     expect(parseEnv(file)).toEqual(original);
   });
 });
+
+describe.skipIf(process.platform === "win32")("writeEnv file mode", () => {
+  it("creates the file readable by its owner only", () => {
+    const file = path.join(tmpDir, ".env");
+    writeEnv(file, { SECRET: "s" });
+
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it("tightens a file that already exists with a wider mode", () => {
+    const file = path.join(tmpDir, ".env");
+    fs.writeFileSync(file, "OLD=1\n", { mode: 0o644 });
+    fs.chmodSync(file, 0o644);
+
+    writeEnv(file, { SECRET: "s" });
+
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    expect(fs.readFileSync(file, "utf-8")).toBe("SECRET=s\n");
+  });
+});

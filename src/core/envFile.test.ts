@@ -51,4 +51,13 @@ describe("mergeEnvFile", () => {
     mergeEnvFile(file, { set: { A: "new" } });
     expect(fs.readFileSync(file, "utf-8")).toBe("A=new\n");
   });
+
+  it.skipIf(process.platform === "win32")("writes the file with mode 0600, new or existing", () => {
+    mergeEnvFile(file, { set: { A: "1" } });
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+
+    fs.chmodSync(file, 0o644);
+    mergeEnvFile(file, { set: { A: "2" } });
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+  });
 });

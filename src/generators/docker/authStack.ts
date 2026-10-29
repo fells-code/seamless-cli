@@ -2,7 +2,8 @@ import fs from "fs";
 import path from "path";
 
 import { fetchEnvExample } from "../../core/fetch.js";
-import { formatValue, parseEnvString } from "../../core/env.js";
+import { formatValue, parseEnvString, writePrivateFile } from "../../core/env.js";
+import { ensureGitignore } from "../../core/gitignore.js";
 import { POSTGRES_IMAGE, SEAMLESS_AUTH_API_IMAGE } from "../../core/images.js";
 import { buildAuthEnv } from "./docker.js";
 
@@ -83,14 +84,14 @@ export async function generateAuthStack(root: string, options: AuthStackOptions)
   const envFile = Object.entries(env)
     .map(([key, value]) => `${key}=${formatValue(value)}`)
     .join("\n");
-  fs.writeFileSync(
+  writePrivateFile(
     path.join(dir, ".env"),
     `# The local Seamless Auth server's configuration, written by seamless add.
 # It holds secrets: keep it out of version control (see .gitignore).
 ${envFile}
 `,
   );
-  fs.writeFileSync(path.join(dir, ".gitignore"), ".env\n");
+  ensureGitignore(dir, [".env"]);
 
   fs.writeFileSync(
     composePath,

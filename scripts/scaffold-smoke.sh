@@ -87,12 +87,46 @@ do
   scaffold_backoff=$((scaffold_backoff * 2))
 done
 
-for required in docker-compose.yml seamless.config.json; do
+for required in docker-compose.yml seamless.config.json .gitignore auth/.env; do
   if [ ! -f "$APP_DIR/$required" ]; then
     echo "FAIL: init did not write $required" >&2
     exit 1
   fi
 done
+
+# The scaffold is meant to be committed as-is, so `git init && git add .` must
+# pick up no secret: every one lives in a git-ignored .env, readable by its owner only.
+echo "==> Checking that git would commit no secret"
+SECRETS_FILE="$WORKDIR/secrets.txt"
+find "$APP_DIR" -name .env -not -path '*/node_modules/*' -exec cat {} + \
+  | grep -E '^(SEAMLESS_SERVICE_TOKEN|API_SERVICE_TOKEN|REFRESH_TOKEN_LOOKUP_SECRET|TOTP_SECRET_ENCRYPTION_KEY|DECOY_SUBJECT_SECRET|OAUTH_STATE_SECRET|COOKIE_SIGNING_KEY)=' \
+  | cut -d= -f2- | grep -v '^$' | sort -u > "$SECRETS_FILE" || true
+
+for name in SEAMLESS_SERVICE_TOKEN REFRESH_TOKEN_LOOKUP_SECRET TOTP_SECRET_ENCRYPTION_KEY DECOY_SUBJECT_SECRET; do
+  if ! grep -q "^$name=." "$APP_DIR/auth/.env"; then
+    echo "FAIL: auth/.env does not set $name" >&2
+    exit 1
+  fi
+done
+
+git -C "$APP_DIR" init -q
+leaks="$(git -C "$APP_DIR" ls-files -z --others --exclude-standard \
+  | (cd "$APP_DIR" && xargs -0 grep -lF -f "$SECRETS_FILE" --) || true)"
+if [ -n "$leaks" ]; then
+  echo "FAIL: files git would commit hold a generated secret:" >&2
+  echo "$leaks" >&2
+  exit 1
+fi
+rm -rf "$APP_DIR/.git"
+
+loose="$(find "$APP_DIR" -name .env -not -path '*/node_modules/*' ! -perm 600)"
+if [ -n "$loose" ]; then
+  echo "FAIL: .env files readable beyond their owner:" >&2
+  echo "$loose" >&2
+  exit 1
+fi
+
+echo "==> No secret is in a file git would commit"
 
 # Only the services with healthchecks, so `--wait` means something and no npm
 # install happens. Bringing up api and web would mostly measure the templates.
