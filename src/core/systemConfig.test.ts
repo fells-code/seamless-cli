@@ -463,6 +463,13 @@ describe("WRITABLE_KEYS against the shared patch schema", () => {
     expect(new Set(placed).size).toBe(placed.length);
   });
 
+  it.each(["recovery_codes", "account_recovery"])(
+    "accepts %s, which the API has read since v0.20.0",
+    (key) => {
+      expect(isWritableKey(key)).toBe(true);
+    },
+  );
+
   it("accepts flow_rate_limits, which the API has read since v0.14.0", () => {
     expect(isWritableKey("flow_rate_limits")).toBe(true);
   });

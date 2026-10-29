@@ -443,6 +443,11 @@ config set <key> <value>
     verbatim; every other key parses it as JSON, falling back to a string
     (for example: config set app_name 123 sets the string "123",
     config set login_methods '["email_otp","passkey"]')
+  • recovery_codes and account_recovery (auth server v0.20 and later) are
+    objects. Send the whole object, since a missing field takes its default:
+    config set recovery_codes '{"enabled":true,"requireAtEnrollment":false}'
+    config set account_recovery '{"enabled":true,"delay":"24h"}'
+    (delay is between 1h and 30d)
 
 config roles [--json]
   • List the instance's available roles
