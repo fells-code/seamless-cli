@@ -1,4 +1,5 @@
 import { runCommand } from "../../core/exec.js";
+import { SEAMLESS_AUTH_API_VERSION } from "../../core/images.js";
 import { configureAuthLocalEnv } from "../docker/docker.js";
 import type { CollectedOAuthProvider } from "../../core/oauthProviders.js";
 import type { AdminMode } from "../docker/docker.js";
@@ -14,7 +15,11 @@ export async function generateAuthServer(
 ) {
   console.log("Cloning SeamlessAuth server...");
 
-  await runCommand("git", ["clone", AUTH_REPO, "auth"], root);
+  await runCommand(
+    "git",
+    ["clone", "--branch", SEAMLESS_AUTH_API_VERSION, AUTH_REPO, "auth"],
+    root,
+  );
 
   console.log("Writing auth environment...");
 

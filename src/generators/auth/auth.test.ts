@@ -8,6 +8,7 @@ import { generateAuthServer } from "./auth.js";
 import {
   POSTGRES_IMAGE,
   SEAMLESS_AUTH_API_IMAGE,
+  SEAMLESS_AUTH_API_VERSION,
 } from "../../core/images.js";
 import type { CollectedOAuthProvider } from "../../core/oauthProviders.js";
 import { OAUTH_PROVIDER_CATALOG } from "../../core/oauthProviders.js";
@@ -70,7 +71,7 @@ describe("generateAuthServer local mode", () => {
 
     expect(spawn).toHaveBeenCalledWith(
       "git",
-      ["clone", AUTH_REPO, "auth"],
+      ["clone", "--branch", SEAMLESS_AUTH_API_VERSION, AUTH_REPO, "auth"],
       { stdio: "inherit", cwd: tmpDir, shell: process.platform === "win32", env: process.env },
     );
 
