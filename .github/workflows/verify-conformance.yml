@@ -107,7 +107,7 @@ jobs:
             seamless-auth-js/package-lock.json
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           version: 10
 
@@ -120,7 +120,7 @@ jobs:
       # Exposes ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN to the build, which the
       # `type=gha` cache backend needs and which are otherwise only visible to actions.
       - name: Expose the Actions cache to buildx
-        uses: crazy-max/ghaction-github-runtime@v3
+        uses: crazy-max/ghaction-github-runtime@3cb05d89e1f492524af3d41a1c98c83bc3025124 # v3.1.0
 
       # pnpm keeps its own store rather than using ~/.npm, so the setup-node cache above
       # does nothing for the server install. Skipped with the install it serves.
