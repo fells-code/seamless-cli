@@ -245,7 +245,7 @@ function webService() {
     container_name: web
     build: ./web
     ports:
-      - "127.0.0.1:5173:80"
+      - "127.0.0.1:5173:8080"
     environment:
       API_URL: http://localhost:3000/
     volumes:
@@ -254,7 +254,7 @@ function webService() {
     depends_on:
       - api
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -273,7 +273,7 @@ function fullStackWebService(shared: any) {
     container_name: web
     build: ./web
     ports:
-      - "127.0.0.1:5173:80"
+      - "127.0.0.1:5173:8080"
     env_file:
       - ./web/.env
     environment:
@@ -290,7 +290,7 @@ function fullStackWebService(shared: any) {
       auth:
         condition: service_started
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 5s
       retries: 20
