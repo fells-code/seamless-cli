@@ -187,15 +187,18 @@ services:
               npm install /tmp/sdk/*.tgz; \
             fi
         RUN npm run build
-        FROM nginx:alpine
+        FROM nginxinc/nginx-unprivileged:alpine
+        USER root
         COPY ./nginx.conf /etc/nginx/conf.d/default.conf
         COPY --from=builder /app/dist /usr/share/nginx/html
         COPY entrypoint.sh /entrypoint.sh
-        RUN chmod +x /entrypoint.sh
-        EXPOSE 80
+        RUN chmod +x /entrypoint.sh \
+          && chown -R nginx:nginx /usr/share/nginx/html
+        USER nginx
+        EXPOSE 8080
         CMD ["/entrypoint.sh"]
     ports:
-      - '5173:80'
+      - '5173:8080'
     environment:
       API_URL: http://localhost:3000
     depends_on:
@@ -205,7 +208,7 @@ services:
     # listens on IPv4 only. The same holds for the angular, vue, and svelte
     # services below.
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1/health']
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:8080/health']
       interval: 3s
       timeout: 3s
       retries: 20
@@ -266,14 +269,14 @@ services:
         sdk: ./angular-vendor
       target: runtime
     ports:
-      - '5173:80'
+      - '5173:8080'
     environment:
       API_URL: http://localhost:3000
     depends_on:
       adapter:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1/health']
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:8080/health']
       interval: 3s
       timeout: 3s
       retries: 20
@@ -314,14 +317,14 @@ services:
         sdk: ./vue-vendor
       target: runtime
     ports:
-      - '5173:80'
+      - '5173:8080'
     environment:
       API_URL: http://localhost:3000
     depends_on:
       adapter:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1/health']
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:8080/health']
       interval: 3s
       timeout: 3s
       retries: 20
@@ -363,14 +366,14 @@ services:
         sdk: ./svelte-vendor
       target: runtime
     ports:
-      - '5173:80'
+      - '5173:8080'
     environment:
       API_URL: http://localhost:3000
     depends_on:
       adapter:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1/health']
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:8080/health']
       interval: 3s
       timeout: 3s
       retries: 20
@@ -401,7 +404,7 @@ services:
       retries: 60
 
   # A full-stack template (the Next.js starter) built with its own Dockerfile's
-  # `runtime` target: the standalone production server, on port 80 with /health.
+  # `runtime` target: the standalone production server, on port 8080 with /health.
   # It serves /auth itself, so it talks to the auth API directly and needs no
   # adapter. SEAMLESS_VERIFY_CAPTURE turns on the starter's capture transport,
   # which holds OTP and magic-link codes for the harness to read; it is off in
@@ -415,7 +418,7 @@ services:
       context: ${SEAMLESS_FULLSTACK_DIR:-.}
       target: runtime
     ports:
-      - '5173:80'
+      - '5173:8080'
     environment: &nextjs-env
       AUTH_SERVER_URL: http://auth-api:5312
       # Equal to AUTH_SERVER_URL here (the API's ISSUER above), so a starter that
@@ -434,7 +437,7 @@ services:
       auth-api:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'node', '-e', "fetch('http://localhost/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 3s
       timeout: 3s
       retries: 40
@@ -447,13 +450,13 @@ services:
       context: ${SEAMLESS_FULLSTACK_DIR:-.}
       target: dev
     ports:
-      - '5173:80'
+      - '5173:8080'
     environment: *nextjs-env
     depends_on:
       auth-api:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'node', '-e', "fetch('http://localhost/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 3s
       timeout: 3s
       retries: 60

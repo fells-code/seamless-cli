@@ -21,10 +21,15 @@ CMD ["npm", "run", "dev"]
 FROM deps AS builder
 RUN npm run build
 
-FROM nginx:alpine AS runtime
+# Unprivileged nginx, as in the web templates: user nginx (uid 101) on 8080.
+FROM nginxinc/nginx-unprivileged:alpine AS runtime
+USER root
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-EXPOSE 80
+# The entrypoint writes config.js into the web root at start.
+RUN chmod +x /entrypoint.sh \
+  && chown -R nginx:nginx /usr/share/nginx/html
+USER nginx
+EXPOSE 8080
 CMD ["/entrypoint.sh"]

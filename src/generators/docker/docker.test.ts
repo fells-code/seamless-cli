@@ -352,11 +352,12 @@ describe("generateDockerCompose", () => {
       "127.0.0.1:5432:5432",
       "127.0.0.1:5312:5312",
       "127.0.0.1:3000:3000",
-      "127.0.0.1:5173:80",
+      "127.0.0.1:5173:8080",
       "127.0.0.1:5174:8080",
     ]) {
       expect(compose).toContain(`- "${mapping}"`);
     }
+    expect(compose).toContain('"--spider", "http://127.0.0.1:8080/health"');
 
     // No mapping escapes the loopback prefix.
     const published = compose.match(/^\s*- "[^"]*:\d+"$/gm) ?? [];
@@ -659,7 +660,8 @@ describe("generateDockerCompose for a full-stack web app", () => {
     expect(web).not.toContain("existing-token");
     expect(web).not.toContain("SERVICE_TOKEN");
     expect(web).toContain("JWKS_KID: existing-kid");
-    expect(web).toContain('- "127.0.0.1:5173:80"');
+    expect(web).toContain('- "127.0.0.1:5173:8080"');
+    expect(web).toContain("fetch('http://localhost:8080/health')");
     // The bind mount must not hide the container's dependencies or share a
     // build cache with the host.
     expect(web).toContain("- /app/node_modules");
