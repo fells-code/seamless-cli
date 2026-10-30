@@ -3,7 +3,7 @@ import kleur from "kleur";
 
 import type { AuthClient } from "./authClient.js";
 import { CancelledError, orCancel } from "./cancel.js";
-import { fetchActiveJwksKid } from "./jwksKid.js";
+import { DEV_JWKS_KID, fetchActiveJwksKid } from "./jwksKid.js";
 import { resolveAppInstanceUrl, rotateServiceToken, type PortalApp } from "./portal.js";
 import { requireInteractive } from "./tty.js";
 
@@ -13,7 +13,7 @@ import { requireInteractive } from "./tty.js";
 // Only reached when the instance cannot be asked. JWKS_KID is only the kid header on
 // the service tokens the adapter signs, and the auth API never checks it, but adapters
 // warn on boot while it is the dev default, so the instance's kid is worth fetching.
-export const FALLBACK_JWKS_KID = "dev-main";
+export const FALLBACK_JWKS_KID = DEV_JWKS_KID;
 
 // Asked of the instance rather than assumed: instances pin their kid per tier
 // (trialkey1, paidkey1), so writing the dev default made every managed scaffold boot

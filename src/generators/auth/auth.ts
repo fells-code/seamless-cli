@@ -12,6 +12,7 @@ export async function generateAuthServer(
   adminMode: AdminMode = "api",
   ownerEmail?: string,
   fullStack = false,
+  kid?: string,
 ) {
   console.log("Cloning SeamlessAuth server...");
 
@@ -29,6 +30,7 @@ export async function generateAuthServer(
     adminMode,
     ownerEmail,
     fullStack,
+    kid,
   );
 
   console.log("Auth server ready in /auth");

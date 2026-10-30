@@ -75,7 +75,7 @@ describe("generateAuthServer local mode", () => {
       { stdio: "inherit", cwd: tmpDir, shell: process.platform === "win32", env: process.env },
     );
 
-    expect(shared.kid).toBe("dev-main");
+    expect(shared.kid).toMatch(/^local-[0-9a-f]{12}$/);
     expect(shared.apiToken).toMatch(/^[0-9a-f]{64}$/);
 
     const written = fs.readFileSync(

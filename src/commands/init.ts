@@ -69,7 +69,7 @@ import {
 } from "../core/serviceToken.js";
 import { mergeEnvFile } from "../core/envFile.js";
 import { ensureGitignore, SECRET_IGNORES } from "../core/gitignore.js";
-import { fetchActiveJwksKid } from "../core/jwksKid.js";
+import { fetchActiveJwksKid, resolveLocalJwksKid } from "../core/jwksKid.js";
 import {
   buildScaffoldDatabaseUrl,
   getApplicationDatabase,
@@ -585,13 +585,17 @@ async function scaffoldLocal(
 
   let sharedConfig: any = {};
 
+  const fullStack = answers.apiTemplateId === undefined;
+  const jwksKid = resolveLocalJwksKid(root, fullStack ? "web" : "api");
+
   if (answers.authMode === "local") {
     sharedConfig = await generateAuthServer(
       root,
       oauthProviders,
       answers.adminMode,
       answers.ownerEmail,
-      answers.apiTemplateId === undefined,
+      fullStack,
+      jwksKid,
     );
   }
 
@@ -601,9 +605,10 @@ async function scaffoldLocal(
   const dockerShared = await generateDockerCompose(root, {
     authMode: answers.authMode,
     adminMode: answers.adminMode,
-    fullStack: answers.apiTemplateId === undefined,
+    fullStack,
     oauth: oauthProviders,
     ownerEmail: answers.ownerEmail,
+    kid: jwksKid,
   });
 
   if (answers.authMode === "docker") {
@@ -631,7 +636,7 @@ async function scaffoldLocal(
   // inline, so the backend's .env carries it under the name apps read.
   const backendEnv = path.join(
     root,
-    answers.apiTemplateId === undefined ? "web" : "api",
+    fullStack ? "web" : "api",
     ".env",
   );
   mergeEnvFile(backendEnv, { set: { [SERVICE_TOKEN_VAR]: sharedConfig.apiToken } });

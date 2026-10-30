@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { fetchEnvExample } from "../../core/fetch.js";
 import { parseEnv, parseEnvString, writePrivateFile } from "../../core/env.js";
+import { generateLocalJwksKid } from "../../core/jwksKid.js";
 import { generateSecret } from "../../core/secrets.js";
 import {
   buildOAuthAuthEnv,
@@ -30,6 +31,8 @@ export async function generateDockerCompose(
     // The web template serves /auth itself, so there is no api service and the
     // web container gets the auth wiring the api container would have had.
     fullStack?: boolean;
+    // JWKS_KID for the app; minted when omitted.
+    kid?: string;
   },
 ) {
   const { compose, shared } = await buildCompose(options, root);
@@ -79,10 +82,11 @@ async function buildCompose(
     oauth?: CollectedOAuthProvider[];
     ownerEmail?: string;
     fullStack?: boolean;
+    kid?: string;
   },
   root: string,
 ) {
-  const { authMode, adminMode, oauth, ownerEmail, fullStack } = options;
+  const { authMode, adminMode, oauth, ownerEmail, fullStack, kid } = options;
 
   const { service: authBlock, shared } = await authService(
     authMode,
@@ -91,6 +95,7 @@ async function buildCompose(
     adminMode,
     ownerEmail,
     fullStack,
+    kid,
   );
 
   const includeAdminContainer = adminMode === "image" || adminMode === "source";
@@ -158,12 +163,13 @@ async function authService(
   adminMode: AdminMode = "api",
   ownerEmail?: string,
   fullStack = false,
+  kid?: string,
 ) {
   if (mode === "local") {
     // auth/.env was already written by generateAuthServer (with its secrets and any
     // OAuth config). Read those values back rather than regenerating, which would mint
     // a new service token that no longer matches the one the API was given.
-    const shared = extractSharedFromExistingEnv(root);
+    const shared = extractSharedFromExistingEnv(root, kid);
 
     return {
       service: `
@@ -200,7 +206,14 @@ async function authService(
     };
   }
 
-  return await authServiceDocker(root, oauth, adminMode, ownerEmail, fullStack);
+  return await authServiceDocker(
+    root,
+    oauth,
+    adminMode,
+    ownerEmail,
+    fullStack,
+    kid,
+  );
 }
 
 // The app API's CORS allowlist. The console is same-origin here in API-served
@@ -303,6 +316,7 @@ async function authServiceDocker(
   adminMode: AdminMode = "api",
   ownerEmail?: string,
   fullStack = false,
+  kid?: string,
 ) {
   const raw = await fetchEnvExample();
   const parsed = parseEnvString(raw);
@@ -314,6 +328,7 @@ async function authServiceDocker(
     adminMode,
     ownerEmail,
     fullStack,
+    kid,
   );
 
   // The image needs no source tree, so auth/ holds only its environment here,
@@ -402,9 +417,11 @@ export function buildAuthEnv(
   adminMode: AdminMode = "api",
   ownerEmail?: string,
   fullStack = false,
+  // The app's JWKS_KID, which the auth server never reads. Anything but the
+  // adapters' dev-main placeholder, which they warn about on every boot.
+  kid: string = generateLocalJwksKid(),
 ) {
   const apiToken = generateSecret(32);
-  const kid = "dev-main";
 
   // The auth server grants the admin role at signup to an address listed here,
   // so registering in the scaffolded app produces a working /console admin with
@@ -478,6 +495,7 @@ export async function configureAuthLocalEnv(
   adminMode: AdminMode = "api",
   ownerEmail?: string,
   fullStack = false,
+  kid?: string,
 ) {
   const authDir = path.join(root, "auth");
   const envExamplePath = path.join(authDir, ".env.example");
@@ -498,6 +516,7 @@ export async function configureAuthLocalEnv(
     adminMode,
     ownerEmail,
     fullStack,
+    kid,
   );
 
   writeEnvFile(envPath, env);
@@ -522,11 +541,16 @@ function escapeMultiline(value: string) {
   return value.replace(/\n/g, "\\n");
 }
 
-export function extractSharedFromExistingEnv(root: string) {
+// The kid is not read from auth/.env: SEAMLESS_JWKS_ACTIVE_KID there names the auth
+// server's RSA signing key, not the service token kid the app's JWKS_KID carries.
+export function extractSharedFromExistingEnv(
+  root: string,
+  kid: string = generateLocalJwksKid(),
+) {
   const env = parseEnv(path.join(root, "auth", ".env"));
 
   return {
     apiToken: env.SEAMLESS_SERVICE_TOKEN || env.API_SERVICE_TOKEN,
-    kid: env.SEAMLESS_JWKS_ACTIVE_KID || env.JWKS_ACTIVE_KID || "dev-main",
+    kid,
   };
 }

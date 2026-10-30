@@ -104,7 +104,7 @@ describe("seamless add --local", () => {
       AUTH_SERVER_URL: "http://localhost:5312",
       AUTH_SERVER_ISSUER: "http://auth:5312",
       SEAMLESS_SERVICE_TOKEN: stackEnv.SEAMLESS_SERVICE_TOKEN,
-      JWKS_KID: "dev-main",
+      JWKS_KID: expect.stringMatching(/^local-[0-9a-f]{12}$/),
       UI_ORIGINS: "http://localhost:5173",
       SERVE_ADMIN_CONSOLE: "true",
     });
