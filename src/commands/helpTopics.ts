@@ -524,6 +524,8 @@ users prepare-device-replacement <id> --proofing <method> --evidence-ref <ref>
     usage: [
       "seamless migrate csv <file> [--map <mapping.json>] [--source <name>] [--apply] [--report <path>] [--json]",
       "seamless migrate entra-id [--group <id>] [--groups <mapping.json>] [--allow-upn] [--include-guests] [--source <name>] [--apply] [--report <path>] [--json]",
+      "seamless migrate auth0 <export.ndjson> [--map <mapping.json>] [--allow-unverified] [--source <name>] [--apply] [--report <path>] [--json]",
+      "seamless migrate cognito <list-users.json>... [--groups <groups.json>] [--map <mapping.json>] [--allow-unverified] [--include-unconfirmed] [--source <name>] [--apply] [--report <path>] [--json]",
     ],
     sections: [
       {
@@ -591,6 +593,66 @@ and guests are skipped and listed in the report.
 --apply, --report <path>, --json
   • As for migrate csv. The report defaults to entra-id.migrate-plan
     (or entra-id.migrate-result) in the current directory`,
+      },
+      {
+        heading: "migrate auth0 <export.ndjson>",
+        body: `Import users from an Auth0 user export, as the export job writes it (NDJSON,
+one user per line, gzip-compressed or not), with the same dry run, batching
+and report as migrate csv (requires an admin role). Reads the file only; no
+Auth0 credentials are needed.
+
+user_id is the externalId, which the Auth0 cutover provider links on. Email
+is email, phone is phone_number. Blocked users, and users whose export says
+email_verified: false, are skipped and listed in the report. A user with no
+email (an SMS connection user) is invalid.
+
+--map <mapping.json>
+  • Read roles and organizations from Auth0 metadata, for example:
+    { "columns": { "roles": "app_metadata.roles",
+                   "organizations": "app_metadata.org" },
+      "roles": ["staff"], "organizationRoles": ["member"] }
+    Paths start with app_metadata or user_metadata. Without a mapping no
+    metadata is imported
+--allow-unverified
+  • Import users whose email Auth0 never verified. Whoever registers with
+    that address first gets the account and its roles
+--source <name>
+  • Default auth0. Keep it stable across re-runs, and use the same value as
+    the cutover provider's externalIdSource
+--apply, --report <path>, --json
+  • As for migrate csv`,
+      },
+      {
+        heading: "migrate cognito <list-users.json>...",
+        body: `Import users from Amazon Cognito aws cognito-idp list-users output, with the
+same dry run, batching and report as migrate csv (requires an admin role).
+Reads files only; no AWS credentials are needed. Accepts one response, the
+Users array, an array of responses, or responses concatenated, and several
+files (one per exported chunk) in the order given.
+
+The sub attribute is the externalId, which the Cognito cutover provider links
+on. Email is email, phone is phone_number. Disabled users, users who never
+confirmed their sign-up, and users whose email_verified is "false" are skipped
+and listed in the report. A user with no email is invalid.
+
+--groups <groups.json>
+  • Turn groups into roles, from a map of username to group names, for
+    example { "ada": ["staff"], "Google_1048...": ["staff", "manager"] }.
+    Cognito's per-provider groups (<pool id>_<provider>) are ignored
+--map <mapping.json>
+  • Read roles or organizations from user attributes, for example:
+    { "columns": { "organizations": "custom:tenant" } }
+--allow-unverified
+  • Import users whose email_verified is "false". Federated users often
+    have it unset or false unless the pool maps it
+--include-unconfirmed
+  • Import users whose sign-up was never confirmed
+--source <name>
+  • Default cognito. Keep it stable across re-runs, and use the same value
+    as the cutover provider's externalIdSource
+--apply, --report <path>, --json
+  • As for migrate csv. With several input files the report defaults to
+    cognito.migrate-plan in the current directory`,
       },
     ],
   },

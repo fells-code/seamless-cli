@@ -1,0 +1,45 @@
+{
+    "Users": [
+        {
+            "Username": "ada",
+            "Attributes": [
+                { "Name": "sub", "Value": "11111111-aaaa-4bbb-8ccc-000000000001" },
+                { "Name": "email", "Value": "ada@example.com" },
+                { "Name": "email_verified", "Value": "true" }
+            ],
+            "UserCreateDate": "2025-01-10T09:00:00.000000-05:00",
+            "UserLastModifiedDate": "2025-01-10T09:00:00.000000-05:00",
+            "Enabled": true,
+            "UserStatus": "CONFIRMED"
+        },
+        {
+            "Username": "Google_104857600123456789012",
+            "Attributes": [
+                { "Name": "sub", "Value": "11111111-aaaa-4bbb-8ccc-000000000002" },
+                { "Name": "identities", "Value": "[{\"userId\":\"104857600123456789012\",\"providerName\":\"Google\",\"providerType\":\"Google\"}]" },
+                { "Name": "email", "Value": "grace@example.com" },
+                { "Name": "email_verified", "Value": "true" }
+            ],
+            "UserCreateDate": "2025-02-01T09:00:00.000000-05:00",
+            "UserLastModifiedDate": "2025-02-01T09:00:00.000000-05:00",
+            "Enabled": true,
+            "UserStatus": "EXTERNAL_PROVIDER"
+        },
+        {
+            "Username": "lin",
+            "Attributes": [
+                { "Name": "sub", "Value": "11111111-aaaa-4bbb-8ccc-000000000003" },
+                { "Name": "email", "Value": "lin@example.com" },
+                { "Name": "email_verified", "Value": "true" },
+                { "Name": "phone_number", "Value": "+15555550101" },
+                { "Name": "phone_number_verified", "Value": "true" },
+                { "Name": "custom:tenant", "Value": "platform" }
+            ],
+            "UserCreateDate": "2025-03-01T09:00:00.000000-05:00",
+            "UserLastModifiedDate": "2025-03-01T09:00:00.000000-05:00",
+            "Enabled": true,
+            "UserStatus": "CONFIRMED"
+        }
+    ],
+    "NextToken": "eyJQYWdpbmF0aW9uVG9rZW4iOiBudWxsLCAiYm90b190cnVuY2F0ZV9hbW91bnQiOiAzfQ=="
+}
