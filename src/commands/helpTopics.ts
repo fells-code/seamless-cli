@@ -526,8 +526,34 @@ users prepare-device-replacement <id> --proofing <method> --evidence-ref <ref>
       "seamless migrate entra-id [--group <id>] [--groups <mapping.json>] [--allow-upn] [--include-guests] [--source <name>] [--apply] [--report <path>] [--json]",
       "seamless migrate auth0 <export.ndjson> [--map <mapping.json>] [--allow-unverified] [--source <name>] [--apply] [--report <path>] [--json]",
       "seamless migrate cognito <list-users.json>... [--groups <groups.json>] [--map <mapping.json>] [--allow-unverified] [--include-unconfirmed] [--source <name>] [--apply] [--report <path>] [--json]",
+      "seamless migrate assess <csv|entra-id|auth0|cognito> [source args] [--report <path>] [--json]",
     ],
     sections: [
+      {
+        heading: "migrate assess <source> [source args]",
+        body: `A readiness report from the source alone, before any import. It needs no
+Seamless Auth instance and no login, and sends nothing to one. Takes any
+source and its arguments, for example:
+
+  seamless migrate assess auth0 auth0-users.json --map auth0-map.json
+  seamless migrate assess cognito cognito-users.json --groups groups.json
+  seamless migrate assess csv users.csv
+  seamless migrate assess entra-id --group <id>   (reads Microsoft Graph)
+
+The report covers users found, how many would import and why the rest would
+not (including duplicate emails), contact coverage (verified email, phone
+only, neither), the roles and organizations that would be granted and the
+fields left behind, source features Seamless Auth does not cover with a
+link to the guide, and a cost calculator link with the user count filled in.
+It holds counts and field, role and organization names, never a user's
+email, phone or id.
+
+--report <path>
+  • Write <path>.md (default: <input>.migrate-assess.md beside the input,
+    or <source>.migrate-assess.md in the current directory)
+--json
+  • Print the assessment as JSON instead of the summary`,
+      },
       {
         heading: "migrate csv <file>",
         body: `Import users from a CSV export into the instance (requires an admin role).

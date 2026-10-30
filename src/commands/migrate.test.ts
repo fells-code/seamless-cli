@@ -1,4 +1,5 @@
 import fs from "fs";
+import net from "net";
 import os from "os";
 import path from "path";
 import { gzipSync } from "zlib";
@@ -488,5 +489,134 @@ describe("seamless migrate cognito", () => {
     const errors = vi.mocked(console.error).mock.calls.map((c) => String(c[0]));
     expect(errors[0]).toMatch(/Name the list-users output/);
     expect(errors[1]).toMatch(/has no users/);
+  });
+});
+
+describe("seamless migrate assess", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let connectSpy: ReturnType<typeof vi.spyOn>;
+
+  // Any network use at all fails the test: fetch, and every socket http, https or a
+  // client library would open.
+  beforeEach(() => {
+    fetchMock = vi.fn(async (input: string | URL) => {
+      throw new Error(`unexpected fetch ${String(input)}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    connectSpy = vi.spyOn(net.Socket.prototype, "connect").mockImplementation(() => {
+      throw new Error("unexpected socket connect");
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    connectSpy.mockRestore();
+  });
+
+  function expectNoInstanceContact() {
+    expect(createAuthClient).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+    expect(connectSpy).not.toHaveBeenCalled();
+  }
+
+  it("assesses an Auth0 export without touching the network, and writes Markdown beside it", async () => {
+    const file = path.join(dir, "auth0-users.json");
+    fs.copyFileSync(fixture("auth0-export.ndjson"), file);
+
+    await runMigrate(["assess", "auth0", file, "--map", fixture("auth0-map.json")]);
+
+    expectNoInstanceContact();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(process.exit).not.toHaveBeenCalled();
+    const report = fs.readFileSync(path.join(dir, "auth0-users.migrate-assess.md"), "utf-8");
+    expect(report).toMatch(/^# Migration readiness: auth0/);
+    expect(report).not.toMatch(/@example\.com/);
+    expect(fs.readdirSync(dir).sort()).toEqual(["auth0-users.json", "auth0-users.migrate-assess.md"]);
+    expect(output()).toMatch(/9 found.*4 would import.*5 would not/s);
+    expect(output()).toContain("https://docs.seamlessauth.com/compare/cost?mau=9&vendor=auth0");
+  });
+
+  it("assesses Cognito chunk files and prints JSON with --json", async () => {
+    const base = path.join(dir, "readiness");
+
+    await runMigrate([
+      "assess",
+      "cognito",
+      fixture("cognito-users-0.json"),
+      fixture("cognito-users-1.json"),
+      "--groups",
+      fixture("cognito-groups.json"),
+      "--report",
+      base,
+      "--json",
+    ]);
+
+    expectNoInstanceContact();
+    expect(fetchMock).not.toHaveBeenCalled();
+    const printed = JSON.parse(String(logSpy.mock.calls.at(-1)![0]));
+    expect(printed).toMatchObject({
+      source: "cognito",
+      users: { found: 8, wouldImport: 3, notImported: 5 },
+      costCalculator: "https://docs.seamlessauth.com/compare/cost?mau=8&vendor=cognito",
+      report: `${base}.md`,
+    });
+    expect(JSON.stringify(printed)).not.toMatch(/@example\.com|11111111-aaaa/);
+    expect(fs.existsSync(`${base}.md`)).toBe(true);
+  });
+
+  it("assesses a CSV", async () => {
+    const file = writeCsv(["email,name", "ada@example.com,Ada", "nope,Bad"]);
+
+    await runMigrate(["assess", "csv", file]);
+
+    expectNoInstanceContact();
+    expect(fetchMock).not.toHaveBeenCalled();
+    const report = fs.readFileSync(path.join(dir, "users.migrate-assess.md"), "utf-8");
+    expect(report).toContain("| Would import | 1 (50%) |");
+    expect(report).toContain("| name | 2 |");
+    expect(report).toContain("(https://docs.seamlessauth.com/compare/cost?mau=2)");
+  });
+
+  it("assesses Entra ID by reading Microsoft Graph only, never the instance", async () => {
+    vi.stubEnv("ENTRA_TENANT_ID", "contoso.onmicrosoft.com");
+    vi.stubEnv("ENTRA_CLIENT_ID", "client");
+    vi.stubEnv("ENTRA_CLIENT_SECRET", "graph-s3cret");
+    fetchMock.mockImplementation(async (input: string | URL) => {
+      const url = String(input);
+      const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+      if (url.startsWith("https://login.microsoftonline.com/")) return reply({ access_token: "t" });
+      if (url.startsWith("https://graph.microsoft.com/v1.0/users")) {
+        return reply({ value: [{ id: "oid-ada", mail: "ada@contoso.com", accountEnabled: true }] });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const base = path.join(dir, "entra");
+
+    await runMigrate(["assess", "entra-id", "--report", base]);
+
+    expectNoInstanceContact();
+    expect(
+      fetchMock.mock.calls.every(([u]) =>
+        /^https:\/\/(login\.microsoftonline|graph\.microsoft)\.com\//.test(String(u)),
+      ),
+    ).toBe(true);
+    const report = fs.readFileSync(`${base}.md`, "utf-8");
+    expect(report).toContain("| Verified email | 1 (100%) |");
+    expect(report).not.toContain("graph-s3cret");
+  });
+
+  it("refuses --apply, an unknown source and a missing file", async () => {
+    await expect(runMigrate(["assess", "auth0", fixture("auth0-export.ndjson"), "--apply"])).rejects.toThrow(
+      "process.exit(1)",
+    );
+    await expect(runMigrate(["assess", "okta"])).rejects.toThrow("process.exit(1)");
+    await expect(runMigrate(["assess", "cognito"])).rejects.toThrow("process.exit(1)");
+
+    const errors = vi.mocked(console.error).mock.calls.map((c) => String(c[0]));
+    expect(errors[0]).toMatch(/never writes to an instance/);
+    expect(errors[1]).toMatch(/Unknown migrate source: okta[\s\S]*migrate assess/);
+    expect(errors[2]).toMatch(/Name the list-users output/);
+    expectNoInstanceContact();
   });
 });

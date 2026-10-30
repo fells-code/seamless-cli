@@ -3,6 +3,16 @@ import path from "path";
 import kleur from "kleur";
 import { extractFlag } from "../core/args.js";
 import {
+  assess,
+  profileAuth0,
+  profileCognito,
+  profileCsv,
+  profileEntraId,
+  writeAssessment,
+  type Assessment,
+  type SourceProfile,
+} from "../core/assess.js";
+import {
   assertAuth0Mapping,
   AUTH0_MAPPED_FIELDS,
   auth0ImportRows,
@@ -53,7 +63,9 @@ const AUTH0_USAGE =
   "seamless migrate auth0 <export.ndjson> [--map <mapping.json>] [--allow-unverified] [--source <name>] [--apply] [--report <path>] [--json]";
 const COGNITO_USAGE =
   "seamless migrate cognito <list-users.json>... [--groups <groups.json>] [--map <mapping.json>] [--allow-unverified] [--include-unconfirmed] [--source <name>] [--apply] [--report <path>] [--json]";
-const USAGE = [CSV_USAGE, ENTRA_USAGE, AUTH0_USAGE, COGNITO_USAGE]
+const ASSESS_USAGE =
+  "seamless migrate assess <csv|entra-id|auth0|cognito> [source args] [--report <path>] [--json]";
+const USAGE = [CSV_USAGE, ENTRA_USAGE, AUTH0_USAGE, COGNITO_USAGE, ASSESS_USAGE]
   .map((line, i) => `${i === 0 ? "Usage: " : "       "}${line}`)
   .join("\n");
 
@@ -63,12 +75,14 @@ type Source = (typeof SOURCES)[number];
 // Shown inline; the full list is always in the report files.
 const PROBLEMS_SHOWN = 10;
 
-/** What a source produced, ready to send. Both sources share everything after this. */
+/** What a source produced, ready to send. Every source shares everything after this. */
 interface ImportPlan {
   source: string;
   /** Names the input in the report, a file or a directory. */
   input: string;
-  reportBase: string;
+  /** Where reports go when --report does not say: beside the input, or the cwd. */
+  stem: string;
+  profile: SourceProfile;
   prepared: PreparedRow[];
   invalid: InvalidRow[];
   skipped: InvalidRow[];
@@ -77,14 +91,18 @@ interface ImportPlan {
 }
 
 export async function runMigrate(args: string[]): Promise<void> {
-  const sub = args[0] as Source;
+  const assessing = args[0] === "assess";
+  const sub = (assessing ? args[1] : args[0]) as Source;
   if (!SOURCES.includes(sub)) {
-    console.error(kleur.red(`Unknown migrate source: ${sub ?? "(none)"}`));
+    console.error(
+      kleur.red(`Unknown migrate source: ${sub ?? "(none)"}`) +
+        (assessing ? `\nUsage: ${ASSESS_USAGE}` : ""),
+    );
     console.log(USAGE);
     process.exit(1);
   }
 
-  let rest = args.slice(1);
+  let rest = args.slice(assessing ? 2 : 1);
   const flag = (name: string) => {
     const extracted = extractFlag(rest, name);
     rest = extracted.rest;
@@ -104,20 +122,21 @@ export async function runMigrate(args: string[]): Promise<void> {
 
   let plan: ImportPlan;
   try {
+    if (assessing && apply) {
+      throw new Error("migrate assess never writes to an instance. Drop --apply.");
+    }
     switch (sub) {
       case "csv":
-        plan = planCsv(files, { mapPath, sourceFlag, reportFlag, dryRun });
+        plan = planCsv(files, { mapPath, sourceFlag });
         break;
       case "auth0":
-        plan = planAuth0(files, { mapPath, sourceFlag, reportFlag, dryRun, allowUnverified });
+        plan = planAuth0(files, { mapPath, sourceFlag, allowUnverified });
         break;
       case "cognito":
         plan = planCognito(files, {
           mapPath,
           groupsPath,
           sourceFlag,
-          reportFlag,
-          dryRun,
           allowUnverified,
           includeUnconfirmed: rest.includes("--include-unconfirmed"),
         });
@@ -127,8 +146,6 @@ export async function runMigrate(args: string[]): Promise<void> {
           groupFlag,
           groupsPath,
           sourceFlag,
-          reportFlag,
-          dryRun,
           allowUpn: rest.includes("--allow-upn"),
           includeGuests: rest.includes("--include-guests"),
           json,
@@ -139,11 +156,12 @@ export async function runMigrate(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  await executeImport(plan, { profileFlag, dryRun, json });
-}
-
-function reportPath(reportFlag: string | undefined, stem: string, dryRun: boolean) {
-  return reportFlag ?? `${stem}.migrate-${dryRun ? "plan" : "result"}`;
+  if (assessing) {
+    runAssess(plan, { reportFlag, json });
+    return;
+  }
+  const reportBase = reportFlag ?? `${plan.stem}.migrate-${dryRun ? "plan" : "result"}`;
+  await executeImport(plan, reportBase, { profileFlag, dryRun, json });
 }
 
 function besideInput(file: string) {
@@ -152,12 +170,7 @@ function besideInput(file: string) {
 
 function planCsv(
   files: string[],
-  opts: {
-    mapPath?: string;
-    sourceFlag?: string;
-    reportFlag?: string;
-    dryRun: boolean;
-  },
+  opts: { mapPath?: string; sourceFlag?: string },
 ): ImportPlan {
   const file = files[0];
   if (!file) {
@@ -175,7 +188,8 @@ function planCsv(
   return {
     source: mapping.source,
     input: file,
-    reportBase: reportPath(opts.reportFlag, besideInput(file), opts.dryRun),
+    stem: besideInput(file),
+    profile: profileCsv(headers, columns, records),
     prepared,
     invalid,
     skipped: [],
@@ -188,13 +202,7 @@ function planCsv(
 
 function planAuth0(
   files: string[],
-  opts: {
-    mapPath?: string;
-    sourceFlag?: string;
-    reportFlag?: string;
-    dryRun: boolean;
-    allowUnverified: boolean;
-  },
+  opts: { mapPath?: string; sourceFlag?: string; allowUnverified: boolean },
 ): ImportPlan {
   const file = files[0];
   if (!file) {
@@ -214,7 +222,8 @@ function planAuth0(
   return {
     source: mapping.source,
     input: file,
-    reportBase: reportPath(opts.reportFlag, besideInput(file), opts.dryRun),
+    stem: besideInput(file),
+    profile: profileAuth0(users, mapping),
     ...rows,
     describe: [
       `${file} as source "${mapping.source}"`,
@@ -233,8 +242,6 @@ function planCognito(
     mapPath?: string;
     groupsPath?: string;
     sourceFlag?: string;
-    reportFlag?: string;
-    dryRun: boolean;
     allowUnverified: boolean;
     includeUnconfirmed: boolean;
   },
@@ -261,11 +268,8 @@ function planCognito(
   return {
     source: mapping.source,
     input: files.join(", "),
-    reportBase: reportPath(
-      opts.reportFlag,
-      files.length === 1 ? besideInput(files[0]) : "cognito",
-      opts.dryRun,
-    ),
+    stem: files.length === 1 ? besideInput(files[0]) : "cognito",
+    profile: profileCognito(users, mapping),
     ...rows,
     describe: [
       `${files.length === 1 ? files[0] : `${files.length} files`} as source "${mapping.source}"`,
@@ -289,8 +293,6 @@ async function planEntraId(opts: {
   groupFlag?: string;
   groupsPath?: string;
   sourceFlag?: string;
-  reportFlag?: string;
-  dryRun: boolean;
   allowUpn: boolean;
   includeGuests: boolean;
   json: boolean;
@@ -331,7 +333,8 @@ async function planEntraId(opts: {
   return {
     source: parsedSource.data,
     input: `entra-id:${creds.tenantId}${opts.groupFlag ? `/groups/${opts.groupFlag}` : ""}`,
-    reportBase: reportPath(opts.reportFlag, "entra-id", opts.dryRun),
+    stem: "entra-id",
+    profile: profileEntraId(users, { allowUpn: opts.allowUpn }),
     prepared,
     invalid,
     skipped,
@@ -347,6 +350,7 @@ async function planEntraId(opts: {
 
 async function executeImport(
   plan: ImportPlan,
+  reportBase: string,
   opts: { profileFlag?: string; dryRun: boolean; json: boolean },
 ): Promise<void> {
   const { source, prepared, invalid, skipped } = plan;
@@ -387,7 +391,7 @@ async function executeImport(
   }
 
   const report = buildReport(outcomes, invalid, skipped);
-  const written = writeReport(plan.reportBase, { source, dryRun, input: plan.input }, report);
+  const written = writeReport(reportBase, { source, dryRun, input: plan.input }, report);
   const summary = summarize(report);
 
   if (json) {
@@ -448,4 +452,47 @@ function printSummary(
       ),
     );
   }
+}
+
+function runAssess(plan: ImportPlan, opts: { reportFlag?: string; json: boolean }): void {
+  const assessment = assess(plan, plan.profile);
+  const file = writeAssessment(
+    `${opts.reportFlag ?? `${plan.stem}.migrate-assess`}.md`,
+    assessment,
+  );
+
+  if (opts.json) {
+    console.log(JSON.stringify({ ...assessment, report: file }, null, 2));
+    return;
+  }
+  printAssessment(assessment, file);
+}
+
+function printAssessment(a: Assessment, file: string): void {
+  const { found } = a.users;
+  console.log(kleur.bold("Readiness") + kleur.dim(` ${a.input} as source "${a.source}"`));
+  console.log(
+    [
+      `${found} found`,
+      kleur.green(`${a.users.wouldImport} would import`),
+      (a.users.notImported ? kleur.yellow : kleur.dim)(`${a.users.notImported} would not`),
+    ].join(kleur.dim("  ·  ")),
+  );
+  for (const reason of a.notImported.slice(0, PROBLEMS_SHOWN)) {
+    console.log(kleur.dim(`  ${String(reason.users).padStart(5)}  ${reason.name}`));
+  }
+  console.log(
+    kleur.dim(
+      `Contact: ${a.contacts.verifiedEmail} verified email, ${a.contacts.unverifiedEmail + a.contacts.unknownEmail} other email, ${a.contacts.phoneOnly} phone only, ${a.contacts.neither} neither`,
+    ),
+  );
+  for (const feature of a.features) {
+    console.log(kleur.yellow(`  ${feature.feature}: ${feature.users} user(s)`));
+  }
+  console.log("");
+  console.log(kleur.dim(`Report: ${file}`));
+  console.log(kleur.dim(`Cost:   ${a.costCalculator}`));
+  console.log(
+    kleur.dim("\nNothing was sent to a Seamless Auth instance."),
+  );
 }
