@@ -333,7 +333,7 @@ The backend's origin defaults to `http://localhost:<port>`: `PORT` from its `.en
 
 Then start the auth server (`docker compose -f seamless/docker-compose.yml up -d`), add the printed lines, and sign in. In development the one-time codes print in your backend's console. `seamless add --help` lists every option.
 
-A Svelte app without SvelteKit needs a navigator for its own router, so it is reported rather than wired; see the [Svelte bindings](https://github.com/fells-code/seamless-auth-react/tree/main/packages/svelte#without-sveltekit).
+A Svelte app without SvelteKit needs a navigator for its own router, so it is reported rather than wired; see the [Svelte bindings](https://github.com/fells-code/seamless-auth-js/tree/main/packages/svelte#without-sveltekit).
 
 ## Running your project
 
@@ -869,7 +869,7 @@ Seamless CLI scaffolds from, and conformance-tests against, these repositories:
 | [seamless-auth-api](https://github.com/fells-code/seamless-auth-api) | The auth server | Run as a pinned image (`--auth=docker`) or cloned into `auth/` at a pinned commit (`--auth=local`) |
 | [seamless-templates](https://github.com/fells-code/seamless-templates) | The web, API, mobile, and full-stack starters | Scaffolded from its registry at a pinned ref |
 | [seamless-auth-server](https://github.com/fells-code/seamless-auth-server) | `@seamless-auth/core`, `/express`, `/fastify` | The adapters the scaffolded `api/` runs on |
-| [seamless-auth-react](https://github.com/fells-code/seamless-auth-react) | `@seamless-auth/client`, `/react`, `/react-native` | The client SDKs the scaffolded `web/` and `mobile/` run on |
+| [seamless-auth-js](https://github.com/fells-code/seamless-auth-js) | `@seamless-auth/client`, `/react`, `/react-native` | The client SDKs the scaffolded `web/` and `mobile/` run on |
 
 The starters live in the templates monorepo and are listed in its registry, so the set of
 frameworks the CLI offers grows there. Each project can be used independently, but the CLI connects

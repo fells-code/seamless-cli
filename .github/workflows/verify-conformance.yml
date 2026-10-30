@@ -77,12 +77,12 @@ jobs:
           ref: ${{ inputs.server-ref }}
           path: seamless-auth-server
 
-      - name: Checkout seamless-auth-react
+      - name: Checkout seamless-auth-js
         uses: actions/checkout@v4
         with:
-          repository: fells-code/seamless-auth-react
+          repository: fells-code/seamless-auth-js
           ref: ${{ inputs.react-ref }}
-          path: seamless-auth-react
+          path: seamless-auth-js
 
       - name: Checkout seamless-templates
         uses: actions/checkout@v4
@@ -104,7 +104,7 @@ jobs:
           cache-dependency-path: |
             seamless-cli/package-lock.json
             seamless-cli/verify/harness/package-lock.json
-            seamless-auth-react/package-lock.json
+            seamless-auth-js/package-lock.json
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -158,7 +158,7 @@ jobs:
         if: ${{ inputs.local }}
         run: |
           (cd seamless-auth-server && pnpm install --frozen-lockfile)
-          (cd seamless-auth-react && npm ci)
+          (cd seamless-auth-js && npm ci)
 
       # Pre-install the harness deps + chromium (with system libs) so the run uses
       # them; `seamless verify` would otherwise install the browser without OS deps.
@@ -173,7 +173,7 @@ jobs:
         env:
           SEAMLESS_API_DIR: ${{ github.workspace }}/seamless-auth-api
           SEAMLESS_SERVER_DIR: ${{ github.workspace }}/seamless-auth-server
-          SEAMLESS_REACT_SDK_DIR: ${{ github.workspace }}/seamless-auth-react
+          SEAMLESS_REACT_SDK_DIR: ${{ github.workspace }}/seamless-auth-js
           # Point at the whole templates checkout so verify enumerates the registry
           # and conformance-tests every web template, each scoped to its own flows.
           SEAMLESS_TEMPLATES_DIR: ${{ github.workspace }}/seamless-templates
