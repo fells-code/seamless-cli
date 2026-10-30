@@ -6,8 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { spawn } from "child_process";
 import { generateAuthServer } from "./auth.js";
 import {
-  POSTGRES_IMAGE,
-  SEAMLESS_AUTH_API_IMAGE,
+  SEAMLESS_AUTH_API_COMMIT,
   SEAMLESS_AUTH_API_VERSION,
 } from "../../core/images.js";
 import type { CollectedOAuthProvider } from "../../core/oauthProviders.js";
@@ -34,8 +33,23 @@ afterEach(() => {
   vi.mocked(spawn).mockReset();
 });
 
-function fakeChild() {
-  return new EventEmitter();
+function fakeChild(stdout = "", code = 0) {
+  const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter() });
+  setImmediate(() => {
+    if (stdout) child.stdout.emit("data", Buffer.from(stdout));
+    child.emit("close", code);
+  });
+  return child;
+}
+
+// `git clone` populates auth/ with `envExample`; `git rev-parse HEAD` answers `head`.
+function stubGit(envExample: string, head = SEAMLESS_AUTH_API_COMMIT) {
+  vi.mocked(spawn).mockImplementation(((_cmd: string, args: string[]) => {
+    if (args[0] === "rev-parse") return fakeChild(`${head}\n`);
+    fs.mkdirSync(path.join(tmpDir, "auth"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "auth", ".env.example"), envExample);
+    return fakeChild();
+  }) as never);
 }
 
 function googleProvider(): CollectedOAuthProvider {
@@ -52,27 +66,19 @@ function stubEnvExampleFetch(content: string) {
 
 describe("generateAuthServer local mode", () => {
   it("clones the auth repo and writes auth/.env from the cloned example", async () => {
-    const child = fakeChild();
-    vi.mocked(spawn).mockImplementation(() => {
-      // simulate `git clone` populating the auth directory
-      fs.mkdirSync(path.join(tmpDir, "auth"), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpDir, "auth", ".env.example"),
-        "SOME_KEY=placeholder\n",
-      );
-      return child as never;
-    });
+    stubGit("SOME_KEY=placeholder\n");
 
-    const promise = generateAuthServer(tmpDir, [
-      googleProvider(),
-    ]);
-    child.emit("close", 0);
-    const shared = await promise;
+    const shared = await generateAuthServer(tmpDir, [googleProvider()]);
 
     expect(spawn).toHaveBeenCalledWith(
       "git",
       ["clone", "--branch", SEAMLESS_AUTH_API_VERSION, AUTH_REPO, "auth"],
       { stdio: "inherit", cwd: tmpDir, shell: process.platform === "win32", env: process.env },
+    );
+    expect(spawn).toHaveBeenCalledWith(
+      "git",
+      ["rev-parse", "HEAD"],
+      expect.objectContaining({ cwd: path.join(tmpDir, "auth") }),
     );
 
     expect(shared.kid).toBe("dev-main");
@@ -87,16 +93,9 @@ describe("generateAuthServer local mode", () => {
   });
 
   it("writes the full-stack origins when the web app serves the console", async () => {
-    const child = fakeChild();
-    vi.mocked(spawn).mockImplementation(() => {
-      fs.mkdirSync(path.join(tmpDir, "auth"), { recursive: true });
-      fs.writeFileSync(path.join(tmpDir, "auth", ".env.example"), "A=b\n");
-      return child as never;
-    });
+    stubGit("A=b\n");
 
-    const promise = generateAuthServer(tmpDir, [], "api", undefined, true);
-    child.emit("close", 0);
-    await promise;
+    await generateAuthServer(tmpDir, [], "api", undefined, true);
 
     const written = fs.readFileSync(path.join(tmpDir, "auth", ".env"), "utf-8");
     expect(written).toContain("ORIGINS=http://localhost:5173\n");
@@ -104,12 +103,19 @@ describe("generateAuthServer local mode", () => {
   });
 
   it("propagates a failure when the git clone fails", async () => {
-    const child = fakeChild();
-    vi.mocked(spawn).mockReturnValue(child as never);
+    vi.mocked(spawn).mockImplementation((() => fakeChild("", 1)) as never);
 
-    const promise = generateAuthServer(tmpDir);
-    child.emit("close", 1);
+    await expect(generateAuthServer(tmpDir)).rejects.toThrow("git failed");
+  });
 
-    await expect(promise).rejects.toThrow("git failed");
+  it("removes the clone and stops when the tag resolves to another commit", async () => {
+    stubGit("A=b\n", "0".repeat(40));
+
+    await expect(generateAuthServer(tmpDir)).rejects.toThrow(
+      new RegExp(
+        `${SEAMLESS_AUTH_API_VERSION} resolved to commit 0{40}, but this CLI pins it to ${SEAMLESS_AUTH_API_COMMIT}`,
+      ),
+    );
+    expect(fs.existsSync(path.join(tmpDir, "auth"))).toBe(false);
   });
 });

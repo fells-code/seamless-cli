@@ -23,3 +23,27 @@ export function runCommand(
     });
   });
 }
+
+export function readCommand(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "inherit"],
+      cwd,
+      shell: process.platform === "win32",
+      env: process.env,
+    });
+
+    let out = "";
+    child.stdout?.on("data", (chunk: Buffer | string) => {
+      out += chunk.toString();
+    });
+    child.on("close", (code) => {
+      if (code === 0) resolve(out.trim());
+      else reject(new Error(`${command} failed`));
+    });
+  });
+}

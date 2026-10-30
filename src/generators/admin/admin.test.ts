@@ -4,18 +4,23 @@ import path from "path";
 import AdmZip from "adm-zip";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SEAMLESS_AUTH_ADMIN_DASHBOARD_REF } from "../../core/images.js";
+import { SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT } from "../../core/images.js";
 import { generateAdminSource } from "./admin.js";
 
 let root: string;
 
 // A stand-in for the GitHub archive: every entry nested under one top-level
-// directory, the way `/archive/<ref>.zip` ships it.
-function archive(files: Record<string, string>, top = "dashboard-1.0.0"): Buffer {
+// directory with the commit as the zip comment, the way `/archive/<ref>.zip` ships it.
+function archive(
+  files: Record<string, string>,
+  top = "dashboard-1.0.0",
+  commit = SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT,
+): Buffer {
   const zip = new AdmZip();
   for (const [name, content] of Object.entries(files)) {
     zip.addFile(`${top}/${name}`, Buffer.from(content));
   }
+  zip.addZipComment(commit);
   return zip.toBuffer();
 }
 
@@ -62,18 +67,33 @@ describe("generateAdminSource", () => {
     expect(fs.existsSync(path.join(dir, "dashboard-1.0.0"))).toBe(false);
   });
 
-  it("requests the ref the published image is built from", async () => {
+  it("requests the commit pinned for the tag the published image is built from", async () => {
     const fetchMock = servingArchive(archive(DASHBOARD));
 
     await generateAdminSource(root);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `https://github.com/fells-code/seamless-auth-admin-dashboard/archive/${SEAMLESS_AUTH_ADMIN_DASHBOARD_REF}.zip`,
+      `https://github.com/fells-code/seamless-auth-admin-dashboard/archive/${SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT}.zip`,
     );
   });
 
-  it("honours SEAMLESS_ADMIN_DASHBOARD_REF", async () => {
-    const fetchMock = servingArchive(archive(DASHBOARD));
+  it("refuses an archive of a commit other than the pinned one, writing nothing", async () => {
+    servingArchive(archive(DASHBOARD, undefined, "0".repeat(40)));
+
+    await expect(generateAdminSource(root)).rejects.toThrow(
+      new RegExp(`is commit 0{40}, but this CLI pins .* to ${SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT}`),
+    );
+    expect(fs.existsSync(path.join(root, "admin"))).toBe(false);
+  });
+
+  it("refuses an archive that carries no commit", async () => {
+    servingArchive(archive(DASHBOARD, undefined, ""));
+
+    await expect(generateAdminSource(root)).rejects.toThrow(/is commit \(unknown\)/);
+  });
+
+  it("honours SEAMLESS_ADMIN_DASHBOARD_REF without checking it against the pin", async () => {
+    const fetchMock = servingArchive(archive(DASHBOARD, undefined, "f".repeat(40)));
     process.env.SEAMLESS_ADMIN_DASHBOARD_REF = "main";
 
     await generateAdminSource(root);
@@ -138,6 +158,7 @@ describe("generateAdminSource", () => {
     // addFile normalizes the name it is given, so the traversal is set afterwards.
     // A real archive can carry one: AdmZip returns `../` in entryName verbatim.
     zip.getEntries()[1].entryName = "dashboard-1.0.0/../../escaped.txt";
+    zip.addZipComment(SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT);
     servingArchive(zip.toBuffer());
 
     // A box around the project, so the entry's escape target is somewhere this test

@@ -4,6 +4,7 @@ import AdmZip from "adm-zip";
 
 import { containedPath } from "../../core/archive.js";
 import {
+  SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT,
   SEAMLESS_AUTH_ADMIN_DASHBOARD_REF,
   SEAMLESS_AUTH_ADMIN_DASHBOARD_REPO,
 } from "../../core/images.js";
@@ -29,8 +30,11 @@ export const ADMIN_DIR = "admin";
  * history, which is the right default for a directory meant to be committed into
  * the developer's own repository.
  *
- * Override the ref with SEAMLESS_ADMIN_DASHBOARD_REF, or scaffold from a local
- * checkout with SEAMLESS_ADMIN_DASHBOARD_DIR, mirroring the template overrides.
+ * The download is by SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT, and the archive's own
+ * commit is checked against it before anything is written. Override the ref with
+ * SEAMLESS_ADMIN_DASHBOARD_REF (used as given, unverified), or scaffold from a
+ * local checkout with SEAMLESS_ADMIN_DASHBOARD_DIR, mirroring the template
+ * overrides.
  */
 export async function generateAdminSource(root: string): Promise<string> {
   const destDir = path.join(root, ADMIN_DIR);
@@ -39,9 +43,13 @@ export async function generateAdminSource(root: string): Promise<string> {
   if (localDir) {
     copyDir(path.resolve(localDir), destDir);
   } else {
-    const ref =
-      process.env.SEAMLESS_ADMIN_DASHBOARD_REF ?? SEAMLESS_AUTH_ADMIN_DASHBOARD_REF;
-    await unpackArchive(SEAMLESS_AUTH_ADMIN_DASHBOARD_REPO, ref, destDir);
+    const override = process.env.SEAMLESS_ADMIN_DASHBOARD_REF;
+    await unpackArchive(
+      SEAMLESS_AUTH_ADMIN_DASHBOARD_REPO,
+      override ?? SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT,
+      destDir,
+      override ? undefined : SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT,
+    );
   }
 
   // The compose service is `build: ./admin`, so without this the stack fails on a
@@ -59,6 +67,7 @@ async function unpackArchive(
   repo: string,
   ref: string,
   destDir: string,
+  expectedCommit?: string,
 ): Promise<void> {
   const url = `https://github.com/${repo}/archive/${ref}.zip`;
   const res = await fetch(url);
@@ -72,6 +81,16 @@ async function unpackArchive(
   const entries = zip.getEntries();
   if (entries.length === 0) {
     throw new Error("The downloaded admin dashboard archive was empty.");
+  }
+
+  // GitHub writes the archived commit into the zip comment.
+  if (expectedCommit) {
+    const commit = zip.getZipComment().trim();
+    if (commit !== expectedCommit) {
+      throw new Error(
+        `The admin dashboard archive from ${url} is commit ${commit || "(unknown)"}, but this CLI pins ${SEAMLESS_AUTH_ADMIN_DASHBOARD_REF} to ${expectedCommit}. Nothing was unpacked. Re-run with --admin=image, or update the CLI.`,
+      );
+    }
   }
 
   // GitHub archives nest everything under a single top-level directory.
