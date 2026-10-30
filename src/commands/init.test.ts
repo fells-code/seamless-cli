@@ -36,7 +36,7 @@ import {
 import { parseEnv, writeEnv } from "../core/env.js";
 import { mergeEnvFile } from "../core/envFile.js";
 import { ensureGitignore, SECRET_IGNORES } from "../core/gitignore.js";
-import { fetchActiveJwksKid } from "../core/jwksKid.js";
+import { fetchActiveJwksKid, resolveLocalJwksKid } from "../core/jwksKid.js";
 
 import { CancelledError } from "../core/cancel.js";
 import { runCLI } from "./init.js";
@@ -142,7 +142,9 @@ vi.mock("../core/secrets.js", () => ({
   generateSecret: vi.fn(() => "generated-secret"),
 }));
 vi.mock("../core/jwksKid.js", () => ({
+  DEV_JWKS_KID: "dev-main",
   fetchActiveJwksKid: vi.fn(async () => undefined),
+  resolveLocalJwksKid: vi.fn(() => "local-0123456789ab"),
 }));
 
 const CWD = "/work";
@@ -506,6 +508,7 @@ describe("scaffoldLocal", () => {
       adminMode: "image",
       oauth: [],
       fullStack: false,
+      kid: "local-0123456789ab",
     });
     // env applied with the docker-provided token/kid for both templates.
     expect(applyTemplateEnv).toHaveBeenCalledTimes(2);
@@ -645,7 +648,9 @@ describe("scaffoldLocal", () => {
       adminMode: "image",
       oauth: [],
       fullStack: false,
+      kid: "local-0123456789ab",
     });
+    expect(resolveLocalJwksKid).toHaveBeenCalledWith("/work", "api");
     expect(applyTemplateEnv).toHaveBeenLastCalledWith(
       "/work/api",
       expect.anything(),
@@ -701,6 +706,7 @@ describe("scaffoldLocal", () => {
       "image",
       "dev@example.com",
       false,
+      "local-0123456789ab",
     );
     expect(generateDockerCompose).toHaveBeenCalledWith("/work", {
       ownerEmail: "dev@example.com",
@@ -710,6 +716,7 @@ describe("scaffoldLocal", () => {
         expect.objectContaining({ catalog: { label: "Google" } }),
       ]),
       fullStack: false,
+      kid: "local-0123456789ab",
     });
     // OAuth next-steps summary lists ready and pending providers.
     expect(out()).toContain("Enabled: Google");
@@ -2184,7 +2191,9 @@ describe("full-stack templates", () => {
       "api",
       "dev@example.com",
       true,
+      "local-0123456789ab",
     );
+    expect(resolveLocalJwksKid).toHaveBeenCalledWith(CWD, "web");
   });
 
   it("drops the default console for a starter release that cannot serve it", async () => {

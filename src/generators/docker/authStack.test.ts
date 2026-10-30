@@ -50,7 +50,7 @@ describe("generateAuthStack", () => {
     expect(env.OWNER_EMAIL).toBe("owner@example.com");
     expect(env.ISSUER).toBe("http://auth:5312");
     expect(env.DB_HOST).toBe("db");
-    expect(stack.kid).toBe("dev-main");
+    expect(stack.kid).toMatch(/^local-[0-9a-f]{12}$/);
   });
 
   it("leaves the console origin out when the backend does not serve it", async () => {

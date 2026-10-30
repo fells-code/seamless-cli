@@ -81,7 +81,7 @@ describe("generateAuthServer local mode", () => {
       expect.objectContaining({ cwd: path.join(tmpDir, "auth") }),
     );
 
-    expect(shared.kid).toBe("dev-main");
+    expect(shared.kid).toMatch(/^local-[0-9a-f]{12}$/);
     expect(shared.apiToken).toMatch(/^[0-9a-f]{64}$/);
 
     const written = fs.readFileSync(

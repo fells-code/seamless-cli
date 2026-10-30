@@ -40,6 +40,8 @@ function googleProvider(
   return { catalog, clientId: "gid", clientSecret: "gsecret", ...overrides };
 }
 
+const LOCAL_KID = /^local-[0-9a-f]{12}$/;
+
 function writeAuthEnvFixture(root: string, kidKey?: string) {
   fs.mkdirSync(path.join(root, "auth"), { recursive: true });
   const lines = ["API_SERVICE_TOKEN=existing-token"];
@@ -92,7 +94,34 @@ describe("buildAuthEnv", () => {
     expect(env.SERVE_ADMIN_DASHBOARD).toBe("true");
     expect(env.LOGIN_METHODS).toBe("passkey,magic_link,email_otp");
     expect(env.ALLOW_UNCREDENTIALED_DELIVERY_SECRETS).toBe("true");
-    expect(shared.kid).toBe("dev-main");
+    expect(shared.kid).toMatch(LOCAL_KID);
+  });
+
+  // Adapters warn on every boot while jwksKid is exactly dev-main.
+  it("scaffolds a kid other than the adapters' dev-main placeholder", () => {
+    const first = buildAuthEnv({}, "docker").shared.kid;
+    const second = buildAuthEnv({}, "local").shared.kid;
+
+    expect(first).not.toBe("dev-main");
+    expect(second).not.toBe("dev-main");
+    expect(first).toMatch(LOCAL_KID);
+    expect(first).not.toBe(second);
+  });
+
+  it("keeps a kid it is given", () => {
+    const { env, shared } = buildAuthEnv(
+      {},
+      "docker",
+      [],
+      "api",
+      undefined,
+      false,
+      "local-existing",
+    );
+
+    expect(shared.kid).toBe("local-existing");
+    // The auth server never reads the service token kid.
+    expect(Object.values(env)).not.toContain("local-existing");
   });
 
   it("adds the standalone console origin and disables serving in container mode", () => {
@@ -172,20 +201,18 @@ describe("buildAuthEnv", () => {
 });
 
 describe("extractSharedFromExistingEnv", () => {
-  it("prefers SEAMLESS_JWKS_ACTIVE_KID", () => {
-    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
-    expect(extractSharedFromExistingEnv(tmpDir)).toEqual({
+  it("returns the kid it is given", () => {
+    writeAuthEnvFixture(tmpDir);
+    expect(extractSharedFromExistingEnv(tmpDir, "local-existing")).toEqual({
       apiToken: "existing-token",
-      kid: "existing-kid",
+      kid: "local-existing",
     });
   });
 
-  it("falls back to JWKS_ACTIVE_KID", () => {
-    writeAuthEnvFixture(tmpDir, "JWKS_ACTIVE_KID");
-    expect(extractSharedFromExistingEnv(tmpDir)).toEqual({
-      apiToken: "existing-token",
-      kid: "existing-kid",
-    });
+  // That variable names the auth server's RSA signing key, not the service token kid.
+  it("does not take the kid from SEAMLESS_JWKS_ACTIVE_KID", () => {
+    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
+    expect(extractSharedFromExistingEnv(tmpDir).kid).toMatch(LOCAL_KID);
   });
 
   it("reads the token under the auth server's preferred name", () => {
@@ -197,12 +224,11 @@ describe("extractSharedFromExistingEnv", () => {
     expect(extractSharedFromExistingEnv(tmpDir).apiToken).toBe("new-token");
   });
 
-  it("defaults kid to dev-main when neither is present", () => {
+  it("mints a non-default kid when none is given", () => {
     writeAuthEnvFixture(tmpDir);
-    expect(extractSharedFromExistingEnv(tmpDir)).toEqual({
-      apiToken: "existing-token",
-      kid: "dev-main",
-    });
+    const { kid } = extractSharedFromExistingEnv(tmpDir);
+    expect(kid).not.toBe("dev-main");
+    expect(kid).toMatch(LOCAL_KID);
   });
 });
 
@@ -224,7 +250,8 @@ describe("configureAuthLocalEnv", () => {
 
     const shared = await configureAuthLocalEnv(tmpDir, [googleProvider()]);
 
-    expect(shared.kid).toBe("dev-main");
+    expect(shared.kid).not.toBe("dev-main");
+    expect(shared.kid).toMatch(LOCAL_KID);
     expect(shared.apiToken).toMatch(/^[0-9a-f]{64}$/);
 
     const written = fs.readFileSync(path.join(tmpDir, "auth", ".env"), "utf-8");
@@ -254,11 +281,12 @@ describe("configureAuthLocalEnv", () => {
 
 describe("generateDockerCompose", () => {
   it("builds a local-auth compose file with an image-mode admin service", async () => {
-    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
+    writeAuthEnvFixture(tmpDir);
 
     const shared = await generateDockerCompose(tmpDir, {
       authMode: "local",
       adminMode: "image",
+      kid: "existing-kid",
     });
 
     expect(shared).toEqual({ apiToken: "existing-token", kid: "existing-kid" });
@@ -419,6 +447,46 @@ describe("generateDockerCompose", () => {
     expect(JSON.parse(env.OAUTH_PROVIDERS)[0].clientSecretEnv).toBeTruthy();
   });
 
+  it("scaffolds a docker-auth app kid that is not dev-main", async () => {
+    stubEnvExampleFetch("SOME_VAR=value\n");
+
+    const shared = await generateDockerCompose(tmpDir, {
+      authMode: "docker",
+      adminMode: "api",
+    });
+
+    const compose = fs.readFileSync(
+      path.join(tmpDir, "docker-compose.yml"),
+      "utf-8",
+    );
+    expect(shared.kid).not.toBe("dev-main");
+    expect(shared.kid).toMatch(LOCAL_KID);
+    expect(compose).toContain(`JWKS_KID: ${shared.kid}`);
+    expect(compose).not.toContain("dev-main");
+  });
+
+  // A local auth server writes auth/.env first and the compose call reads it back,
+  // so the kid has to reach both or the app's .env and the compose file disagree.
+  it("writes the same kid in both auth modes when one is given", async () => {
+    stubEnvExampleFetch("SOME_VAR=value\n");
+    const docker = await generateDockerCompose(tmpDir, {
+      authMode: "docker",
+      adminMode: "api",
+      kid: "local-abc123",
+    });
+    expect(docker.kid).toBe("local-abc123");
+
+    const local = await generateDockerCompose(tmpDir, {
+      authMode: "local",
+      adminMode: "api",
+      kid: "local-abc123",
+    });
+    expect(local.kid).toBe("local-abc123");
+    expect(
+      fs.readFileSync(path.join(tmpDir, "docker-compose.yml"), "utf-8"),
+    ).toContain("JWKS_KID: local-abc123");
+  });
+
   // #303: the compose file is committed, so no generated secret, and no OAuth
   // client secret the user typed in, may appear in it.
   it("keeps every secret out of the compose file, in the 0600 auth/.env", async () => {
@@ -569,12 +637,13 @@ describe("buildAuthEnv owner grant", () => {
 
 describe("generateDockerCompose for a full-stack web app", () => {
   it("runs the web app as the backend, with no api service", async () => {
-    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
+    writeAuthEnvFixture(tmpDir);
 
     await generateDockerCompose(tmpDir, {
       authMode: "local",
       adminMode: "none",
       fullStack: true,
+      kid: "existing-kid",
     });
 
     const compose = fs.readFileSync(
@@ -706,12 +775,13 @@ describe("isolated mountpoints", () => {
   });
 
   it("creates .next for a full-stack web app", async () => {
-    writeAuthEnvFixture(tmpDir, "SEAMLESS_JWKS_ACTIVE_KID");
+    writeAuthEnvFixture(tmpDir);
 
     await generateDockerCompose(tmpDir, {
       authMode: "local",
       adminMode: "none",
       fullStack: true,
+      kid: "existing-kid",
     });
 
     expect(fs.existsSync(path.join(tmpDir, "web/node_modules"))).toBe(true);
