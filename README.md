@@ -737,6 +737,17 @@ The step-up code for an admin write is answered by `SEAMLESS_TOTP_CODE` (see
 
 ## Migrating users from another system
 
+Start with `seamless migrate assess`, which reads the source alone (no instance, no login) and
+writes a Markdown readiness report: users found, how many would import and why the rest would not,
+contact coverage for the passkey enrollment campaign, where groups and attributes land, source
+features Seamless Auth does not cover, and a cost calculator link. It takes any source below and its
+arguments, plus `--report <path>` and `--json`, and the report holds counts and names of fields,
+roles and organizations, never a user's email, phone or id.
+
+```bash
+seamless migrate assess auth0 auth0-users.json   # writes auth0-users.migrate-assess.md
+```
+
 `seamless migrate csv` imports users from a CSV export (an HR system, a directory export, a
 spreadsheet) into the instance you are signed in to with `seamless profile login`. It needs an admin
 role and an auth server with `POST /admin/users/import`.
