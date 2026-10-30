@@ -1,0 +1,54 @@
+{
+    "Users": [
+        {
+            "Username": "phone-only",
+            "Attributes": [
+                { "Name": "sub", "Value": "11111111-aaaa-4bbb-8ccc-000000000004" },
+                { "Name": "phone_number", "Value": "+15555550102" },
+                { "Name": "phone_number_verified", "Value": "true" }
+            ],
+            "Enabled": true,
+            "UserStatus": "CONFIRMED"
+        },
+        {
+            "Username": "disabled",
+            "Attributes": [
+                { "Name": "sub", "Value": "11111111-aaaa-4bbb-8ccc-000000000005" },
+                { "Name": "email", "Value": "disabled@example.com" },
+                { "Name": "email_verified", "Value": "true" }
+            ],
+            "Enabled": false,
+            "UserStatus": "CONFIRMED"
+        },
+        {
+            "Username": "unconfirmed",
+            "Attributes": [
+                { "Name": "sub", "Value": "11111111-aaaa-4bbb-8ccc-000000000006" },
+                { "Name": "email", "Value": "unconfirmed@example.com" },
+                { "Name": "email_verified", "Value": "false" }
+            ],
+            "Enabled": true,
+            "UserStatus": "UNCONFIRMED"
+        },
+        {
+            "Username": "unverified",
+            "Attributes": [
+                { "Name": "sub", "Value": "11111111-aaaa-4bbb-8ccc-000000000007" },
+                { "Name": "email", "Value": "unverified@example.com" },
+                { "Name": "email_verified", "Value": "false" }
+            ],
+            "Enabled": true,
+            "UserStatus": "CONFIRMED"
+        },
+        {
+            "Username": "kai",
+            "Attributes": [
+                { "Name": "sub", "Value": "11111111-aaaa-4bbb-8ccc-000000000008" },
+                { "Name": "email", "Value": "kai@example.com" },
+                { "Name": "email_verified", "Value": "true" }
+            ],
+            "Enabled": true,
+            "UserStatus": "FORCE_CHANGE_PASSWORD"
+        }
+    ]
+}

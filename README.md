@@ -808,6 +808,33 @@ are imported with `--include-guests`). A group mapping names groups by object id
 }
 ```
 
+### From Auth0 or Amazon Cognito
+
+`seamless migrate auth0` and `seamless migrate cognito` read the vendor's export file as the vendor
+produces it, so there is no conversion step. They share the dry run, batches and report of
+`migrate csv`, and need no Auth0 or AWS credentials.
+
+```bash
+seamless migrate auth0 auth0-users.json                       # the export job's NDJSON (or .gz)
+seamless migrate auth0 auth0-users.json --map auth0-map.json  # roles and orgs from app_metadata
+seamless migrate cognito cognito-users.json --groups cognito-groups.json
+seamless migrate cognito cognito-export/users-*.json          # one file per exported chunk
+```
+
+- **Auth0:** `user_id` is the `externalId`, then `email` and `phone_number`. Metadata is imported only
+  through `--map`, whose columns name `app_metadata` or `user_metadata` paths, for example
+  `{ "columns": { "roles": "app_metadata.roles", "organizations": "app_metadata.org" } }`.
+- **Cognito:** the `sub` attribute is the `externalId`, then `email` and `phone_number`. `--groups`
+  takes a map of username to group names and turns groups into roles. `--map` can read roles or
+  organizations from an attribute, for example `{ "columns": { "organizations": "custom:tenant" } }`.
+  Any `list-users` output shape is accepted: one response, the `Users` array, an array of responses,
+  or responses concatenated.
+
+Blocked or disabled users, users whose email the source marks unverified (`--allow-unverified`
+imports them), and Cognito users who never confirmed their sign-up (`--include-unconfirmed`) are
+skipped and listed in the report. A user with no email is reported invalid. The source defaults to
+`auth0` or `cognito`, which is the `externalIdSource` the cutover provider links on.
+
 ## What is configured for you
 
 Seamless CLI handles the parts that are usually difficult to get right:

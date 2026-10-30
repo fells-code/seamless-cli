@@ -1,0 +1,10 @@
+{"user_id":"auth0|65f1a2b3c4d5e6f7a8b9c0d1","email":"ada@example.com","email_verified":true,"app_metadata":{"roles":["staff"],"org":"engineering"}}
+{"user_id":"google-oauth2|104857600123456789012","email":"grace@example.com","email_verified":true,"app_metadata":{"roles":["staff","manager"],"org":"platform"}}
+{"user_id":"sms|65f1a2b3c4d5e6f7a8b9c0d9","email":"lin@example.com","email_verified":true,"phone_number":"+15555550101"}
+{"user_id":"sms|65f1a2b3c4d5e6f7a8b9c0e0","phone_number":"+15555550102"}
+{"user_id":"auth0|65f1a2b3c4d5e6f7a8b9c0e1","email":null,"email_verified":false}
+{"user_id":"auth0|65f1a2b3c4d5e6f7a8b9c0e2","email":"unverified@example.com","email_verified":false}
+{"user_id":"auth0|65f1a2b3c4d5e6f7a8b9c0e3","email":"blocked@example.com","email_verified":true,"blocked":true}
+{"user_id":"samlp|acme|kai@acme.example","email":"kai@acme.example","email_verified":true,"app_metadata":{"roles":"staff;manager"}}
+{"user_id":"auth0|65f1a2b3c4d5e6f7a8b9c0e4","email":"ADA@example.com","email_verified":true}
+

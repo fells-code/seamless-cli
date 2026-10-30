@@ -1,4 +1,5 @@
 import fs from "fs";
+import { gunzipSync } from "zlib";
 import {
   ImportUsersResponseSchema,
   USER_IMPORT_MAX_ROWS,
@@ -72,8 +73,15 @@ function stringList(value: unknown, field: string): string[] {
 
 export function loadMapping(
   path: string | undefined,
-  overrides: { source?: string } = {},
+  overrides: {
+    source?: string;
+    /** The source when neither the flag nor the file names one. */
+    defaultSource?: string;
+    /** The fields this source lets a mapping set. */
+    fields?: MappedField[];
+  } = {},
 ): MigrationMapping {
+  const allowed = overrides.fields ?? FIELDS;
   let raw: Record<string, unknown> = {};
   if (path) {
     try {
@@ -85,17 +93,23 @@ export function loadMapping(
 
   const columns = (raw.columns ?? {}) as Record<string, unknown>;
   for (const [key, value] of Object.entries(columns)) {
-    if (!FIELDS.includes(key as MappedField)) {
+    if (!allowed.includes(key as MappedField)) {
       throw new Error(
-        `Unknown mapping column "${key}". Expected one of: ${FIELDS.join(", ")}.`,
+        `Unknown mapping column "${key}". Expected one of: ${allowed.join(", ")}.`,
       );
     }
-    if (typeof value !== "string") {
-      throw new Error(`Mapping column "${key}" must name a CSV header.`);
+    if (typeof value !== "string" || !value) {
+      throw new Error(
+        `Mapping column "${key}" must name a ${overrides.fields ? "field" : "CSV header"}.`,
+      );
     }
   }
 
-  const source = overrides.source ?? (raw.source as string | undefined) ?? "csv";
+  const source =
+    overrides.source ??
+    (raw.source as string | undefined) ??
+    overrides.defaultSource ??
+    "csv";
   const parsedSource = UserImportSourceSchema.safeParse(source);
   if (!parsedSource.success) {
     throw new Error(
@@ -169,6 +183,93 @@ function split(value: string | undefined, separator: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * A vendor export as text. Vendors hand these out gzip-compressed (Auth0's export job
+ * does), so a compressed file is read as it was downloaded.
+ */
+export function readExportFile(path: string): string {
+  let data: Buffer;
+  try {
+    data = fs.readFileSync(path);
+  } catch (err) {
+    throw new Error(`Could not read ${path}: ${(err as Error).message}`);
+  }
+  if (data[0] === 0x1f && data[1] === 0x8b) {
+    try {
+      data = gunzipSync(data);
+    } catch {
+      throw new Error(`${path} looks gzip-compressed but could not be decompressed.`);
+    }
+  }
+  const text = data.toString("utf-8");
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+/** The value at a dotted path such as "app_metadata.roles". */
+export function valueAt(record: unknown, path: string): unknown {
+  let value = record;
+  for (const key of path.split(".")) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+    value = (value as Record<string, unknown>)[key];
+  }
+  return value;
+}
+
+export function organizationRefs(
+  refs: string[],
+  mapping: MigrationMapping,
+): NonNullable<UserImportRow["organizations"]> {
+  return refs.map((ref) => ({
+    ...(UUID.test(ref) ? { organizationId: ref } : { slug: ref }),
+    ...(mapping.organizationRoles.length ? { roles: mapping.organizationRoles } : {}),
+  }));
+}
+
+/** A value read from a vendor export as a list: arrays as given, strings split. */
+export function valueList(value: unknown, separator: string): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((v): v is string | number => typeof v === "string" || typeof v === "number")
+      .map((v) => String(v).trim())
+      .filter(Boolean);
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    return split(String(value), separator);
+  }
+  return [];
+}
+
+/** The import row a source built, or why the server would refuse it. */
+export function checkRow(
+  row: number,
+  candidate: {
+    email: string;
+    externalId?: string;
+    phone?: string;
+    roles?: string[];
+    organizations?: UserImportRow["organizations"];
+  },
+): { prepared: PreparedRow } | { invalid: InvalidRow } {
+  const { email, externalId } = candidate;
+  const parsed = UserImportRowSchema.safeParse({
+    email,
+    ...(externalId ? { externalId } : {}),
+    ...(candidate.phone ? { phone: candidate.phone } : {}),
+    ...(candidate.roles?.length ? { roles: candidate.roles } : {}),
+    ...(candidate.organizations?.length ? { organizations: candidate.organizations } : {}),
+  });
+  if (parsed.success) return { prepared: { row, user: parsed.data } };
+  const issue = parsed.error.issues[0];
+  return {
+    invalid: {
+      row,
+      email,
+      ...(externalId ? { externalId } : {}),
+      detail: `${issue.path.join(".") || "row"}: ${issue.message}`,
+    },
+  };
+}
+
 export function prepareRows(
   records: CsvRecord[],
   columns: Partial<Record<MappedField, string>>,
@@ -180,39 +281,20 @@ export function prepareRows(
     columns[field] ? record.values[columns[field]!] : undefined;
 
   for (const record of records) {
-    const email = cell(record, "email") ?? "";
-    const externalId = cell(record, "externalId") || undefined;
-    const phone = cell(record, "phone") || undefined;
-    const roles = Array.from(
-      new Set([...mapping.roles, ...split(cell(record, "roles"), mapping.separator)]),
-    );
-    const organizations = split(cell(record, "organizations"), mapping.separator).map(
-      (ref) => ({
-        ...(UUID.test(ref) ? { organizationId: ref } : { slug: ref }),
-        ...(mapping.organizationRoles.length ? { roles: mapping.organizationRoles } : {}),
-      }),
-    );
-
-    const candidate = {
-      email,
-      ...(externalId ? { externalId } : {}),
-      ...(phone ? { phone } : {}),
-      ...(roles.length ? { roles } : {}),
-      ...(organizations.length ? { organizations } : {}),
-    };
-
-    const parsed = UserImportRowSchema.safeParse(candidate);
-    if (parsed.success) {
-      prepared.push({ row: record.row, user: parsed.data });
-    } else {
-      const issue = parsed.error.issues[0];
-      invalid.push({
-        row: record.row,
-        email,
-        ...(externalId ? { externalId } : {}),
-        detail: `${issue.path.join(".") || "row"}: ${issue.message}`,
-      });
-    }
+    const checked = checkRow(record.row, {
+      email: cell(record, "email") ?? "",
+      externalId: cell(record, "externalId") || undefined,
+      phone: cell(record, "phone") || undefined,
+      roles: Array.from(
+        new Set([...mapping.roles, ...split(cell(record, "roles"), mapping.separator)]),
+      ),
+      organizations: organizationRefs(
+        split(cell(record, "organizations"), mapping.separator),
+        mapping,
+      ),
+    });
+    if ("prepared" in checked) prepared.push(checked.prepared);
+    else invalid.push(checked.invalid);
   }
 
   return { prepared, invalid };

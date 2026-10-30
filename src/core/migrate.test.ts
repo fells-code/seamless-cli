@@ -1,6 +1,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { gzipSync } from "zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthClient } from "./authClient.js";
 import { parseCsvRecords } from "./csv.js";
@@ -9,9 +10,12 @@ import {
   ImportBatchError,
   loadMapping,
   prepareRows,
+  readExportFile,
   resolveColumns,
   runImport,
   summarize,
+  valueAt,
+  valueList,
   writeReport,
   type PreparedRow,
 } from "./migrate.js";
@@ -269,5 +273,49 @@ describe("reports", () => {
     const json = JSON.parse(fs.readFileSync(written.json, "utf-8"));
     expect(json).toMatchObject({ source: "csv", dryRun: true, summary: { invalid: 1 } });
     expect(json.rows).toHaveLength(3);
+  });
+});
+
+describe("vendor export helpers", () => {
+  it("reads an export as downloaded, gzip-compressed or not, without a BOM", () => {
+    const dir = tmpDir();
+    const plain = path.join(dir, "users.json");
+    const zipped = path.join(dir, "users.json.gz");
+    fs.writeFileSync(plain, "\ufeff{}");
+    fs.writeFileSync(zipped, gzipSync("{}"));
+
+    expect(readExportFile(plain)).toBe("{}");
+    expect(readExportFile(zipped)).toBe("{}");
+  });
+
+  it("explains a missing file and a damaged gzip file", () => {
+    const dir = tmpDir();
+    const broken = path.join(dir, "broken.gz");
+    fs.writeFileSync(broken, Buffer.from([0x1f, 0x8b, 0, 1, 2]));
+
+    expect(() => readExportFile(path.join(dir, "nope.json"))).toThrow(/Could not read/);
+    expect(() => readExportFile(broken)).toThrow(/could not be decompressed/);
+  });
+
+  it("reads dotted paths and turns values into lists", () => {
+    const user = { app_metadata: { roles: ["staff", 7, null, " "], org: "eng" } };
+    expect(valueAt(user, "app_metadata.org")).toBe("eng");
+    expect(valueAt(user, "app_metadata.org.deeper")).toBeUndefined();
+    expect(valueAt(user, "user_metadata.org")).toBeUndefined();
+    expect(valueList(valueAt(user, "app_metadata.roles"), ";")).toEqual(["staff", "7"]);
+    expect(valueList("a; b", ";")).toEqual(["a", "b"]);
+    expect(valueList({ nested: true }, ";")).toEqual([]);
+  });
+
+  it("limits a source's mapping fields and defaults its source name", () => {
+    const dir = tmpDir();
+    const file = path.join(dir, "map.json");
+    fs.writeFileSync(file, JSON.stringify({ columns: { email: "x" } }));
+    const opts = { defaultSource: "auth0", fields: ["roles" as const] };
+
+    expect(loadMapping(undefined, opts).source).toBe("auth0");
+    expect(() => loadMapping(file, opts)).toThrow(/Expected one of: roles\./);
+    fs.writeFileSync(file, JSON.stringify({ columns: { roles: "" } }));
+    expect(() => loadMapping(file, opts)).toThrow(/must name a field/);
   });
 });

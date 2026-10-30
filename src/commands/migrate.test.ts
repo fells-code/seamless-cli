@@ -1,6 +1,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { gzipSync } from "zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAuthClient, type AuthClient } from "../core/authClient.js";
 import { runMigrate } from "./migrate.js";
@@ -328,5 +329,164 @@ describe("seamless migrate entra-id", () => {
     expect(fs.readFileSync(`${base}.json`, "utf-8")).not.toContain("graph-s3cret");
     expect(fs.readFileSync(`${base}.csv`, "utf-8")).not.toContain("graph-s3cret");
     expect(output()).not.toContain("graph-s3cret");
+  });
+});
+
+const FIXTURES = path.join(import.meta.dirname, "..", "core", "fixtures", "migrate");
+const fixture = (name: string) => path.join(FIXTURES, name);
+
+describe("seamless migrate auth0", () => {
+  it("dry-runs the export as source auth0, reports problem rows, and exits 1 for the invalid ones", async () => {
+    const file = path.join(dir, "auth0-users.json");
+    fs.copyFileSync(fixture("auth0-export.ndjson"), file);
+    respond([], true);
+
+    await expect(
+      runMigrate(["auth0", file, "--map", fixture("auth0-map.json")]),
+    ).rejects.toThrow("process.exit(1)");
+
+    const body = JSON.parse(request.mock.calls[0][1].body);
+    expect(body.source).toBe("auth0");
+    expect(body.dryRun).toBe(true);
+    expect(body.users.map((u: { externalId: string }) => u.externalId)).toEqual([
+      "auth0|65f1a2b3c4d5e6f7a8b9c0d1",
+      "google-oauth2|104857600123456789012",
+      "sms|65f1a2b3c4d5e6f7a8b9c0d9",
+      "samlp|acme|kai@acme.example",
+      "auth0|65f1a2b3c4d5e6f7a8b9c0e4",
+    ]);
+
+    const report = JSON.parse(
+      fs.readFileSync(path.join(dir, "auth0-users.migrate-plan.json"), "utf-8"),
+    );
+    expect(report.summary).toMatchObject({ invalid: 2, skipped: 2 });
+    expect(output()).toMatch(/app_metadata\.roles/);
+  });
+
+  it("reads the gzip file Auth0 hands out, and imports unverified users with --allow-unverified", async () => {
+    const file = path.join(dir, "export.json.gz");
+    const lines = fs.readFileSync(fixture("auth0-export.ndjson"), "utf-8").split("\n");
+    fs.writeFileSync(file, gzipSync(lines[5]));
+    respond([{ index: 0, email: "unverified@example.com", status: "created" }], false);
+
+    await runMigrate(["auth0", file, "--allow-unverified", "--apply", "--source", "auth0-eu"]);
+
+    expect(JSON.parse(request.mock.calls[0][1].body)).toMatchObject({
+      source: "auth0-eu",
+      dryRun: false,
+      users: [{ email: "unverified@example.com" }],
+    });
+    expect(fs.existsSync(path.join(dir, "export.json.migrate-result.json"))).toBe(true);
+  });
+
+  it("refuses a missing file argument, an empty export and a mapping outside metadata", async () => {
+    const empty = path.join(dir, "empty.ndjson");
+    fs.writeFileSync(empty, "\n");
+    const badMap = path.join(dir, "map.json");
+    fs.writeFileSync(badMap, JSON.stringify({ columns: { roles: "email" } }));
+
+    await expect(runMigrate(["auth0"])).rejects.toThrow("process.exit(1)");
+    await expect(runMigrate(["auth0", empty])).rejects.toThrow("process.exit(1)");
+    await expect(
+      runMigrate(["auth0", fixture("auth0-export.ndjson"), "--map", badMap]),
+    ).rejects.toThrow("process.exit(1)");
+
+    const errors = vi.mocked(console.error).mock.calls.map((c) => String(c[0]));
+    expect(errors[0]).toMatch(/Name the Auth0 export/);
+    expect(errors[1]).toMatch(/is empty/);
+    expect(errors[2]).toMatch(/app_metadata or user_metadata/);
+    expect(createAuthClient).not.toHaveBeenCalled();
+  });
+
+  it("explains an export with no users", async () => {
+    const file = path.join(dir, "none.json");
+    fs.writeFileSync(file, "[]");
+
+    await expect(runMigrate(["auth0", file])).rejects.toThrow("process.exit(1)");
+
+    expect(vi.mocked(console.error).mock.calls[0][0]).toMatch(/has no users/);
+  });
+});
+
+describe("seamless migrate cognito", () => {
+  it("reads each chunk file in order, maps groups to roles, and writes the report in the current directory", async () => {
+    const cwd = process.cwd();
+    process.chdir(dir);
+    respond([], true);
+    try {
+      await expect(
+        runMigrate([
+          "cognito",
+          fixture("cognito-users-0.json"),
+          fixture("cognito-users-1.json"),
+          "--groups",
+          fixture("cognito-groups.json"),
+          "--map",
+          fixture("cognito-map.json"),
+        ]),
+      ).rejects.toThrow("process.exit(1)");
+    } finally {
+      process.chdir(cwd);
+    }
+
+    expect(JSON.parse(request.mock.calls[0][1].body)).toEqual({
+      source: "cognito",
+      dryRun: true,
+      users: [
+        { email: "ada@example.com", externalId: "11111111-aaaa-4bbb-8ccc-000000000001", roles: ["staff"] },
+        {
+          email: "grace@example.com",
+          externalId: "11111111-aaaa-4bbb-8ccc-000000000002",
+          roles: ["staff", "manager"],
+        },
+        {
+          email: "lin@example.com",
+          externalId: "11111111-aaaa-4bbb-8ccc-000000000003",
+          phone: "+15555550101",
+          roles: ["staff"],
+          organizations: [{ slug: "platform" }],
+        },
+      ],
+    });
+    const report = JSON.parse(fs.readFileSync(path.join(dir, "cognito.migrate-plan.json"), "utf-8"));
+    expect(report.summary).toMatchObject({ invalid: 2, skipped: 3 });
+    expect(output()).toMatch(/roles\s+<- groups/);
+  });
+
+  it("reads one concatenated file, writes the report beside it, and includes unconfirmed users when asked", async () => {
+    const file = path.join(dir, "cognito-users.json");
+    fs.writeFileSync(
+      file,
+      fs.readFileSync(fixture("cognito-users-0.json"), "utf-8") +
+        fs.readFileSync(fixture("cognito-users-1.json"), "utf-8"),
+    );
+    respond([], true);
+
+    await expect(
+      runMigrate(["cognito", file, "--include-unconfirmed", "--allow-unverified", "--json"]),
+    ).rejects.toThrow("process.exit(1)");
+
+    const users = JSON.parse(request.mock.calls[0][1].body).users;
+    expect(users.map((u: { email: string }) => u.email)).toEqual([
+      "ada@example.com",
+      "grace@example.com",
+      "lin@example.com",
+      "unconfirmed@example.com",
+      "unverified@example.com",
+      "kai@example.com",
+    ]);
+    expect(fs.existsSync(path.join(dir, "cognito-users.migrate-plan.json"))).toBe(true);
+  });
+
+  it("refuses a missing file argument and an export with no users", async () => {
+    const file = path.join(dir, "empty.json");
+    fs.writeFileSync(file, '{"Users": []}');
+
+    await expect(runMigrate(["cognito"])).rejects.toThrow("process.exit(1)");
+    await expect(runMigrate(["cognito", file])).rejects.toThrow("process.exit(1)");
+
+    const errors = vi.mocked(console.error).mock.calls.map((c) => String(c[0]));
+    expect(errors[0]).toMatch(/Name the list-users output/);
+    expect(errors[1]).toMatch(/has no users/);
   });
 });

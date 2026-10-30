@@ -2,7 +2,20 @@ import fs from "fs";
 import path from "path";
 import kleur from "kleur";
 import { extractFlag } from "../core/args.js";
+import {
+  assertAuth0Mapping,
+  AUTH0_MAPPED_FIELDS,
+  auth0ImportRows,
+  parseAuth0Export,
+} from "../core/auth0.js";
 import { createAuthClient } from "../core/authClient.js";
+import {
+  COGNITO_MAPPED_FIELDS,
+  cognitoImportRows,
+  loadCognitoGroups,
+  parseCognitoExport,
+  type CognitoUser,
+} from "../core/cognito.js";
 import { parseCsvRecords } from "../core/csv.js";
 import { UserImportSourceSchema } from "@seamless-auth/types";
 import {
@@ -20,6 +33,7 @@ import {
   ImportBatchError,
   loadMapping,
   prepareRows,
+  readExportFile,
   resolveColumns,
   runImport,
   summarize,
@@ -35,7 +49,16 @@ const CSV_USAGE =
   "seamless migrate csv <file> [--map <mapping.json>] [--source <name>] [--apply] [--report <path>] [--json]";
 const ENTRA_USAGE =
   "seamless migrate entra-id [--group <id>] [--groups <mapping.json>] [--allow-upn] [--include-guests] [--source <name>] [--apply] [--report <path>] [--json]";
-const USAGE = `Usage: ${CSV_USAGE}\n       ${ENTRA_USAGE}`;
+const AUTH0_USAGE =
+  "seamless migrate auth0 <export.ndjson> [--map <mapping.json>] [--allow-unverified] [--source <name>] [--apply] [--report <path>] [--json]";
+const COGNITO_USAGE =
+  "seamless migrate cognito <list-users.json>... [--groups <groups.json>] [--map <mapping.json>] [--allow-unverified] [--include-unconfirmed] [--source <name>] [--apply] [--report <path>] [--json]";
+const USAGE = [CSV_USAGE, ENTRA_USAGE, AUTH0_USAGE, COGNITO_USAGE]
+  .map((line, i) => `${i === 0 ? "Usage: " : "       "}${line}`)
+  .join("\n");
+
+const SOURCES = ["csv", "entra-id", "auth0", "cognito"] as const;
+type Source = (typeof SOURCES)[number];
 
 // Shown inline; the full list is always in the report files.
 const PROBLEMS_SHOWN = 10;
@@ -54,8 +77,8 @@ interface ImportPlan {
 }
 
 export async function runMigrate(args: string[]): Promise<void> {
-  const sub = args[0];
-  if (sub !== "csv" && sub !== "entra-id") {
+  const sub = args[0] as Source;
+  if (!SOURCES.includes(sub)) {
     console.error(kleur.red(`Unknown migrate source: ${sub ?? "(none)"}`));
     console.log(USAGE);
     process.exit(1);
@@ -70,28 +93,47 @@ export async function runMigrate(args: string[]): Promise<void> {
   const profileFlag = flag("profile");
   const sourceFlag = flag("source");
   const reportFlag = flag("report");
-  const mapPath = sub === "csv" ? flag("map") : undefined;
+  const mapPath = sub !== "entra-id" ? flag("map") : undefined;
   const groupFlag = sub === "entra-id" ? flag("group") : undefined;
-  const groupsPath = sub === "entra-id" ? flag("groups") : undefined;
+  const groupsPath = sub === "entra-id" || sub === "cognito" ? flag("groups") : undefined;
   const apply = rest.includes("--apply");
   const json = rest.includes("--json");
   const dryRun = !apply;
+  const files = rest.filter((arg) => !arg.startsWith("--"));
+  const allowUnverified = rest.includes("--allow-unverified");
 
   let plan: ImportPlan;
   try {
-    plan =
-      sub === "csv"
-        ? planCsv(rest, { mapPath, sourceFlag, reportFlag, dryRun })
-        : await planEntraId({
-            groupFlag,
-            groupsPath,
-            sourceFlag,
-            reportFlag,
-            dryRun,
-            allowUpn: rest.includes("--allow-upn"),
-            includeGuests: rest.includes("--include-guests"),
-            json,
-          });
+    switch (sub) {
+      case "csv":
+        plan = planCsv(files, { mapPath, sourceFlag, reportFlag, dryRun });
+        break;
+      case "auth0":
+        plan = planAuth0(files, { mapPath, sourceFlag, reportFlag, dryRun, allowUnverified });
+        break;
+      case "cognito":
+        plan = planCognito(files, {
+          mapPath,
+          groupsPath,
+          sourceFlag,
+          reportFlag,
+          dryRun,
+          allowUnverified,
+          includeUnconfirmed: rest.includes("--include-unconfirmed"),
+        });
+        break;
+      default:
+        plan = await planEntraId({
+          groupFlag,
+          groupsPath,
+          sourceFlag,
+          reportFlag,
+          dryRun,
+          allowUpn: rest.includes("--allow-upn"),
+          includeGuests: rest.includes("--include-guests"),
+          json,
+        });
+    }
   } catch (err) {
     console.error(kleur.red((err as Error).message));
     process.exit(1);
@@ -104,8 +146,12 @@ function reportPath(reportFlag: string | undefined, stem: string, dryRun: boolea
   return reportFlag ?? `${stem}.migrate-${dryRun ? "plan" : "result"}`;
 }
 
+function besideInput(file: string) {
+  return path.join(path.dirname(file), path.basename(file, path.extname(file)));
+}
+
 function planCsv(
-  rest: string[],
+  files: string[],
   opts: {
     mapPath?: string;
     sourceFlag?: string;
@@ -113,7 +159,7 @@ function planCsv(
     dryRun: boolean;
   },
 ): ImportPlan {
-  const file = rest.find((arg) => !arg.startsWith("--"));
+  const file = files[0];
   if (!file) {
     throw new Error(`Name the CSV file to import.\nUsage: ${CSV_USAGE}`);
   }
@@ -129,11 +175,7 @@ function planCsv(
   return {
     source: mapping.source,
     input: file,
-    reportBase: reportPath(
-      opts.reportFlag,
-      path.join(path.dirname(file), path.basename(file, path.extname(file))),
-      opts.dryRun,
-    ),
+    reportBase: reportPath(opts.reportFlag, besideInput(file), opts.dryRun),
     prepared,
     invalid,
     skipped: [],
@@ -142,6 +184,105 @@ function planCsv(
       ...Object.entries(columns).map(([field, header]) => `  ${field.padEnd(13)} <- ${header}`),
     ],
   };
+}
+
+function planAuth0(
+  files: string[],
+  opts: {
+    mapPath?: string;
+    sourceFlag?: string;
+    reportFlag?: string;
+    dryRun: boolean;
+    allowUnverified: boolean;
+  },
+): ImportPlan {
+  const file = files[0];
+  if (!file) {
+    throw new Error(`Name the Auth0 export to import.\nUsage: ${AUTH0_USAGE}`);
+  }
+
+  const mapping = loadMapping(opts.mapPath, {
+    source: opts.sourceFlag,
+    defaultSource: "auth0",
+    fields: AUTH0_MAPPED_FIELDS,
+  });
+  assertAuth0Mapping(mapping);
+  const users = parseAuth0Export(readExportFile(file), file);
+  if (users.length === 0) throw new Error(`${file} has no users.`);
+  const rows = auth0ImportRows(users, mapping, { allowUnverified: opts.allowUnverified });
+
+  return {
+    source: mapping.source,
+    input: file,
+    reportBase: reportPath(opts.reportFlag, besideInput(file), opts.dryRun),
+    ...rows,
+    describe: [
+      `${file} as source "${mapping.source}"`,
+      `  ${users.length} user(s) read`,
+      `  externalId    <- user_id`,
+      `  email         <- email${opts.allowUnverified ? "" : " (unverified skipped)"}`,
+      `  phone         <- phone_number`,
+      ...mappedLines(mapping),
+    ],
+  };
+}
+
+function planCognito(
+  files: string[],
+  opts: {
+    mapPath?: string;
+    groupsPath?: string;
+    sourceFlag?: string;
+    reportFlag?: string;
+    dryRun: boolean;
+    allowUnverified: boolean;
+    includeUnconfirmed: boolean;
+  },
+): ImportPlan {
+  if (files.length === 0) {
+    throw new Error(`Name the list-users output to import.\nUsage: ${COGNITO_USAGE}`);
+  }
+
+  const mapping = loadMapping(opts.mapPath, {
+    source: opts.sourceFlag,
+    defaultSource: "cognito",
+    fields: COGNITO_MAPPED_FIELDS,
+  });
+  const groups = opts.groupsPath ? loadCognitoGroups(opts.groupsPath) : new Map();
+  const users: CognitoUser[] = files.flatMap((file) =>
+    parseCognitoExport(readExportFile(file), file),
+  );
+  if (users.length === 0) throw new Error(`${files.join(", ")} has no users.`);
+  const rows = cognitoImportRows(users, groups, mapping, {
+    allowUnverified: opts.allowUnverified,
+    includeUnconfirmed: opts.includeUnconfirmed,
+  });
+
+  return {
+    source: mapping.source,
+    input: files.join(", "),
+    reportBase: reportPath(
+      opts.reportFlag,
+      files.length === 1 ? besideInput(files[0]) : "cognito",
+      opts.dryRun,
+    ),
+    ...rows,
+    describe: [
+      `${files.length === 1 ? files[0] : `${files.length} files`} as source "${mapping.source}"`,
+      `  ${users.length} user(s) read${opts.groupsPath ? `, groups from ${opts.groupsPath}` : ""}`,
+      `  externalId    <- sub`,
+      `  email         <- email${opts.allowUnverified ? "" : " (unverified skipped)"}`,
+      `  phone         <- phone_number`,
+      ...(opts.groupsPath ? [`  roles         <- groups`] : []),
+      ...mappedLines(mapping),
+    ],
+  };
+}
+
+function mappedLines(mapping: { columns: Partial<Record<string, string>> }) {
+  return Object.entries(mapping.columns).map(
+    ([field, from]) => `  ${field.padEnd(13)} <- ${from}`,
+  );
 }
 
 async function planEntraId(opts: {
