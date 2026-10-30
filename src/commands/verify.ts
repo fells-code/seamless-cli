@@ -309,7 +309,7 @@ const SVELTE_VENDOR_DIR = path.join(VERIFY_DIR, "svelte-vendor");
 function resolveReactSdkDir(): string {
   const candidate =
     process.env.SEAMLESS_REACT_SDK_DIR ??
-    path.resolve(REPO_ROOT, "..", "seamless-auth-react");
+    path.resolve(REPO_ROOT, "..", "seamless-auth-js");
   if (!fs.existsSync(path.join(candidate, "package.json"))) {
     throw new Error(
       `Could not find @seamless-auth/react at ${candidate}.\n` +
