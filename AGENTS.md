@@ -224,7 +224,16 @@ Templates are not in this repo — they live in the `seamless-templates` monorep
   ([src/core/images.ts](src/core/images.ts)) to that tag and `SEAMLESS_TEMPLATES_COMMIT` to the
   commit it points at (`git ls-remote https://github.com/fells-code/seamless-templates
   'refs/tags/<tag>^{}'`). Scaffolds download by the commit, so a moved tag cannot change what they
-  get. `npm run check:templates-pin` (a CI step) fails when the two disagree.
+  get.
+- **Every tag in images.ts has a pin.** `SEAMLESS_AUTH_API_VERSION` carries
+  `SEAMLESS_AUTH_API_COMMIT` (verified with `git rev-parse HEAD` after the `--auth=local` clone, which
+  is deleted on a mismatch) and `SEAMLESS_AUTH_API_IMAGE_DIGEST`; the dashboard tag carries
+  `SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT` (`--admin=source` downloads that commit and checks the
+  archive's zip comment, which GitHub sets to the commit) and
+  `SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE_DIGEST`. The images are referenced as `tag@digest`. Get a
+  digest with `docker buildx imagetools inspect ghcr.io/fells-code/<repo>:<tag>`. `npm run
+  check:pins` (run in CI as `check:templates-pin`, an alias) resolves every tag and fails when a
+  pin disagrees.
 - **Coverage badge.** `README.md` shows a line-coverage badge (`resources/coverage-badge.svg`)
   regenerated locally by a Husky `pre-commit` hook ([.husky/pre-commit](.husky/pre-commit)): it runs
   `npm run coverage` (`src/**/*.test.ts` only, so it never sweeps the Playwright specs under
@@ -274,13 +283,12 @@ since the generated compose pins both the ports and the container names.
 - **Version pins**: [verify/adapter-app](verify/adapter-app) pins `@seamless-auth/express`,
   [verify/adapter-fastify-app](verify/adapter-fastify-app) pins `@seamless-auth/fastify`, and each
   web template pins `@seamless-auth/react`. Bump these when new versions publish.
-- **The four pins in [src/core/images.ts](src/core/images.ts)** are what a scaffold gets, and each
-  drifts on its own: `SEAMLESS_AUTH_API_VERSION` (the auth server image), the admin dashboard image
-  and ref, and `SEAMLESS_TEMPLATES_REF` (with its `SEAMLESS_TEMPLATES_COMMIT`). Check them against the sibling repos' latest tags before a
-  release; nothing fails when they lag, the scaffold just quietly ships an older stack.
-- **`--auth=local` is not pinned**: it `git clone`s `seamless-auth-api` at its default branch
-  ([src/generators/auth/auth.ts](src/generators/auth/auth.ts)) while `--auth=docker` runs the pinned
-  image, so the two auth modes can scaffold different servers from the same CLI version.
+- **The tags in [src/core/images.ts](src/core/images.ts)** are what a scaffold gets, and each
+  drifts on its own: `SEAMLESS_AUTH_API_VERSION` (the auth server image and `--auth=local` clone),
+  `SEAMLESS_AUTH_ADMIN_DASHBOARD_VERSION` (the dashboard image and `--admin=source` archive), and
+  `SEAMLESS_TEMPLATES_REF`. Bump each with its commit and digest pins. Check them against the
+  sibling repos' latest tags before a release; nothing fails when they lag, the scaffold just
+  quietly ships an older stack.
 - **Config keys ahead of the API**: `WRITABLE_KEYS` in
   [src/core/systemConfig.ts](src/core/systemConfig.ts) is what `config set` and `config apply` send,
   and the instance's patch schema is strict, so adding a key before a released API accepts it makes

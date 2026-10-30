@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
 import { describe, expect, it, vi } from "vitest";
 import { spawn } from "child_process";
-import { runCommand } from "./exec.js";
+import { readCommand, runCommand } from "./exec.js";
 
 vi.mock("child_process", () => ({
   spawn: vi.fn(),
@@ -54,5 +54,39 @@ describe("runCommand", () => {
     child.emit("close", 1);
 
     await expect(promise).rejects.toThrow("failing-cmd failed");
+  });
+});
+
+describe("readCommand", () => {
+  function pipedChild() {
+    return Object.assign(new EventEmitter(), { stdout: new EventEmitter() });
+  }
+
+  it("resolves with the trimmed stdout on a zero exit code", async () => {
+    const child = pipedChild();
+    vi.mocked(spawn).mockReturnValue(child as never);
+
+    const promise = readCommand("git", ["rev-parse", "HEAD"], "/tmp/proj");
+    child.stdout.emit("data", Buffer.from("abc"));
+    child.stdout.emit("data", "123\n");
+    child.emit("close", 0);
+
+    await expect(promise).resolves.toBe("abc123");
+    expect(spawn).toHaveBeenCalledWith("git", ["rev-parse", "HEAD"], {
+      stdio: ["ignore", "pipe", "inherit"],
+      cwd: "/tmp/proj",
+      shell: process.platform === "win32",
+      env: process.env,
+    });
+  });
+
+  it("rejects with the command name when the exit code is non-zero", async () => {
+    const child = pipedChild();
+    vi.mocked(spawn).mockReturnValue(child as never);
+
+    const promise = readCommand("git", [], "/tmp/proj");
+    child.emit("close", 128);
+
+    await expect(promise).rejects.toThrow("git failed");
   });
 });

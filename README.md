@@ -828,7 +828,7 @@ Seamless CLI scaffolds from, and conformance-tests against, these repositories:
 
 | Repository | What it provides | How the CLI uses it |
 | --- | --- | --- |
-| [seamless-auth-api](https://github.com/fells-code/seamless-auth-api) | The auth server | Run as a pinned image (`--auth=docker`) or cloned into `auth/` (`--auth=local`) |
+| [seamless-auth-api](https://github.com/fells-code/seamless-auth-api) | The auth server | Run as a pinned image (`--auth=docker`) or cloned into `auth/` at a pinned commit (`--auth=local`) |
 | [seamless-templates](https://github.com/fells-code/seamless-templates) | The web, API, mobile, and full-stack starters | Scaffolded from its registry at a pinned ref |
 | [seamless-auth-server](https://github.com/fells-code/seamless-auth-server) | `@seamless-auth/core`, `/express`, `/fastify` | The adapters the scaffolded `api/` runs on |
 | [seamless-auth-react](https://github.com/fells-code/seamless-auth-react) | `@seamless-auth/client`, `/react`, `/react-native` | The client SDKs the scaffolded `web/` and `mobile/` run on |

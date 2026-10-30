@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SEAMLESS_AUTH_API_VERSION } from "./images.js";
+import { SEAMLESS_AUTH_API_COMMIT } from "./images.js";
 import { fetchEnvExample } from "./fetch.js";
 
 afterEach(() => {
@@ -18,7 +18,7 @@ describe("fetchEnvExample", () => {
 
     expect(result).toBe("FOO=bar\n");
     expect(fetchMock).toHaveBeenCalledWith(
-      `https://raw.githubusercontent.com/fells-code/seamless-auth-api/${SEAMLESS_AUTH_API_VERSION}/.env.example`,
+      `https://raw.githubusercontent.com/fells-code/seamless-auth-api/${SEAMLESS_AUTH_API_COMMIT}/.env.example`,
     );
   });
 
@@ -43,7 +43,7 @@ describe("fetchEnvExample", () => {
     );
 
     await expect(fetchEnvExample()).rejects.toThrow(
-      `Could not reach https://raw.githubusercontent.com/fells-code/seamless-auth-api/${SEAMLESS_AUTH_API_VERSION}/.env.example to read the auth server's env.example. Check your network connection.`,
+      `Could not reach https://raw.githubusercontent.com/fells-code/seamless-auth-api/${SEAMLESS_AUTH_API_COMMIT}/.env.example to read the auth server's env.example. Check your network connection.`,
     );
     await expect(fetchEnvExample()).rejects.toMatchObject({ cause });
   });
