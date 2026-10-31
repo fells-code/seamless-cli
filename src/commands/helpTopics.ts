@@ -469,12 +469,23 @@ config apply <file> [--dry-run] [--force]
   • Apply a local JSON config file after a confirmation prompt
   • --force skips the confirmation; --dry-run still changes nothing
 
-config oauth-providers <list|add|update|remove>
+config oauth-providers <list|add|update|refresh|remove>
   • Manage OAuth providers one at a time. Client secrets stay server-side,
     referenced by clientSecretEnv; the secret value is never sent.
     (for example: config oauth-providers add --file google.json,
     config oauth-providers update google '{"enabled":false}',
     config oauth-providers remove google --force)
+  • add and update take --issuer <https-url> (auth server v0.21 and later).
+    A provider with an issuer reads any of authorizationUrl, tokenUrl,
+    userInfoUrl and jwksUri it leaves out from the issuer's
+    /.well-known/openid-configuration; without one, the first three are
+    required.
+    (for example: config oauth-providers add --issuer
+    https://idp.example.com --file acme.json)
+config oauth-providers refresh <id> [--json]   (alias: discover)
+  • Read the issuer's discovery document again now and drop the cached
+    signing keys, then print the endpoints sign-in will use. Nothing is
+    stored.
 
 config hosted-ui <get|set|reset>   (alias: branding)
   • Branding for the hosted sign-in pages (auth server v0.21 and later).

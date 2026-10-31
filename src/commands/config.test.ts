@@ -540,7 +540,146 @@ describe("runConfig apply", () => {
   });
 });
 
+const ENDPOINTS = {
+  authorizationUrl: "https://idp.example.com/authorize",
+  tokenUrl: "https://idp.example.com/token",
+  userInfoUrl: "https://idp.example.com/userinfo",
+};
+
 describe("runConfig oauth-providers", () => {
+  it("adds a provider from an --issuer without endpoint URLs", async () => {
+    const { client, calls } = fakeClient(() =>
+      response(201, { provider: { id: "acme" } }),
+    );
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig([
+      "oauth-providers",
+      "add",
+      "--issuer",
+      "https://idp.example.com",
+      '{"id":"acme","name":"Acme"}',
+    ]);
+
+    expect(calls[0]?.body).toEqual({
+      id: "acme",
+      name: "Acme",
+      issuer: "https://idp.example.com",
+    });
+    expect(output()).toContain("Added OAuth provider: acme");
+  });
+
+  it("refuses an add with neither an issuer nor every endpoint", async () => {
+    const { client, calls } = fakeClient(() => response(201, {}));
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(
+      runConfig([
+        "oauth-providers",
+        "add",
+        JSON.stringify({ id: "acme", tokenUrl: ENDPOINTS.tokenUrl }),
+      ]),
+    ).rejects.toThrow("process.exit(1)");
+
+    expect(calls).toHaveLength(0);
+    expect(errOutput()).toContain("Missing authorizationUrl, userInfoUrl.");
+    expect(errOutput()).toContain("--issuer <url>");
+  });
+
+  it("updates only the issuer with --issuer and no JSON", async () => {
+    const { client, calls } = fakeClient(() =>
+      response(200, { provider: { id: "acme" } }),
+    );
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig([
+      "oauth-providers",
+      "update",
+      "acme",
+      "--issuer=https://idp.example.com",
+    ]);
+
+    expect(calls[0]).toEqual({
+      method: "PATCH",
+      path: "/system-config/oauth-providers/acme",
+      body: { issuer: "https://idp.example.com" },
+    });
+  });
+
+  it("lists a provider's issuer when it has one", async () => {
+    const { client } = fakeClient(() =>
+      response(200, {
+        providers: [{ id: "acme", issuer: "https://idp.example.com" }],
+      }),
+    );
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["oauth-providers", "list"]);
+
+    expect(output()).toContain("https://idp.example.com");
+  });
+
+  it("refreshes a provider's discovery and prints the endpoints", async () => {
+    const { client, calls } = fakeClient(() =>
+      response(200, {
+        provider: {
+          id: "acme",
+          issuer: "https://idp.example.com",
+          ...ENDPOINTS,
+        },
+      }),
+    );
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["oauth-providers", "refresh", "acme"]);
+
+    expect(calls[0]).toEqual({
+      method: "POST",
+      path: "/system-config/oauth-providers/acme/discovery",
+      body: undefined,
+    });
+    expect(output()).toContain("Refreshed discovery for OAuth provider: acme");
+    expect(output()).toContain(ENDPOINTS.tokenUrl);
+    expect(output()).toMatch(/jwksUri\s+\(none\)/);
+  });
+
+  it("prints the refreshed provider as JSON, under the discover alias", async () => {
+    const provider = { id: "acme", issuer: "https://idp.example.com" };
+    const { client } = fakeClient(() => response(200, { provider }));
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["oauth-providers", "discover", "acme", "--json"]);
+
+    expect(output()).toContain(JSON.stringify(provider, null, 2));
+  });
+
+  it("requires an id for refresh", async () => {
+    const { client } = fakeClient(() => response(200, {}));
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(
+      runConfig(["oauth-providers", "refresh"]),
+    ).rejects.toThrow("process.exit(1)");
+    expect(errOutput()).toContain("refresh <id>");
+  });
+
+  it("reports an issuer whose discovery document cannot be read", async () => {
+    const { client } = fakeClient(() =>
+      response(502, {
+        error: "oauth_discovery_failed",
+        message: "OpenID discovery request failed",
+      }),
+    );
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(
+      runConfig(["oauth-providers", "refresh", "acme"]),
+    ).rejects.toThrow("process.exit(1)");
+    expect(errOutput()).toContain(
+      'Could not read the issuer\'s discovery document for OAuth provider "acme": OpenID discovery request failed',
+    );
+  });
+
   it("lists providers with an enabled/disabled status", async () => {
     const { client } = fakeClient(() =>
       response(200, {
@@ -580,20 +719,20 @@ describe("runConfig oauth-providers", () => {
     await runConfig([
       "oauth-providers",
       "add",
-      '{"id":"google","name":"Google"}',
+      JSON.stringify({ id: "google", name: "Google", ...ENDPOINTS }),
     ]);
 
     expect(calls[0]).toEqual({
       method: "POST",
       path: "/system-config/oauth-providers",
-      body: { id: "google", name: "Google" },
+      body: { id: "google", name: "Google", ...ENDPOINTS },
     });
     expect(output()).toContain("Added OAuth provider: google");
   });
 
   it("adds a provider from a --file JSON object", async () => {
     vi.mocked(fs.readFileSync).mockReturnValue(
-      JSON.stringify({ id: "github", name: "GitHub" }),
+      JSON.stringify({ id: "github", name: "GitHub", ...ENDPOINTS }),
     );
     const { client, calls } = fakeClient(() =>
       response(201, { provider: { id: "github" } }),
@@ -602,7 +741,7 @@ describe("runConfig oauth-providers", () => {
 
     await runConfig(["oauth-providers", "add", "--file", "github.json"]);
 
-    expect(calls[0]?.body).toEqual({ id: "github", name: "GitHub" });
+    expect(calls[0]?.body).toEqual({ id: "github", name: "GitHub", ...ENDPOINTS });
     expect(output()).toContain("Added OAuth provider: github");
   });
 

@@ -1,3 +1,4 @@
+import { missingOAuthProviderEndpoints } from "@seamless-auth/types";
 import fs from "fs";
 import kleur from "kleur";
 import { extractFlag } from "../core/args.js";
@@ -16,6 +17,7 @@ import {
   parseValue,
   patchSystemConfig,
   PermissionError,
+  refreshOAuthProviderDiscovery,
   updateOAuthProvider,
   type ConfigChange,
   type OAuthProviderInput,
@@ -252,6 +254,10 @@ async function configOAuthProviders(
     case "update":
       await oauthProvidersUpdate(client, args);
       return;
+    case "refresh":
+    case "discover":
+      await oauthProvidersRefresh(client, args);
+      return;
     case "remove":
     case "delete":
       await oauthProvidersRemove(client, args);
@@ -263,7 +269,7 @@ async function configOAuthProviders(
         ),
       );
       console.log(
-        "Usage: seamless config oauth-providers <list|add|update|remove>",
+        "Usage: seamless config oauth-providers <list|add|update|refresh|remove>",
       );
       process.exit(1);
   }
@@ -290,7 +296,10 @@ async function oauthProvidersList(
       provider.enabled === false
         ? kleur.yellow("disabled")
         : kleur.green("enabled");
-    console.log(`  ${kleur.bold(provider.id)}  ${kleur.dim(name)}  ${status}`);
+    const issuer = provider.issuer ? `  ${kleur.dim(provider.issuer)}` : "";
+    console.log(
+      `  ${kleur.bold(provider.id)}  ${kleur.dim(name)}  ${status}${issuer}`,
+    );
   }
 }
 
@@ -298,11 +307,20 @@ async function oauthProvidersAdd(
   client: AuthClient,
   rest: string[],
 ): Promise<void> {
-  const { value: file, rest: positional } = extractFlag(rest, "file");
+  const { value: issuer, rest: withoutIssuer } = extractFlag(rest, "issuer");
+  const { value: file, rest: positional } = extractFlag(withoutIssuer, "file");
   const input = readProviderInput(
     file,
     positional.filter((arg) => !arg.startsWith("--")).join(" "),
   );
+  if (issuer !== undefined) input.issuer = issuer;
+
+  const missing = missingOAuthProviderEndpoints(input);
+  if (missing.length) {
+    throw new ConfigApiError(
+      `Missing ${missing.join(", ")}. A provider without an issuer must name its endpoints; pass --issuer <url> to discover them instead.`,
+    );
+  }
 
   const provider = await createOAuthProvider(client, input);
   console.log(kleur.green(`Added OAuth provider: ${String(provider.id ?? "")}`));
@@ -312,25 +330,70 @@ async function oauthProvidersUpdate(
   client: AuthClient,
   rest: string[],
 ): Promise<void> {
-  const { value: file, rest: positional } = extractFlag(rest, "file");
+  const { value: issuer, rest: withoutIssuer } = extractFlag(rest, "issuer");
+  const { value: file, rest: positional } = extractFlag(withoutIssuer, "file");
   const nonFlag = positional.filter((arg) => !arg.startsWith("--"));
   const id = nonFlag[0];
   if (!id) {
     console.error(
       kleur.red(
-        "Usage: seamless config oauth-providers update <id> <json|--file <path>>",
+        "Usage: seamless config oauth-providers update <id> <json|--file <path>> [--issuer <url>]",
       ),
     );
     process.exit(1);
   }
 
-  const updates = readProviderInput(file, nonFlag.slice(1).join(" "));
+  const inlineJson = nonFlag.slice(1).join(" ");
+  const updates =
+    issuer !== undefined && !file && !inlineJson.trim()
+      ? {}
+      : readProviderInput(file, inlineJson);
+  if (issuer !== undefined) updates.issuer = issuer;
   // The id is immutable and comes from the path; the API rejects it in the body.
   delete updates.id;
 
   const provider = await updateOAuthProvider(client, id, updates);
   console.log(kleur.green(`Updated OAuth provider: ${String(provider.id ?? id)}`));
 }
+
+async function oauthProvidersRefresh(
+  client: AuthClient,
+  rest: string[],
+): Promise<void> {
+  const id = rest.find((arg) => !arg.startsWith("-"));
+  if (!id) {
+    console.error(
+      kleur.red("Usage: seamless config oauth-providers refresh <id> [--json]"),
+    );
+    process.exit(1);
+  }
+
+  const provider = await refreshOAuthProviderDiscovery(client, id);
+  if (rest.includes("--json")) {
+    console.log(JSON.stringify(provider, null, 2));
+    return;
+  }
+  console.log(kleur.green(`Refreshed discovery for OAuth provider: ${id}`));
+  const rows = DISCOVERED_FIELDS.map(
+    (field) => [field, provider[field]] as const,
+  );
+  const width = rows.reduce((max, [field]) => Math.max(max, field.length), 0);
+  for (const [field, value] of rows) {
+    console.log(
+      "  " +
+        kleur.dim(field.padEnd(width) + "  ") +
+        (typeof value === "string" ? value : kleur.dim("(none)")),
+    );
+  }
+}
+
+const DISCOVERED_FIELDS = [
+  "issuer",
+  "authorizationUrl",
+  "tokenUrl",
+  "userInfoUrl",
+  "jwksUri",
+] as const;
 
 async function oauthProvidersRemove(
   client: AuthClient,
