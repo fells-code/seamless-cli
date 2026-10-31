@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { extractFlag, hasHelpFlag } from "./args.js";
+import {
+  extractFlag,
+  extractRepeatedFlag,
+  extractSwitch,
+  hasHelpFlag,
+} from "./args.js";
 
 describe("hasHelpFlag", () => {
   it.each(["-h", "--help"])("detects %s", (flag) => {
@@ -45,5 +50,28 @@ describe("extractFlag", () => {
   it("returns an empty rest and undefined value for an empty args list", () => {
     const result = extractFlag([], "name");
     expect(result).toEqual({ value: undefined, rest: [] });
+  });
+});
+
+describe("extractRepeatedFlag", () => {
+  it("collects every value in order, in both spellings", () => {
+    expect(
+      extractRepeatedFlag(["a", "--uri", "x", "--uri=y", "b", "--uri"], "uri"),
+    ).toEqual({ values: ["x", "y", ""], rest: ["a", "b"] });
+  });
+
+  it("returns no values when the flag is absent", () => {
+    expect(extractRepeatedFlag(["a"], "uri")).toEqual({ values: [], rest: ["a"] });
+  });
+});
+
+describe("extractSwitch", () => {
+  it("reads the last of a pair of switches", () => {
+    expect(extractSwitch(["--on", "a", "--off"], "on", "off")).toEqual({
+      value: false,
+      rest: ["a"],
+    });
+    expect(extractSwitch(["--on"], "on", "off").value).toBe(true);
+    expect(extractSwitch(["a"], "on", "off")).toEqual({ rest: ["a"] });
   });
 });

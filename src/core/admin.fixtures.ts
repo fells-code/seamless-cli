@@ -1,3 +1,4 @@
+import type { OidcApplication, OidcResource } from "@seamless-auth/types";
 import type {
   AdminCredential,
   AdminMembership,
@@ -63,4 +64,48 @@ export function apiMembership(
 
 export function apiUserDetail(credentials: AdminCredential[] = []) {
   return { user: apiUser(), sessions: [], credentials, events: [] };
+}
+
+export function apiApplication(
+  overrides: Partial<OidcApplication> = {},
+): OidcApplication {
+  return {
+    id: "client_docs",
+    name: "Docs",
+    clientType: "confidential",
+    applicationType: "web",
+    firstParty: false,
+    tokenEndpointAuthMethod: "private_key_jwt",
+    redirectUris: ["https://docs.example.com/callback"],
+    postLogoutRedirectUris: [],
+    grantTypes: ["authorization_code", "refresh_token"],
+    deviceFlowEnabled: false,
+    noticesEnabled: false,
+    jwks: null,
+    jwksUri: null,
+    hasSecret: false,
+    backchannelLogoutUri: null,
+    accessTokenTtlSeconds: null,
+    idTokenTtlSeconds: null,
+    refreshTokenTtlSeconds: null,
+    disabled: false,
+    createdAt: CREATED,
+    updatedAt: CREATED,
+    ...overrides,
+  };
+}
+
+export const RESOURCE_ID = "00000000-0000-4000-8000-000000000001";
+
+export function apiResource(overrides: Partial<OidcResource> = {}): OidcResource {
+  return {
+    id: RESOURCE_ID,
+    identifier: "https://orders.example.com",
+    name: "Orders",
+    scopes: ["orders:read", "orders:write"],
+    accessTokenTtlSeconds: null,
+    createdAt: CREATED,
+    updatedAt: CREATED,
+    ...overrides,
+  };
 }

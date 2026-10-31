@@ -16,6 +16,8 @@ import { runSessions } from "./commands/sessions.js";
 import { runConfig } from "./commands/config.js";
 import { runUsers } from "./commands/users.js";
 import { runOrg } from "./commands/org.js";
+import { runClients } from "./commands/clients.js";
+import { runResources } from "./commands/resources.js";
 import { runApps } from "./commands/apps.js";
 import { runMigrate } from "./commands/migrate.js";
 import { runTemplates } from "./commands/templates.js";
@@ -131,6 +133,16 @@ async function main() {
 
   if (command === "org") {
     await runOrg(args.slice(1));
+    return;
+  }
+
+  if (command === "clients") {
+    await runClients(args.slice(1));
+    return;
+  }
+
+  if (command === "resources") {
+    await runResources(args.slice(1));
     return;
   }
 
