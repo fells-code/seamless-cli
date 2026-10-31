@@ -27,6 +27,20 @@ import {
   confirmDestructive,
   hasForceFlag,
 } from "../core/confirmAction.js";
+import {
+  checkLogoUrl,
+  getHostedUi,
+  HOSTED_UI_FIELDS,
+  HOSTED_UI_KEY,
+  isHostedUiField,
+  mergeHostedUi,
+  putHostedUi,
+  removeHostedUiFields,
+  validateHostedUi,
+  type HostedUi,
+  type HostedUiChanges,
+  type HostedUiColorField,
+} from "../core/hostedUi.js";
 
 export async function runConfig(args: string[]): Promise<void> {
   const sub = args[0];
@@ -54,10 +68,14 @@ export async function runConfig(args: string[]): Promise<void> {
       case "oauth":
         await configOAuthProviders(client, rest);
         return;
+      case "hosted-ui":
+      case "branding":
+        await configHostedUi(client, rest);
+        return;
       default:
         console.error(kleur.red(`Unknown config subcommand: ${sub ?? "(none)"}`));
         console.log(
-          "Usage: seamless config <get|set|roles|diff|apply|oauth-providers>",
+          "Usage: seamless config <get|set|roles|diff|apply|oauth-providers|hosted-ui>",
         );
         process.exit(1);
     }
@@ -117,7 +135,8 @@ async function configSet(client: AuthClient, rest: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const value = parseValue(valueParts.join(" "), key);
+  let value = parseValue(valueParts.join(" "), key);
+  if (key === HOSTED_UI_KEY && value !== null) value = validateHostedUi(value);
   const result = await patchSystemConfig(client, { [key]: value });
 
   if (result.updatedKeys.length) {
@@ -339,6 +358,165 @@ async function oauthProvidersRemove(
 
   await deleteOAuthProvider(client, id);
   console.log(kleur.green(`Removed OAuth provider: ${id}`));
+}
+
+async function configHostedUi(client: AuthClient, rest: string[]): Promise<void> {
+  const action = rest[0];
+  const args = rest.slice(1);
+
+  switch (action) {
+    case "get":
+      await hostedUiGet(client, args);
+      return;
+    case "set":
+      await hostedUiSet(client, args);
+      return;
+    case "reset":
+      await hostedUiReset(client, args);
+      return;
+    default:
+      console.error(
+        kleur.red(`Unknown config hosted-ui subcommand: ${action ?? "(none)"}`),
+      );
+      console.log("Usage: seamless config hosted-ui <get|set|reset>");
+      process.exit(1);
+  }
+}
+
+async function hostedUiGet(client: AuthClient, rest: string[]): Promise<void> {
+  const hostedUi = await getHostedUi(client);
+  if (rest.includes("--json")) {
+    console.log(JSON.stringify(hostedUi, null, 2));
+    return;
+  }
+  printHostedUi(hostedUi);
+}
+
+const COLOR_FLAGS: Record<string, HostedUiColorField> = {
+  primary: "primary",
+  "on-primary": "onPrimary",
+  background: "background",
+  surface: "surface",
+  text: "text",
+  muted: "muted",
+};
+
+const HOSTED_UI_SET_USAGE =
+  "Usage: seamless config hosted-ui set [--app-name <name>] [--logo <https-url>] " +
+  "[--font-family <stack>] [--primary|--on-primary|--background|--surface|--text|--muted <hex>]";
+
+function takeFlag(
+  args: string[],
+  name: string,
+): { present: boolean; value?: string; rest: string[] } {
+  const present = args.some((arg) => arg === `--${name}` || arg.startsWith(`--${name}=`));
+  const { value, rest } = extractFlag(args, name);
+  if (present && value === undefined) {
+    throw new ConfigApiError(`--${name} needs a value.`);
+  }
+  return { present, value, rest };
+}
+
+function parseHostedUiChanges(args: string[]): HostedUiChanges {
+  const changes: HostedUiChanges = {};
+  let remaining = args;
+
+  const scalar = (flag: string): string | undefined => {
+    const taken = takeFlag(remaining, flag);
+    remaining = taken.rest;
+    return taken.value;
+  };
+
+  const appName = scalar("app-name");
+  if (appName !== undefined) changes.appName = appName;
+  const logo = scalar("logo");
+  if (logo !== undefined) {
+    checkLogoUrl(logo);
+    changes.logoUrl = logo;
+  }
+  const fontFamily = scalar("font-family");
+  if (fontFamily !== undefined) changes.fontFamily = fontFamily;
+
+  for (const [flag, field] of Object.entries(COLOR_FLAGS)) {
+    const color = scalar(flag);
+    if (color !== undefined) changes.colors = { ...changes.colors, [field]: color };
+  }
+
+  if (remaining.length) {
+    throw new ConfigApiError(
+      `Unexpected argument: ${remaining.join(" ")}. ${HOSTED_UI_SET_USAGE}`,
+    );
+  }
+  if (Object.keys(changes).length === 0) {
+    throw new ConfigApiError(`Nothing to set. ${HOSTED_UI_SET_USAGE}`);
+  }
+  return changes;
+}
+
+async function hostedUiSet(client: AuthClient, rest: string[]): Promise<void> {
+  const changes = parseHostedUiChanges(rest);
+  const current = await getHostedUi(client);
+  const merged = validateHostedUi(mergeHostedUi(current, changes));
+
+  await putHostedUi(client, merged);
+  console.log(kleur.green("Updated hosted page branding."));
+  printHostedUi(merged);
+}
+
+async function hostedUiReset(client: AuthClient, rest: string[]): Promise<void> {
+  const fields = rest.filter((arg) => !arg.startsWith("-"));
+  const unknown = fields.filter((field) => !isHostedUiField(field));
+  if (unknown.length) {
+    throw new ConfigApiError(
+      `Not a hosted page branding field: ${unknown.join(", ")}. ` +
+        `Fields: ${HOSTED_UI_FIELDS.join(", ")}`,
+    );
+  }
+
+  const current = await getHostedUi(client);
+  if (!current) {
+    console.log(kleur.dim("No hosted page branding is set. Nothing to reset."));
+    return;
+  }
+
+  if (fields.length === 0) {
+    const proceed = await confirmDestructive({
+      message: `Clear all hosted page branding on ${client.profile.instanceUrl}?`,
+      force: hasForceFlag(rest),
+      remedy: "Pass --force to clear it without confirming.",
+    });
+    if (!proceed) {
+      console.log("Cancelled.");
+      return;
+    }
+    await putHostedUi(client, null);
+    console.log(kleur.green("Cleared hosted page branding."));
+    return;
+  }
+
+  const next = removeHostedUiFields(current, fields.filter(isHostedUiField));
+  await putHostedUi(client, next);
+  console.log(kleur.green(`Reset: ${fields.join(", ")}`));
+  printHostedUi(next);
+}
+
+function printHostedUi(hostedUi: HostedUi | null): void {
+  if (!hostedUi || Object.keys(hostedUi).length === 0) {
+    console.log(kleur.dim("No hosted page branding is set."));
+    return;
+  }
+  const { colors, ...rest } = hostedUi;
+  const rows: [string, string][] = Object.entries(rest).map(([key, value]) => [
+    key,
+    String(value),
+  ]);
+  for (const [key, value] of Object.entries(colors ?? {})) {
+    rows.push([`colors.${key}`, String(value)]);
+  }
+  const width = rows.reduce((max, [key]) => Math.max(max, key.length), 0);
+  for (const [key, value] of rows) {
+    console.log("  " + kleur.dim(key.padEnd(width) + "  ") + value);
+  }
 }
 
 function readProviderInput(

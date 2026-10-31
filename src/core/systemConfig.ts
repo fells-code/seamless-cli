@@ -57,6 +57,7 @@ export const WRITABLE_KEYS = [
   "magic_link_redirect_uris",
   "recovery_codes",
   "account_recovery",
+  "hosted_ui",
 ] as const satisfies readonly (keyof SystemConfigPatch)[];
 
 // In the shared patch schema but not yet accepted by a released auth API this CLI
@@ -67,7 +68,6 @@ export const NOT_YET_WRITABLE = {
   oidc_issuer: "#332",
   allow_client_secrets: "#332",
   third_party_clients_enabled: "#332",
-  hosted_ui: "#320",
 } as const satisfies Partial<
   Record<keyof SystemConfigPatch, string>
 >;
