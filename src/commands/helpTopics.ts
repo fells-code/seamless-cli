@@ -458,6 +458,17 @@ config set <key> <value>
     config set recovery_codes '{"enabled":true,"requireAtEnrollment":false}'
     config set account_recovery '{"enabled":true,"delay":"24h"}'
     (delay is between 1h and 30d)
+  • OpenID Provider keys (auth server v0.21 and later):
+    oidc_issuer           the provider's public URL, or null to clear it
+    oidc_provider_enabled true or false; the instance refuses to turn the
+                          provider on until oidc_issuer is set
+    allow_client_secrets  true or false; enables the weaker shared-secret
+                          client authentication, and seamless clients
+                          refuses shared-secret clients until it is on
+    third_party_clients_enabled
+                          true or false; third-party clients need it on
+    (for example: config set oidc_issuer https://id.example.com, then
+    config set oidc_provider_enabled true)
 
 config roles [--json]
   • List the instance's available roles

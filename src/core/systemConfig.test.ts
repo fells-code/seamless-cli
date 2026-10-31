@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AuthClient } from "./authClient.js";
 import type { ApiResponse } from "./http.js";
 import {
+  checkValue,
   ConfigApiError,
   createOAuthProvider,
   deepEqual,
@@ -467,6 +468,27 @@ describe("isWritableKey", () => {
   });
 });
 
+describe("checkValue", () => {
+  it.each([
+    ["oidc_provider_enabled", true],
+    ["allow_client_secrets", false],
+    ["third_party_clients_enabled", true],
+    ["oidc_issuer", "https://id.example.com"],
+    ["oidc_issuer", null],
+    ["app_name", 123],
+  ])("accepts %s=%j", (key, value) => {
+    expect(() => checkValue(key, value)).not.toThrow();
+  });
+
+  it.each([
+    ["allow_client_secrets", "on", "allow_client_secrets must be true or false."],
+    ["third_party_clients_enabled", 1, "third_party_clients_enabled must be true or false."],
+    ["oidc_issuer", "not a url", "oidc_issuer must be a URL, or null to clear it."],
+  ])("refuses %s=%j", (key, value, message) => {
+    expect(() => checkValue(key, value)).toThrow(new ConfigApiError(message));
+  });
+});
+
 // The instance's patch schema is strict, so the CLI must not send a key a released
 // API does not accept. A types bump that adds one fails here until it is placed in
 // WRITABLE_KEYS (once released) or NOT_YET_WRITABLE (until then).
@@ -484,6 +506,15 @@ describe("WRITABLE_KEYS against the shared patch schema", () => {
       expect(isWritableKey(key)).toBe(true);
     },
   );
+
+  it.each([
+    "oidc_provider_enabled",
+    "oidc_issuer",
+    "allow_client_secrets",
+    "third_party_clients_enabled",
+  ])("accepts %s, which the API has read since v0.21.0", (key) => {
+    expect(isWritableKey(key)).toBe(true);
+  });
 
   it("accepts flow_rate_limits, which the API has read since v0.14.0", () => {
     expect(isWritableKey("flow_rate_limits")).toBe(true);
