@@ -634,6 +634,28 @@ refuses shared-secret clients until it is on. Third-party clients need
 `third_party_clients_enabled`. `config set` checks these values before sending: the three switches
 take `true` or `false`, and `oidc_issuer` takes a URL or `null`.
 
+### OAuth providers
+
+`config oauth-providers` manages sign-in providers one at a time. Each takes a provider JSON
+object, inline or with `--file`; client secrets stay on the instance, referenced by
+`clientSecretEnv`.
+
+```bash
+seamless config oauth-providers list
+seamless config oauth-providers add --file google.json
+seamless config oauth-providers add --issuer https://idp.example.com --file acme.json
+seamless config oauth-providers update google '{"enabled":false}'
+seamless config oauth-providers refresh acme      # re-read the issuer's discovery document
+seamless config oauth-providers remove google --force
+```
+
+From auth server v0.21, a provider with an `issuer` (an https URL) can leave out
+`authorizationUrl`, `tokenUrl`, `userInfoUrl`, and `jwksUri`; the instance reads whichever are
+missing from `<issuer>/.well-known/openid-configuration` when the provider is used and caches
+them for an hour. Without an issuer the first three are required, and `add` refuses before
+sending anything. `refresh` (alias `discover`) reads the document again now, drops the cached
+signing keys, and prints the endpoints sign-in will use; nothing is stored.
+
 ### Hosted page branding
 
 Branding for the hosted sign-in pages lives in the `hosted_ui` system config key (auth server
@@ -717,7 +739,7 @@ weaker than registered keys and need `allow_client_secrets` on the instance.
 ### Step-up for admin writes
 
 From auth server v0.20, every admin write needs a fresh step-up on the session: `config set`,
-`config apply`, `config oauth-providers add|update|remove`, `config hosted-ui set|reset`, `users delete`,
+`config apply`, `config oauth-providers add|update|refresh|remove`, `config hosted-ui set|reset`, `users delete`,
 `users prepare-device-replacement`, the `org` and `org members` writes, the `clients` and
 `resources` writes, and `migrate`. When the
 instance asks for one, the CLI prompts for the code from your authenticator app, verifies it on the

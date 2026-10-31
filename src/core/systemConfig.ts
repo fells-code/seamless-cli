@@ -169,7 +169,10 @@ const ProviderEnvelopeSchema = z.object({ provider: StoredProviderSchema });
 const OAUTH_PROVIDERS_PATH = "/system-config/oauth-providers";
 
 function providerMutationError(
-  res: { status: number; data: { error?: string; details?: unknown } | null },
+  res: {
+    status: number;
+    data: { error?: string; message?: string; details?: unknown } | null;
+  },
   action: string,
   id?: unknown,
 ): never {
@@ -190,6 +193,12 @@ function providerMutationError(
       ? ` ${JSON.stringify(scrubTokens(res.data.details))}`
       : "";
     throw new ConfigApiError(`${reason}.${details}`);
+  }
+  if (res.status === 502) {
+    const reason = res.data?.message ? `: ${res.data.message}` : ".";
+    throw new ConfigApiError(
+      `Could not read the issuer's discovery document for OAuth provider${label}${reason}`,
+    );
   }
   throw new ConfigApiError(`Could not ${action} OAuth provider (${res.status}).`);
 }
@@ -251,6 +260,30 @@ export async function updateOAuthProvider(
 
   if (res.ok) return providerFrom(res.data) ?? updates;
   throw providerMutationError(res, "update", id);
+}
+
+// Re-reads the issuer's discovery document and drops the instance's cached signing
+// keys. Nothing is stored; the answer is the provider as sign-in will now use it.
+export async function refreshOAuthProviderDiscovery(
+  client: AuthClient,
+  id: string,
+): Promise<OAuthProvider> {
+  const res = await client.request<{
+    error?: string;
+    message?: string;
+    details?: unknown;
+  }>(`${OAUTH_PROVIDERS_PATH}/${encodeURIComponent(id)}/discovery`, {
+    method: "POST",
+  });
+
+  if (!res.ok) throw providerMutationError(res, "refresh", id);
+  const provider = providerFrom(res.data);
+  if (!provider) {
+    throw new ConfigApiError(
+      "The instance returned an OAuth provider this CLI cannot read.",
+    );
+  }
+  return provider;
 }
 
 export async function deleteOAuthProvider(
