@@ -1,0 +1,5 @@
+---
+"seamless-cli": minor
+---
+
+Set hosted page branding from the CLI (#320). `seamless config hosted-ui get|set|reset` (alias `branding`) reads the instance's `hosted_ui` system config, merges the fields you pass (`--app-name`, `--logo`, `--font-family`, and the six color flags) into the current branding, validates the result with `HostedUiSchema` from `@seamless-auth/types`, and writes the whole object back, since the instance replaces it rather than merging. `reset` removes named fields or, after a confirmation (`--force` to skip), clears all branding. `hosted_ui` is also writable as a whole value with `config set hosted_ui '<json>'` or `config set hosted_ui null`. The logo must be an https URL where the image is hosted: the instance does not store uploaded files, so a local path is refused with that message. Needs auth server v0.21 or later; an older instance reports that it does not support branding. Bumps `@seamless-auth/types` to 0.34.0-next.2 and lists the four new OpenID Provider keys as not yet writable (#332).

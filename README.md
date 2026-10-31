@@ -620,6 +620,29 @@ seamless config apply config.json             # apply after a confirmation promp
 captured with `config get --json` can be edited and applied directly. Token TTLs, origins, login
 methods, and the WebAuthn RP id are all readable and writable.
 
+### Hosted page branding
+
+Branding for the hosted sign-in pages lives in the `hosted_ui` system config key (auth server
+v0.21 and later). The instance replaces the whole object on every write, so `set` and `reset`
+read the current branding, change only the fields you name, validate the result with the shared
+`@seamless-auth/types` schema, and write it back.
+
+```bash
+seamless config hosted-ui get              # print the current branding (--json for JSON)
+seamless config hosted-ui set --app-name Acme --logo https://cdn.example.com/acme.svg
+seamless config hosted-ui set --primary '#0b5fff' --on-primary '#fff' --font-family 'Inter, system-ui, sans-serif'
+seamless config hosted-ui reset colors.primary logoUrl   # remove single fields
+seamless config hosted-ui reset --force                  # clear all branding
+
+# The whole object, as config as code:
+seamless config set hosted_ui '{"appName":"Acme","colors":{"primary":"#0b5fff"}}'
+seamless config set hosted_ui null
+```
+
+Colors are `#rgb`, `#rrggbb`, or `#rrggbbaa`. The logo must be an https URL where the image is
+already hosted: the instance does not store uploaded files, so a local path is refused with that
+message. `branding` is an alias for `hosted-ui`.
+
 ### Admin: users and organizations
 
 Manage users and organizations from the terminal (requires an admin role).
@@ -651,7 +674,7 @@ the audit trail (never personal data), and `--approver` names who approved a rem
 ### Step-up for admin writes
 
 From auth server v0.20, every admin write needs a fresh step-up on the session: `config set`,
-`config apply`, `config oauth-providers add|update|remove`, `users delete`,
+`config apply`, `config oauth-providers add|update|remove`, `config hosted-ui set|reset`, `users delete`,
 `users prepare-device-replacement`, the `org` and `org members` writes, and `migrate`. When the
 instance asks for one, the CLI prompts for the code from your authenticator app, verifies it on the
 same session (`POST /totp/verify-mfa`), and retries the write once.
