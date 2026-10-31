@@ -19,6 +19,7 @@ import {
   parseValue,
   patchSystemConfig,
   PermissionError,
+  refreshOAuthProviderDiscovery,
   updateOAuthProvider,
   WRITABLE_KEYS,
 } from "./systemConfig.js";
@@ -156,6 +157,10 @@ describe("patchSystemConfig", () => {
     ["adding an OAuth provider", (c: AuthClient) => createOAuthProvider(c, { id: "google" })],
     ["updating an OAuth provider", (c: AuthClient) => updateOAuthProvider(c, "google", {})],
     ["removing an OAuth provider", (c: AuthClient) => deleteOAuthProvider(c, "google")],
+    [
+      "refreshing an OAuth provider's discovery",
+      (c: AuthClient) => refreshOAuthProviderDiscovery(c, "google"),
+    ],
   ])("reports a missing step-up on %s as a StepUpError", async (_label, run) => {
     const { client } = fakeClient(() =>
       response(403, { error: "step_up_required", fresh: false, maxAgeSeconds: 300 }),
@@ -371,6 +376,61 @@ describe("updateOAuthProvider", () => {
     await expect(
       updateOAuthProvider(client, "missing", { enabled: false }),
     ).rejects.toThrow(/"missing" not found/);
+  });
+});
+
+describe("refreshOAuthProviderDiscovery", () => {
+  it("POSTs to the provider's discovery route and returns the resolved provider", async () => {
+    const provider = {
+      id: "acme",
+      issuer: "https://idp.example.com",
+      tokenUrl: "https://idp.example.com/token",
+    };
+    const { client, calls } = fakeClient(() => response(200, { provider }));
+
+    expect(await refreshOAuthProviderDiscovery(client, "acme")).toEqual(provider);
+    expect(calls[0]).toEqual({
+      method: "POST",
+      path: "/system-config/oauth-providers/acme/discovery",
+      body: undefined,
+    });
+  });
+
+  it("fails on an answer with no provider", async () => {
+    const { client } = fakeClient(() => response(200, {}));
+    await expect(refreshOAuthProviderDiscovery(client, "acme")).rejects.toThrow(
+      "The instance returned an OAuth provider this CLI cannot read.",
+    );
+  });
+
+  it("surfaces the instance's refusal for a provider with no issuer", async () => {
+    const { client } = fakeClient(() =>
+      response(400, { error: 'OAuth provider "acme" has no issuer to discover' }),
+    );
+    await expect(refreshOAuthProviderDiscovery(client, "acme")).rejects.toThrow(
+      'OAuth provider "acme" has no issuer to discover.',
+    );
+  });
+
+  it("maps 404 to a ConfigApiError naming the provider", async () => {
+    const { client } = fakeClient(() => response(404, { error: "not found" }));
+    await expect(refreshOAuthProviderDiscovery(client, "missing")).rejects.toThrow(
+      'OAuth provider "missing" not found.',
+    );
+  });
+
+  it("reports a 502 without a message", async () => {
+    const { client } = fakeClient(() => response(502, null));
+    await expect(refreshOAuthProviderDiscovery(client, "acme")).rejects.toThrow(
+      'Could not read the issuer\'s discovery document for OAuth provider "acme".',
+    );
+  });
+
+  it("throws a ConfigApiError on other failures", async () => {
+    const { client } = fakeClient(() => response(500, null));
+    await expect(refreshOAuthProviderDiscovery(client, "acme")).rejects.toThrow(
+      "Could not refresh OAuth provider (500).",
+    );
   });
 });
 
