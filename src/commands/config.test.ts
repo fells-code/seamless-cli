@@ -806,3 +806,285 @@ describe("config --force", () => {
     expect(output()).toContain("Removed OAuth provider: google");
   });
 });
+
+describe("runConfig hosted-ui", () => {
+  const BRANDING = {
+    appName: "Acme",
+    logoUrl: "https://cdn.example.com/acme.svg",
+    colors: { primary: "#000000", text: "#111" },
+  };
+
+  function instance(hostedUi: unknown, patch = response(200, { success: true, updatedKeys: ["hosted_ui"] })) {
+    return fakeClient((rec) =>
+      rec.method === "PATCH" ? patch : response(200, { app_name: "Acme", hosted_ui: hostedUi }),
+    );
+  }
+
+  it("reads back the current branding", async () => {
+    const { client } = instance(BRANDING);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["hosted-ui", "get"]);
+
+    expect(output()).toContain("appName");
+    expect(output()).toContain("https://cdn.example.com/acme.svg");
+    expect(output()).toContain("colors.primary");
+    expect(output()).toContain("#000000");
+  });
+
+  it("reads back as JSON, null when unset", async () => {
+    const { client } = instance(null);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["branding", "get", "--json"]);
+
+    expect(logs).toEqual(["null"]);
+  });
+
+  it("says when no branding is set", async () => {
+    const { client } = instance(null);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["hosted-ui", "get"]);
+
+    expect(output()).toContain("No hosted page branding is set.");
+  });
+
+  it("fails clearly against an instance without hosted_ui", async () => {
+    const { client } = fakeClient(() => response(200, { app_name: "Acme" }));
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(runConfig(["hosted-ui", "get"])).rejects.toThrow("process.exit(1)");
+    expect(errOutput()).toContain("needs auth server v0.21 or later");
+  });
+
+  it("fails clearly when the instance's hosted_ui is not an object", async () => {
+    const { client } = instance("acme");
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(runConfig(["hosted-ui", "get"])).rejects.toThrow("process.exit(1)");
+    expect(errOutput()).toContain("hosted page branding this CLI cannot read");
+  });
+
+  it("merges one field into the current branding and sends the whole object", async () => {
+    const { client, calls } = instance(BRANDING);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["hosted-ui", "set", "--primary", "#0b5fff", "--muted=#666"]);
+
+    expect(calls.map((c) => c.method)).toEqual(["GET", "PATCH"]);
+    expect(calls[1]).toMatchObject({ path: "/system-config/admin" });
+    expect(calls[1].body).toEqual({
+      hosted_ui: {
+        appName: "Acme",
+        logoUrl: "https://cdn.example.com/acme.svg",
+        colors: { primary: "#0b5fff", text: "#111", muted: "#666" },
+      },
+    });
+    expect(output()).toContain("Updated hosted page branding.");
+  });
+
+  it("sets every field from flags when nothing is set yet", async () => {
+    const { client, calls } = instance(null);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig([
+      "hosted-ui",
+      "set",
+      "--app-name",
+      "Acme",
+      "--logo",
+      "https://cdn.example.com/acme.svg",
+      "--font-family",
+      "Inter, system-ui, sans-serif",
+      "--on-primary",
+      "#fff",
+      "--background",
+      "#fafafa",
+      "--surface",
+      "#ffffff",
+      "--text",
+      "#111",
+    ]);
+
+    expect(calls[1].body).toEqual({
+      hosted_ui: {
+        appName: "Acme",
+        logoUrl: "https://cdn.example.com/acme.svg",
+        fontFamily: "Inter, system-ui, sans-serif",
+        colors: { onPrimary: "#fff", background: "#fafafa", surface: "#ffffff", text: "#111" },
+      },
+    });
+  });
+
+  it("validates the merged object before writing", async () => {
+    const { client, calls } = instance(BRANDING);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(
+      runConfig(["hosted-ui", "set", "--primary", "blue"]),
+    ).rejects.toThrow("process.exit(1)");
+
+    expect(errOutput()).toContain("hosted_ui.colors.primary: must be a hex color");
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
+  });
+
+  it("refuses a local logo file before reaching the instance", async () => {
+    const { client, calls } = instance(BRANDING);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(
+      runConfig(["hosted-ui", "set", "--logo", "./logo.png"]),
+    ).rejects.toThrow("process.exit(1)");
+
+    expect(errOutput()).toContain("The logo must be an https URL where the image is hosted");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects a set with nothing to set", async () => {
+    const { client } = instance(BRANDING);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(runConfig(["hosted-ui", "set"])).rejects.toThrow("process.exit(1)");
+    expect(errOutput()).toContain("Nothing to set.");
+  });
+
+  it("rejects a flag with no value and an unexpected argument", async () => {
+    const { client } = instance(BRANDING);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(runConfig(["hosted-ui", "set", "--app-name"])).rejects.toThrow(
+      "process.exit(1)",
+    );
+    expect(errOutput()).toContain("--app-name needs a value.");
+
+    await expect(
+      runConfig(["hosted-ui", "set", "--app-name", "Acme", "extra"]),
+    ).rejects.toThrow("process.exit(1)");
+    expect(errOutput()).toContain("Unexpected argument: extra");
+  });
+
+  it("reports a missing step-up the way other config writes do", async () => {
+    const { client } = instance(BRANDING, response(403, { error: "step_up_required" }));
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(
+      runConfig(["hosted-ui", "set", "--app-name", "New"]),
+    ).rejects.toThrow("process.exit(1)");
+    expect(errOutput()).toContain("This action needs a recent step-up");
+  });
+
+  it("removes single fields and sends what is left", async () => {
+    const { client, calls } = instance(BRANDING);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["hosted-ui", "reset", "logoUrl", "colors.primary"]);
+
+    expect(calls[1].body).toEqual({
+      hosted_ui: { appName: "Acme", colors: { text: "#111" } },
+    });
+    expect(output()).toContain("Reset: logoUrl, colors.primary");
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("sends null when removing the last fields", async () => {
+    const { client, calls } = instance({ appName: "Acme" });
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["hosted-ui", "reset", "appName"]);
+
+    expect(calls[1].body).toEqual({ hosted_ui: null });
+    expect(output()).toContain("No hosted page branding is set.");
+  });
+
+  it("rejects an unknown field on reset", async () => {
+    const { client, calls } = instance(BRANDING);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(runConfig(["hosted-ui", "reset", "logo"])).rejects.toThrow(
+      "process.exit(1)",
+    );
+    expect(errOutput()).toContain("Not a hosted page branding field: logo");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("clears all branding with --force", async () => {
+    const { client, calls } = instance(BRANDING);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["hosted-ui", "reset", "--force"]);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(calls[1].body).toEqual({ hosted_ui: null });
+    expect(output()).toContain("Cleared hosted page branding.");
+  });
+
+  it("asks before clearing all branding, and does nothing when declined", async () => {
+    vi.mocked(confirm).mockResolvedValue(false);
+    const { client, calls } = instance(BRANDING);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["hosted-ui", "reset"]);
+
+    expect(confirm).toHaveBeenCalled();
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
+    expect(output()).toContain("Cancelled.");
+  });
+
+  it("has nothing to reset when no branding is set", async () => {
+    const { client, calls } = instance(null);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["hosted-ui", "reset", "--force"]);
+
+    expect(output()).toContain("Nothing to reset.");
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
+  });
+
+  it("prints usage for an unknown hosted-ui subcommand", async () => {
+    const { client } = instance(null);
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(runConfig(["hosted-ui", "upload"])).rejects.toThrow("process.exit(1)");
+    expect(errOutput()).toContain("Unknown config hosted-ui subcommand: upload");
+    expect(output()).toContain("Usage: seamless config hosted-ui <get|set|reset>");
+  });
+});
+
+describe("runConfig set hosted_ui", () => {
+  it("validates and sends a whole branding object", async () => {
+    const { client, calls } = fakeClient(() =>
+      response(200, { success: true, updatedKeys: ["hosted_ui"] }),
+    );
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["set", "hosted_ui", '{"appName":"Acme","colors":{"primary":"#0b5fff"}}']);
+
+    expect(calls[0].body).toEqual({
+      hosted_ui: { appName: "Acme", colors: { primary: "#0b5fff" } },
+    });
+  });
+
+  it("clears branding with null", async () => {
+    const { client, calls } = fakeClient(() =>
+      response(200, { success: true, updatedKeys: ["hosted_ui"] }),
+    );
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["set", "hosted_ui", "null"]);
+
+    expect(calls[0].body).toEqual({ hosted_ui: null });
+  });
+
+  it("rejects an invalid object before reaching the instance", async () => {
+    const { client, calls } = fakeClient(() => response(200, {}));
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(
+      runConfig(["set", "hosted_ui", '{"logoUrl":"http://cdn.example.com/a.svg"}']),
+    ).rejects.toThrow("process.exit(1)");
+
+    expect(errOutput()).toContain("hosted_ui.logoUrl");
+    expect(calls).toHaveLength(0);
+  });
+});

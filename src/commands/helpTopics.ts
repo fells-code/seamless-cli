@@ -428,7 +428,9 @@ session (or --all) prompts for confirmation and then clears local tokens.
   },
   {
     name: "config",
-    usage: ["seamless config <get|set|roles|diff|apply|oauth-providers>"],
+    usage: [
+      "seamless config <get|set|roles|diff|apply|oauth-providers|hosted-ui>",
+    ],
     sections: [
       {
         heading: "config <get|set|roles|diff|apply>",
@@ -472,10 +474,33 @@ config oauth-providers <list|add|update|remove>
     config oauth-providers update google '{"enabled":false}',
     config oauth-providers remove google --force)
 
+config hosted-ui <get|set|reset>   (alias: branding)
+  • Branding for the hosted sign-in pages (auth server v0.21 and later).
+    The instance replaces hosted_ui whole, so set and reset read the current
+    branding, change only the fields you name, validate the result, and
+    write it back.
+config hosted-ui get [--json]
+  • Print the current branding
+config hosted-ui set [--app-name <name>] [--logo <https-url>]
+    [--font-family <stack>] [--primary <hex>] [--on-primary <hex>]
+    [--background <hex>] [--surface <hex>] [--text <hex>] [--muted <hex>]
+  • Colors are #rgb, #rrggbb or #rrggbbaa. The logo must be an https URL
+    where the image is hosted; the instance does not store uploaded files,
+    so a local path is refused.
+    (for example: config hosted-ui set --app-name Acme --primary '#0b5fff'
+    --logo https://cdn.example.com/acme.svg)
+config hosted-ui reset [field...] [--force]
+  • Remove the named fields (appName, logoUrl, fontFamily, colors,
+    colors.primary, ...), or with no field clear all branding after a
+    confirmation prompt
+  • The whole object can also be written with
+    config set hosted_ui '{"appName":"Acme"}', or cleared with
+    config set hosted_ui null
+
 --force
-  • Skips the confirmation on apply and oauth-providers remove (--yes and -y
-    are accepted aliases), which is also what lets them run without a
-    terminal attached`,
+  • Skips the confirmation on apply, oauth-providers remove, and
+    hosted-ui reset (--yes and -y are accepted aliases), which is also what
+    lets them run without a terminal attached`,
       },
     ],
   },
