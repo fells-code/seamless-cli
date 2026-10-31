@@ -648,11 +648,41 @@ the step social engineering aims at, so the instance records how their identity 
 `--proofing` is `in_person` or `remote_exception`, `--evidence-ref` is a ticket or case number for
 the audit trail (never personal data), and `--approver` names who approved a remote exception.
 
+### Admin: OpenID Provider clients and resources
+
+Register the OIDC clients that sign users in through the OpenID Provider, and the APIs
+(resources) they may get tokens for (requires an admin role). Managed applications in the portal
+stay under `seamless apps`.
+
+```bash
+seamless clients create Docs --redirect-uri https://docs.example.com/callback \
+  --jwks-uri https://docs.example.com/jwks.json             # confidential, private_key_jwt
+seamless clients create Desk --public \
+  --redirect-uri http://127.0.0.1/callback --redirect-uri com.example.desk:/callback
+seamless clients list
+seamless clients update <id> --grants authorization_code,refresh_token --disable
+seamless clients rotate-secret <id>                       # confirms, prints the secret once
+seamless clients keys <id> --jwks-file jwks.json
+seamless clients resources <id> --set https://api.example.com=orders:read
+seamless clients delete <id>                              # confirms first
+
+seamless resources create https://api.example.com --name "Orders API" --scopes orders:read,orders:write
+seamless resources list
+seamless resources update <id> --scopes orders:read
+seamless resources delete <id>                            # confirms first
+```
+
+Redirect URIs are checked before the instance is asked: exact `https`, loopback `http` on
+`127.0.0.1` or `[::1]` (any port), or a private-use scheme in reverse domain form. `localhost` is
+refused. Shared-secret clients (`--auth-method client_secret_basic` or `client_secret_post`) are
+weaker than registered keys and need `allow_client_secrets` on the instance.
+
 ### Step-up for admin writes
 
 From auth server v0.20, every admin write needs a fresh step-up on the session: `config set`,
 `config apply`, `config oauth-providers add|update|remove`, `users delete`,
-`users prepare-device-replacement`, the `org` and `org members` writes, and `migrate`. When the
+`users prepare-device-replacement`, the `org` and `org members` writes, the `clients` and
+`resources` writes, and `migrate`. When the
 instance asks for one, the CLI prompts for the code from your authenticator app, verifies it on the
 same session (`POST /totp/verify-mfa`), and retries the write once.
 

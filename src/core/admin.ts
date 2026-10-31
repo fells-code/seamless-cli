@@ -6,6 +6,13 @@ import {
   CredentialResponseSchema,
   DeviceReplacementRecoveryResponseSchema,
   OrganizationMembersResponseSchema,
+  OidcApplicationCreatedResponseSchema,
+  OidcApplicationListResponseSchema,
+  OidcApplicationResourcesResponseSchema,
+  OidcApplicationResponseSchema,
+  OidcApplicationSecretResponseSchema,
+  OidcResourceListResponseSchema,
+  OidcResourceResponseSchema,
   OrganizationMembershipSchema,
   OrganizationSchema,
   SessionSchema,
@@ -14,6 +21,17 @@ import {
   type CreateOrganizationRequest,
   type DeviceReplacementRecoveryRequest,
   type DeviceReplacementRecoveryResponse,
+  type OidcApplication,
+  type OidcApplicationCreatedResponse,
+  type OidcApplicationCreateRequest,
+  type OidcApplicationKeysRequest,
+  type OidcApplicationResource,
+  type OidcApplicationResourceGrant,
+  type OidcApplicationSecretResponse,
+  type OidcApplicationUpdateRequest,
+  type OidcResource,
+  type OidcResourceCreateRequest,
+  type OidcResourceUpdateRequest,
   type UpdateOrganizationMemberRequest,
   type UpdateOrganizationRequest,
 } from "@seamless-auth/types";
@@ -353,4 +371,170 @@ export async function removeMember(
   );
   if (res.status === 404) throw apiError(res, "No such organization or member");
   if (!res.ok) throw apiError(res, "Could not remove member");
+}
+
+// OpenID Provider applications and resources
+
+function applicationPath(id: string): string {
+  return `/admin/applications/${encodeURIComponent(id)}`;
+}
+
+function resourcePath(id: string): string {
+  return `/admin/resources/${encodeURIComponent(id)}`;
+}
+
+function notFound(res: ApiResponse<unknown>, what: string, id: string): void {
+  if (res.status === 404) throw apiError(res, `No ${what} found with id ${id}`);
+}
+
+export async function listApplications(
+  client: AuthClient,
+): Promise<OidcApplication[]> {
+  const res = await call<unknown>(client, "GET", "/admin/applications");
+  if (!res.ok) throw apiError(res, "Could not list applications");
+  return parse(
+    OidcApplicationListResponseSchema.loose(),
+    res.data,
+    "an application list",
+  ).applications;
+}
+
+export async function getApplication(
+  client: AuthClient,
+  id: string,
+): Promise<OidcApplication> {
+  const res = await call<unknown>(client, "GET", applicationPath(id));
+  notFound(res, "application", id);
+  if (!res.ok) throw apiError(res, "Could not load application");
+  return parse(OidcApplicationResponseSchema, res.data, "an application")
+    .application;
+}
+
+export async function createApplication(
+  client: AuthClient,
+  body: OidcApplicationCreateRequest,
+): Promise<OidcApplicationCreatedResponse> {
+  const res = await call<unknown>(client, "POST", "/admin/applications", body);
+  if (!res.ok) throw apiError(res, "Could not create application");
+  return parse(OidcApplicationCreatedResponseSchema, res.data, "an application");
+}
+
+export async function updateApplication(
+  client: AuthClient,
+  id: string,
+  body: OidcApplicationUpdateRequest,
+): Promise<OidcApplication> {
+  const res = await call<unknown>(client, "PATCH", applicationPath(id), body);
+  notFound(res, "application", id);
+  if (!res.ok) throw apiError(res, "Could not update application");
+  return parse(OidcApplicationResponseSchema, res.data, "an application")
+    .application;
+}
+
+export async function deleteApplication(
+  client: AuthClient,
+  id: string,
+): Promise<void> {
+  const res = await call(client, "DELETE", applicationPath(id));
+  notFound(res, "application", id);
+  if (!res.ok) throw apiError(res, "Could not delete application");
+}
+
+export async function rotateApplicationSecret(
+  client: AuthClient,
+  id: string,
+): Promise<OidcApplicationSecretResponse> {
+  const res = await call<unknown>(client, "POST", `${applicationPath(id)}/secret`);
+  notFound(res, "application", id);
+  if (!res.ok) throw apiError(res, "Could not issue a secret");
+  return parse(OidcApplicationSecretResponseSchema, res.data, "a secret");
+}
+
+export async function setApplicationKeys(
+  client: AuthClient,
+  id: string,
+  body: OidcApplicationKeysRequest,
+): Promise<OidcApplication> {
+  const res = await call<unknown>(client, "PUT", `${applicationPath(id)}/keys`, body);
+  notFound(res, "application", id);
+  if (!res.ok) throw apiError(res, "Could not register keys");
+  return parse(OidcApplicationResponseSchema, res.data, "an application")
+    .application;
+}
+
+export async function listApplicationResources(
+  client: AuthClient,
+  id: string,
+): Promise<OidcApplicationResource[]> {
+  const res = await call<unknown>(client, "GET", `${applicationPath(id)}/resources`);
+  notFound(res, "application", id);
+  if (!res.ok) throw apiError(res, "Could not list the application's resources");
+  return parse(
+    OidcApplicationResourcesResponseSchema,
+    res.data,
+    "a resource list",
+  ).resources;
+}
+
+export async function setApplicationResources(
+  client: AuthClient,
+  id: string,
+  resources: OidcApplicationResourceGrant[],
+): Promise<OidcApplicationResource[]> {
+  const res = await call<unknown>(client, "PUT", `${applicationPath(id)}/resources`, {
+    resources,
+  });
+  notFound(res, "application", id);
+  if (!res.ok) throw apiError(res, "Could not set the application's resources");
+  return parse(
+    OidcApplicationResourcesResponseSchema,
+    res.data,
+    "a resource list",
+  ).resources;
+}
+
+export async function listResources(client: AuthClient): Promise<OidcResource[]> {
+  const res = await call<unknown>(client, "GET", "/admin/resources");
+  if (!res.ok) throw apiError(res, "Could not list resources");
+  return parse(OidcResourceListResponseSchema.loose(), res.data, "a resource list")
+    .resources;
+}
+
+export async function getResource(
+  client: AuthClient,
+  id: string,
+): Promise<OidcResource> {
+  const res = await call<unknown>(client, "GET", resourcePath(id));
+  notFound(res, "resource", id);
+  if (!res.ok) throw apiError(res, "Could not load resource");
+  return parse(OidcResourceResponseSchema, res.data, "a resource").resource;
+}
+
+export async function createResource(
+  client: AuthClient,
+  body: OidcResourceCreateRequest,
+): Promise<OidcResource> {
+  const res = await call<unknown>(client, "POST", "/admin/resources", body);
+  if (res.status === 409) {
+    throw apiError(res, `A resource with identifier ${body.identifier} already exists`);
+  }
+  if (!res.ok) throw apiError(res, "Could not create resource");
+  return parse(OidcResourceResponseSchema, res.data, "a resource").resource;
+}
+
+export async function updateResource(
+  client: AuthClient,
+  id: string,
+  body: OidcResourceUpdateRequest,
+): Promise<OidcResource> {
+  const res = await call<unknown>(client, "PATCH", resourcePath(id), body);
+  notFound(res, "resource", id);
+  if (!res.ok) throw apiError(res, "Could not update resource");
+  return parse(OidcResourceResponseSchema, res.data, "a resource").resource;
+}
+
+export async function deleteResource(client: AuthClient, id: string): Promise<void> {
+  const res = await call(client, "DELETE", resourcePath(id));
+  notFound(res, "resource", id);
+  if (!res.ok) throw apiError(res, "Could not delete resource");
 }

@@ -369,7 +369,9 @@ apps list [--json]
 
 apps get <id|name|infra-id> [--json]
   • Detail for one application, including the console URL, owners, and
-    whether a service token has been issued (masked, never the live value)`,
+    whether a service token has been issued (masked, never the live value)
+
+OIDC clients registered on an instance are \`seamless clients\`.`,
       },
     ],
   },
@@ -715,6 +717,84 @@ org members remove <orgId> <userId> [--force]
 --force
   • Skips the confirmation on members remove (--yes and -y are accepted
     aliases), which is also what lets it run without a terminal attached`,
+      },
+    ],
+  },
+  {
+    name: "clients",
+    usage: [
+      "seamless clients <list|get|create|update|rotate-secret|keys|resources|delete>",
+    ],
+    sections: [
+      {
+        heading: "clients <list|get|create|update|rotate-secret|keys|resources|delete>",
+        body: `OpenID Provider applications (OIDC clients) on an instance (requires an
+admin role). Writes need a fresh step-up, as for org. Managed applications
+in the portal are \`seamless apps\`.
+
+clients list [--json]
+clients get <id> [--json]
+clients create <name> [--public] [flags] [--jwks-file <path> | --jwks-uri <url>] [--json]
+  • Confidential by default, authenticating with private_key_jwt. --public
+    makes a browser or native client that uses PKCE and holds no credential
+  • A shared-secret client prints its secret once
+clients update <id> [flags] [--disable | --enable] [--json]
+  • Changes only the settings given. The client type cannot change
+clients rotate-secret <id> [--force] [--json]
+  • Issues a new shared secret, printed once. The old one stops working
+clients keys <id> (--jwks-file <path> | --jwks-uri <url>)
+  • Replaces a private_key_jwt client's public keys
+clients resources <id> [--set <resource>[=scope,scope]]... [--clear] [--json]
+  • Lists the resources the client may get tokens for, or replaces them.
+    <resource> is a resource id or its identifier
+clients delete <id> [--force]
+
+Flags for create and update
+  --name <name>
+  --auth-method <private_key_jwt|client_secret_basic|client_secret_post|none>
+    • The client_secret methods are weaker than keys, and the instance must
+      allow client secrets
+  --redirect-uri <uri>              repeat for each; replaces the list on update
+    • https, loopback http on 127.0.0.1 or [::1] (any port), or a
+      private-use scheme such as com.example.app:/callback. Never localhost
+  --post-logout-uri <uri>           repeat for each
+  --grants a,b                      authorization_code, refresh_token,
+                                    client_credentials
+  --first-party | --third-party     first-party clients skip consent
+  --device-flow | --no-device-flow  first-party clients only
+  --notices | --no-notices          lets the client send account notices
+  --backchannel-logout-uri <url|none>
+  --access-token-ttl, --id-token-ttl, --refresh-token-ttl <seconds|default>
+
+--force
+  • Skips the confirmation on rotate-secret and delete (--yes and -y are
+    accepted aliases)`,
+      },
+    ],
+    examples: [
+      "seamless clients create Docs --redirect-uri https://docs.example.com/callback --jwks-uri https://docs.example.com/jwks.json",
+      "seamless clients create Desk --public --redirect-uri http://127.0.0.1/callback --redirect-uri com.example.desk:/callback",
+      "seamless clients resources client_abc --set https://api.example.com=orders:read,orders:write",
+    ],
+  },
+  {
+    name: "resources",
+    usage: ["seamless resources <list|get|create|update|delete>"],
+    sections: [
+      {
+        heading: "resources <list|get|create|update|delete>",
+        body: `OpenID Provider resources: the APIs clients may request access tokens for
+(requires an admin role). Writes need a fresh step-up, as for org.
+
+resources list [--json]
+resources get <id> [--json]
+resources create <identifier> --name <name> [--scopes a,b] [--access-token-ttl <seconds>] [--json]
+  • <identifier> is the token audience: an https, http or urn URI with no
+    query or fragment. It cannot change later
+resources update <id> [--name <name>] [--scopes a,b] [--access-token-ttl <seconds|default>] [--json]
+  • --scopes replaces the list. A removed scope is also removed from every
+    client allowed it
+resources delete <id> [--force]`,
       },
     ],
   },

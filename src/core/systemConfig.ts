@@ -62,7 +62,13 @@ export const WRITABLE_KEYS = [
 // In the shared patch schema but not yet accepted by a released auth API this CLI
 // can rely on, each with the ticket that tracks it. Move a key to WRITABLE_KEYS
 // once it is.
-export const NOT_YET_WRITABLE = {} as const satisfies Partial<
+export const NOT_YET_WRITABLE = {
+  oidc_provider_enabled: "#332",
+  oidc_issuer: "#332",
+  allow_client_secrets: "#332",
+  third_party_clients_enabled: "#332",
+  hosted_ui: "#320",
+} as const satisfies Partial<
   Record<keyof SystemConfigPatch, string>
 >;
 
