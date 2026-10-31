@@ -298,6 +298,36 @@ describe("runConfig set", () => {
     expect(calls[0].body).toEqual({ [key]: raw });
   });
 
+  it.each([
+    ["oidc_provider_enabled", "true", true],
+    ["allow_client_secrets", "false", false],
+    ["third_party_clients_enabled", "true", true],
+    ["oidc_issuer", "https://id.example.com", "https://id.example.com"],
+    ["oidc_issuer", "null", null],
+  ])("sends %s=%s as its typed value", async (key, raw, sent) => {
+    const { client, calls } = fakeClient(() =>
+      response(200, { success: true, updatedKeys: [key] }),
+    );
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await runConfig(["set", key, raw]);
+
+    expect(calls[0].body).toEqual({ [key]: sent });
+  });
+
+  it.each([
+    ["oidc_provider_enabled", "yes", "oidc_provider_enabled must be true or false."],
+    ["oidc_issuer", "id.example.com", "oidc_issuer must be a URL, or null to clear it."],
+  ])("refuses %s=%s before reaching the instance", async (key, raw, message) => {
+    const { client, calls } = fakeClient(() => response(200, {}));
+    vi.mocked(createAuthClient).mockResolvedValue(client);
+
+    await expect(runConfig(["set", key, raw])).rejects.toThrow("process.exit(1)");
+
+    expect(errOutput()).toContain(message);
+    expect(calls).toHaveLength(0);
+  });
+
   it("rejects a key that is not writable, naming the ones that are", async () => {
     const { client, calls } = fakeClient(() => response(200, {}));
     vi.mocked(createAuthClient).mockResolvedValue(client);

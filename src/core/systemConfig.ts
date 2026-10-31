@@ -58,17 +58,16 @@ export const WRITABLE_KEYS = [
   "recovery_codes",
   "account_recovery",
   "hosted_ui",
+  "oidc_provider_enabled",
+  "oidc_issuer",
+  "allow_client_secrets",
+  "third_party_clients_enabled",
 ] as const satisfies readonly (keyof SystemConfigPatch)[];
 
 // In the shared patch schema but not yet accepted by a released auth API this CLI
 // can rely on, each with the ticket that tracks it. Move a key to WRITABLE_KEYS
 // once it is.
-export const NOT_YET_WRITABLE = {
-  oidc_provider_enabled: "#332",
-  oidc_issuer: "#332",
-  allow_client_secrets: "#332",
-  third_party_clients_enabled: "#332",
-} as const satisfies Partial<
+export const NOT_YET_WRITABLE = {} as const satisfies Partial<
   Record<keyof SystemConfigPatch, string>
 >;
 
@@ -323,6 +322,25 @@ export function parseValue(raw: string, key?: string): unknown {
     return JSON.parse(trimmed);
   } catch {
     return raw;
+  }
+}
+
+// What `config set` checks before sending, so `config set oidc_provider_enabled yes`
+// names the value it wanted rather than surfacing the instance's 400.
+const VALUE_RULES: Partial<Record<(typeof WRITABLE_KEYS)[number], string>> = {
+  oidc_provider_enabled: "true or false",
+  oidc_issuer: "a URL, or null to clear it",
+  allow_client_secrets: "true or false",
+  third_party_clients_enabled: "true or false",
+};
+
+export function checkValue(key: string, value: unknown): void {
+  const rule = VALUE_RULES[key as keyof typeof VALUE_RULES];
+  if (!rule) return;
+  const field =
+    SystemConfigPatchSchema.shape[key as keyof typeof SystemConfigPatchSchema.shape];
+  if (!field.safeParse(value).success) {
+    throw new ConfigApiError(`${key} must be ${rule}.`);
   }
 }
 

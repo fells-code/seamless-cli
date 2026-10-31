@@ -620,6 +620,20 @@ seamless config apply config.json             # apply after a confirmation promp
 captured with `config get --json` can be edited and applied directly. Token TTLs, origins, login
 methods, and the WebAuthn RP id are all readable and writable.
 
+From auth server v0.21, the OpenID Provider is configured the same way:
+
+```bash
+seamless config set oidc_issuer https://id.example.com   # the provider's public URL (null clears it)
+seamless config set oidc_provider_enabled true           # refused until oidc_issuer is set
+seamless config set allow_client_secrets true            # allow shared-secret clients
+seamless config set third_party_clients_enabled true     # allow third-party clients
+```
+
+`allow_client_secrets` enables the weaker shared-secret client authentication; `seamless clients`
+refuses shared-secret clients until it is on. Third-party clients need
+`third_party_clients_enabled`. `config set` checks these values before sending: the three switches
+take `true` or `false`, and `oidc_issuer` takes a URL or `null`.
+
 ### OAuth providers
 
 `config oauth-providers` manages sign-in providers one at a time. Each takes a provider JSON

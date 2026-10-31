@@ -4,6 +4,7 @@ import kleur from "kleur";
 import { extractFlag } from "../core/args.js";
 import { createAuthClient, ReauthRequiredError, type AuthClient } from "../core/authClient.js";
 import {
+  checkValue,
   ConfigApiError,
   createOAuthProvider,
   deleteOAuthProvider,
@@ -138,6 +139,7 @@ async function configSet(client: AuthClient, rest: string[]): Promise<void> {
   }
 
   let value = parseValue(valueParts.join(" "), key);
+  checkValue(key, value);
   if (key === HOSTED_UI_KEY && value !== null) value = validateHostedUi(value);
   const result = await patchSystemConfig(client, { [key]: value });
 
