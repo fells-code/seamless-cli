@@ -35,6 +35,9 @@ import { parseList, reportAdminError } from "./adminShared.js";
 const USAGE =
   "Usage: seamless clients <list|get|create|update|rotate-secret|keys|resources|delete>";
 
+const NO_CODE_BINDING_WARNING =
+  "PKCE and the nonce are both off: this application relies only on state and client authentication against authorization code injection. Turn the nonce back on with --nonce unless a certification test needs both off.";
+
 const SHARED_SECRET_NOTE =
   "Shared secrets are weaker than registered keys: anyone who reads one can act as the client. Prefer --auth-method private_key_jwt where the client can hold a key.";
 
@@ -183,6 +186,12 @@ function readSettings(args: string[]): SettingsFlags {
   const notices = takeSwitch("notices", "no-notices");
   if (notices !== undefined) settings.noticesEnabled = notices;
 
+  const pkce = takeSwitch("pkce", "no-pkce");
+  if (pkce !== undefined) settings.pkceRequired = pkce;
+
+  const nonce = takeSwitch("nonce", "no-nonce");
+  if (nonce !== undefined) settings.nonceRequired = nonce;
+
   const logout = take("backchannel-logout-uri");
   if (logout !== undefined) {
     settings.backchannelLogoutUri = logout === "none" ? null : logout;
@@ -200,15 +209,23 @@ function readSettings(args: string[]): SettingsFlags {
   return { settings, rest };
 }
 
+function lacksCodeBinding(app: OidcApplication): boolean {
+  return !app.pkceRequired && !app.nonceRequired;
+}
+
+function warnIfNoCodeBinding(app: OidcApplication): void {
+  if (lacksCodeBinding(app)) console.log(kleur.yellow(NO_CODE_BINDING_WARNING));
+}
+
 function printRow(app: OidcApplication): void {
   const type = `${app.clientType}, ${app.applicationType}`;
   const method = isSharedSecret(app.tokenEndpointAuthMethod)
     ? `${app.tokenEndpointAuthMethod} ${kleur.yellow("(weaker)")}`
     : app.tokenEndpointAuthMethod;
-  const status = app.disabled ? kleur.red("disabled") : "";
-  console.log(
-    `${kleur.bold(app.id)}  ${app.name}  ${kleur.dim(type)}  ${method}  ${status}`.trimEnd(),
-  );
+  const parts = [kleur.bold(app.id), app.name, kleur.dim(type), method];
+  if (lacksCodeBinding(app)) parts.push(kleur.yellow("no PKCE or nonce"));
+  if (app.disabled) parts.push(kleur.red("disabled"));
+  console.log(parts.join("  "));
 }
 
 function printApplication(app: OidcApplication): void {
@@ -238,6 +255,8 @@ function printApplication(app: OidcApplication): void {
   const grants = [...app.grantTypes, ...(app.deviceFlowEnabled ? ["device_code"] : [])];
   console.log(`  grants:          ${grants.join(", ") || "none"}`);
   console.log(`  notices:         ${app.noticesEnabled ? "on" : "off"}`);
+  console.log(`  PKCE:            ${app.pkceRequired ? "required" : kleur.yellow("not required")}`);
+  console.log(`  nonce:           ${app.nonceRequired ? "required" : kleur.yellow("not required")}`);
   if (app.backchannelLogoutUri) {
     console.log(`  logout URI:      ${app.backchannelLogoutUri}`);
   }
@@ -261,6 +280,14 @@ async function clientsList(client: AuthClient, rest: string[]): Promise<void> {
     return;
   }
   for (const app of applications) printRow(app);
+  const exposed = applications.filter(lacksCodeBinding).length;
+  if (exposed) {
+    console.log(
+      kleur.yellow(
+        `${exposed} application${exposed === 1 ? " has" : "s have"} PKCE and the nonce both off, so ${exposed === 1 ? "it relies" : "they rely"} only on state and client authentication against authorization code injection.`,
+      ),
+    );
+  }
 }
 
 async function clientsGet(client: AuthClient, rest: string[]): Promise<void> {
@@ -273,6 +300,7 @@ async function clientsGet(client: AuthClient, rest: string[]): Promise<void> {
     return;
   }
   printApplication(app);
+  warnIfNoCodeBinding(app);
 }
 
 async function clientsCreate(client: AuthClient, args: string[]): Promise<void> {
@@ -308,6 +336,7 @@ async function clientsCreate(client: AuthClient, args: string[]): Promise<void> 
   const { application, clientSecret } = created;
   console.log(kleur.green(`Created application ${application.id}.`));
   printApplication(application);
+  warnIfNoCodeBinding(application);
   if (isSharedSecret(application.tokenEndpointAuthMethod)) {
     console.log(kleur.yellow(SHARED_SECRET_NOTE));
   }
@@ -334,6 +363,7 @@ async function clientsUpdate(client: AuthClient, args: string[]): Promise<void> 
   }
   console.log(kleur.green(`Updated application ${id}.`));
   printApplication(app);
+  warnIfNoCodeBinding(app);
 }
 
 async function clientsRotateSecret(client: AuthClient, rest: string[]): Promise<void> {

@@ -395,6 +395,102 @@ describe("clients update", () => {
   });
 });
 
+describe("clients PKCE and nonce", () => {
+  const exposed = { pkceRequired: false, nonceRequired: false };
+  const warning = "relies only on state and client authentication";
+
+  it("shows both settings and warns on get only when both are off", async () => {
+    vi.mocked(getApplication).mockResolvedValue(apiApplication());
+    await runClients(["get", "client_docs"]);
+    expect(logs()).toContain("PKCE:            required");
+    expect(logs()).toContain("nonce:           required");
+    expect(logs()).not.toContain(warning);
+
+    vi.mocked(getApplication).mockResolvedValue(apiApplication({ pkceRequired: false }));
+    await runClients(["get", "client_docs"]);
+    expect(logs()).toContain("PKCE:            not required");
+    expect(logs()).not.toContain(warning);
+
+    vi.mocked(getApplication).mockResolvedValue(apiApplication(exposed));
+    await runClients(["get", "client_docs"]);
+    expect(logs()).toContain("nonce:           not required");
+    expect(logs()).toContain(warning);
+  });
+
+  it("flags each exposed client in the list and counts them", async () => {
+    vi.mocked(listApplications).mockResolvedValue([
+      apiApplication(),
+      apiApplication({ id: "client_cert", ...exposed }),
+    ]);
+    await runClients(["list"]);
+    const lines = logs().split("\n");
+    expect(lines.find((line) => line.includes("client_cert"))).toContain("no PKCE or nonce");
+    expect(lines.find((line) => line.includes("client_docs"))).not.toContain("no PKCE");
+    expect(logs()).toContain("1 application has PKCE and the nonce both off, so it relies only");
+
+    vi.mocked(listApplications).mockResolvedValue([
+      apiApplication({ id: "a", ...exposed }),
+      apiApplication({ id: "b", ...exposed }),
+    ]);
+    await runClients(["list"]);
+    expect(logs()).toContain("2 applications have PKCE and the nonce both off, so they rely only");
+  });
+
+  it("sends the opt-outs on create and warns about the result", async () => {
+    vi.mocked(createApplication).mockResolvedValue({ application: apiApplication(exposed) });
+    await runClients([
+      "create",
+      "Cert",
+      "--redirect-uri",
+      "https://cert.example.com/callback",
+      "--jwks-uri",
+      "https://cert.example.com/jwks",
+      "--no-pkce",
+      "--no-nonce",
+    ]);
+    expect(vi.mocked(createApplication).mock.calls[0][1]).toMatchObject(exposed);
+    expect(logs()).toContain(warning);
+  });
+
+  it("sends the settings on update and warns about the result", async () => {
+    vi.mocked(updateApplication).mockResolvedValue(apiApplication(exposed));
+    await runClients(["update", "client_docs", "--no-nonce"]);
+    expect(updateApplication).toHaveBeenCalledWith(fakeClient, "client_docs", {
+      nonceRequired: false,
+    });
+    expect(logs()).toContain(warning);
+
+    vi.mocked(updateApplication).mockResolvedValue(apiApplication());
+    await runClients(["update", "client_docs", "--pkce", "--nonce"]);
+    expect(vi.mocked(updateApplication).mock.calls[1][2]).toEqual({
+      pkceRequired: true,
+      nonceRequired: true,
+    });
+  });
+
+  it("refuses the opt-outs the API would refuse before asking it", async () => {
+    await exits([
+      "create",
+      "Desk",
+      "--public",
+      "--redirect-uri",
+      "http://127.0.0.1/callback",
+      "--no-pkce",
+    ]);
+    expect(errors()).toContain("public clients must use PKCE");
+
+    await exits([
+      "create",
+      "Docs",
+      "--redirect-uri",
+      "https://docs.example.com/callback",
+      "--no-nonce",
+    ]);
+    expect(errors()).toContain("only be turned off once PKCE is waived");
+    expect(createApplication).not.toHaveBeenCalled();
+  });
+});
+
 describe("clients rotate-secret", () => {
   it("confirms, then prints the new secret once", async () => {
     vi.mocked(rotateApplicationSecret).mockResolvedValue({

@@ -810,6 +810,13 @@ Flags for create and update
   --first-party | --third-party     first-party clients skip consent
   --device-flow | --no-device-flow  first-party clients only
   --notices | --no-notices          lets the client send account notices
+  --pkce | --no-pkce                PKCE is required by default. Only a
+                                    confidential client can turn it off
+  --nonce | --no-nonce              the nonce is required by default. It can
+                                    be turned off only once PKCE is off
+    • With both off the client relies only on state and client
+      authentication against code injection, and list, get, create and
+      update warn about it. Turn PKCE back on only after the nonce
   --backchannel-logout-uri <url|none>
   --access-token-ttl, --id-token-ttl, --refresh-token-ttl <seconds|default>
 
