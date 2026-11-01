@@ -7,19 +7,19 @@ export const POSTGRES_IMAGE = "postgres:18";
 // bumped, because a tag can be moved and what it names is then built and run on the
 // developer's machine. Bump them together: `npm run check:templates-pin` (run in CI)
 // checks every pin in this file against its tag and fails when one disagrees.
-export const SEAMLESS_AUTH_API_VERSION = "v0.20.0";
+export const SEAMLESS_AUTH_API_VERSION = "v0.21.0";
 
-export const SEAMLESS_AUTH_API_COMMIT = "82aef89a82c6d2bdfc196bf5cc051eac6c23076a";
+export const SEAMLESS_AUTH_API_COMMIT = "930d4dc812df051b948a5bd138871f625900f1eb";
 
 export const SEAMLESS_AUTH_API_IMAGE_DIGEST =
-  "sha256:477eb6dc1214528a5026ff1111a6d72063fa592f868c0e62d3ec986ab6376e6d";
+  "sha256:5765de03b10d348da047e50407fcb7109f2a6dae64ddde86a1a6d0b92575dfa1";
 
 export const SEAMLESS_AUTH_API_IMAGE = `ghcr.io/fells-code/seamless-auth-api:${SEAMLESS_AUTH_API_VERSION}@${SEAMLESS_AUTH_API_IMAGE_DIGEST}`;
 
-export const SEAMLESS_AUTH_ADMIN_DASHBOARD_VERSION = "v0.11.0";
+export const SEAMLESS_AUTH_ADMIN_DASHBOARD_VERSION = "v0.12.0";
 
 export const SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE_DIGEST =
-  "sha256:8d8257e531243debd14094e41448650cd42b1c62bdb33f5e7c7e9d784925811f";
+  "sha256:6c82f2053687b26113b889c08b9b42e785580bb22e5502c6eb03c181378841aa";
 
 export const SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE = `ghcr.io/fells-code/seamless-auth-admin-dashboard:${SEAMLESS_AUTH_ADMIN_DASHBOARD_VERSION}@${SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE_DIGEST}`;
 
@@ -33,7 +33,7 @@ export const SEAMLESS_AUTH_ADMIN_DASHBOARD_REPO =
 
 export const SEAMLESS_AUTH_ADMIN_DASHBOARD_REF = SEAMLESS_AUTH_ADMIN_DASHBOARD_VERSION;
 
-export const SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT = "cd4467504fc3e2e4dbb09c13b6f3375101842512";
+export const SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT = "c3020d2f24ab34c4657e0da06da23a0f4471a7cf";
 
 // The starter templates monorepo the CLI scaffolds from. The tag names the release;
 // the download is pinned to the commit it resolved to when bumped. Override with
