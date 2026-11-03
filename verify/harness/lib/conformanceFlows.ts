@@ -29,6 +29,11 @@ export async function waitOutReuseWindow(ctx: APIRequestContext): Promise<void> 
 
 export const BEARER_TRANSPORT = { 'x-seamless-auth-transport': 'bearer' } as const;
 
+// What the official client sends on a cookie-transport request. Adapters refuse a
+// body-less unsafe auth request that carries neither this header nor a JSON content
+// type, so the adapter actor sends it on every request, as a browser client would.
+export const COOKIE_TRANSPORT = { 'x-seamless-auth-transport': 'cookie' } as const;
+
 export function bearer(token: string) {
   return { Authorization: `Bearer ${token}` };
 }

@@ -280,6 +280,12 @@ since the generated compose pins both the ports and the container names.
 - **Adapter OTP limiter**: the adapter funnels all OTP through one client IP, so the API's per-IP OTP
   limiter (10 per 15 minutes, hardcoded) bounds adapter / react OTP traffic. Keep specs off it where
   possible (for example, magic-link login instead of a second email-OTP round trip).
+- **Pending conformance contracts**: the Go, Python and Rust adapters run the adapter specs from
+  this repo's `main` with no pin, so a new spec for a contract an adapter has not released would
+  fail it at once. List such a contract in
+  [verify/harness/lib/pendingContracts.ts](verify/harness/lib/pendingContracts.ts) with its ticket
+  and call `requireContract` in its cases: they skip unless `SEAMLESS_VERIFY_CONTRACTS` names it.
+  Remove the entry once every adapter has released it. `verify/CONFORMANCE.md` lists them.
 - **Version pins**: [verify/adapter-app](verify/adapter-app) pins `@seamless-auth/express`,
   [verify/adapter-fastify-app](verify/adapter-fastify-app) pins `@seamless-auth/fastify`, and each
   web template pins `@seamless-auth/react`. Bump these when new versions publish.

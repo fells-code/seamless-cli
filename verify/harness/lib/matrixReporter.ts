@@ -45,6 +45,9 @@ export default class MatrixReporter implements Reporter {
   private tests = new Map<string, Entry>();
 
   onTestEnd(test: TestCase, result: TestResult): void {
+    // A skipped test (a pending contract the run did not opt into) is neither a
+    // pass nor a failure, so it leaves its cell alone.
+    if (result.status === 'skipped') return;
     const match = test.location.file.match(/\/(api|adapter|react|nextjs)\/([^/]+)\.spec\.[tj]s$/);
     if (!match) return;
     // The project name, not the directory: the two adapter projects run the same

@@ -16,6 +16,26 @@ SEAMLESS_API_DIR=../seamless-auth-api seamless verify --adapter-url=http://local
 That starts Postgres and the auth API (published on `http://localhost:5312`), waits
 for `GET <url>/` to answer, and runs `verify/harness/adapter/*.spec.ts` against the URL.
 
+### Pending contracts
+
+A contract the specs describe before every adapter has released it is listed in
+`verify/harness/lib/pendingContracts.ts`, with the ticket that tracks it. Its cases are
+skipped unless the run names it in `SEAMLESS_VERIFY_CONTRACTS` (a comma list, or `all`),
+so an adapter that runs this harness from its default branch is not failed by a case it
+has not shipped. Once an adapter ships one, its CI sets the variable to hold itself to
+it:
+
+```bash
+SEAMLESS_VERIFY_CONTRACTS=content-type-gate seamless verify --adapter-url=http://localhost:8080
+```
+
+When every adapter has released a contract it leaves the list and its cases run for
+everyone.
+
+| Contract | Ticket | What it holds an adapter to |
+| --- | --- | --- |
+| `content-type-gate` | fells-code/seamless-auth-api#558 | A body-less unsafe request to `/auth/*` without `Content-Type: application/json` or `x-seamless-auth-transport` answers `415 unsupported_media_type` |
+
 ## The reference app
 
 ### Configuration
@@ -54,6 +74,11 @@ proxy" setting must not be used: it makes the client address caller-controlled.
 **Flows** (cookie transport): email OTP signup and sign-in, magic link (`204` while
 pending, `200` once verified), OAuth against the mock provider, logout (`204`).
 
+The harness's cookie-transport requests carry `x-seamless-auth-transport: cookie`, as
+the official client's unsafe requests do, so a body-less `POST` or `DELETE` passes the
+content-type gate. Only `bearer` selects bearer transport; any other value is cookie
+transport.
+
 **Cookies.** `seamless-ephemeral` (pre-auth and registration), `seamless-access` and
 `seamless-refresh`, each `HttpOnly; Secure; SameSite=None; Path=/`, with `Max-Age`
 equal to the lifetime the API returned (`ttl`, `refreshTtl`). Logout clears access and
@@ -78,6 +103,16 @@ session.
 **Guard.** `/api/me` answers `401` with no session, an altered access cookie, or the
 sign-in flow's ephemeral cookie presented as the access cookie, and the signed-in user's
 id with a valid one.
+
+**Request guards** (cookie transport).
+- A request with `Sec-Fetch-Site: cross-site` and any method but `GET`, `HEAD` or
+  `OPTIONS` answers `403 cross_site_request_blocked` and reaches nothing: a cross-site
+  `DELETE /auth/logout` leaves the session signed in. The reference app's cookies are
+  `SameSite=None`; from v0.23 a `Lax` or `Strict` deployment is refused the same way,
+  which this suite cannot vary.
+- Pending (`content-type-gate`): a body-less form-encoded `POST /auth/recovery-codes`
+  without the transport header answers `415 unsupported_media_type` and generates
+  nothing, and the same request with the header goes through.
 
 **Errors.** An API validation failure keeps its `400` and body (`error:
 "invalid_request"` with `details.issues`). No session answers `401` with an `error`
