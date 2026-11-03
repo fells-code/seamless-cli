@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 
 import { APIRequestContext, request as playwrightRequest } from '@playwright/test';
 
+import { COOKIE_TRANSPORT } from './conformanceFlows';
 import { ADAPTER_URL, API_SERVICE_TOKEN, API_URL, uniqueClientIp, uniqueEmail } from './env';
 import { mintServiceToken } from './serviceToken';
 
@@ -34,6 +35,9 @@ export async function newApiActor(prefix = 'verify'): Promise<Actor> {
 // User-Agent. Reference apps trust exactly that hop, so the adapter forwards them
 // upstream: the actor gets its own rate-limit bucket, and a spec can find what the
 // API recorded for it.
+//
+// It names cookie transport on every request, as the official client does on
+// unsafe ones. A spec selects bearer transport per request, which overrides it.
 export async function newAdapterActor(
   baseURL: string = ADAPTER_URL,
   prefix = 'verify',
@@ -43,7 +47,7 @@ export async function newAdapterActor(
   const ctx = await playwrightRequest.newContext({
     baseURL,
     userAgent,
-    extraHTTPHeaders: { 'x-forwarded-for': clientIp },
+    extraHTTPHeaders: { 'x-forwarded-for': clientIp, ...COOKIE_TRANSPORT },
   });
 
   return { email: uniqueEmail(prefix), ctx, clientIp, userAgent, dispose: () => ctx.dispose() };
