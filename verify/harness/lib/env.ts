@@ -2,6 +2,8 @@
 
 import { randomInt, randomUUID } from 'crypto';
 
+import { mintServiceToken } from './serviceToken';
+
 export const API_URL = process.env.SEAMLESS_API_URL ?? 'http://localhost:5312';
 export const ADAPTER_URL = process.env.SEAMLESS_ADAPTER_URL ?? 'http://localhost:3000';
 // The Fastify twin of the adapter, on its own port. The adapter specs run against
@@ -24,9 +26,13 @@ export const API_SERVICE_TOKEN =
 export const OWNER_EMAIL = process.env.SEAMLESS_OWNER_EMAIL ?? 'owner@verify.local';
 
 // Non-production seam: makes the API return OTP / magic-link tokens in the
-// response `delivery` object instead of sending real email/SMS.
+// response `delivery` object instead of sending real email/SMS. External
+// delivery is unlocked only by a service token for the delivery subject, as the
+// server adapters send it, so these requests carry their own token.
+export const EXTERNAL_DELIVERY_SUBJECT = 'seamless-auth-external-delivery';
 export const EXTERNAL_DELIVERY = {
   'x-seamless-auth-delivery-mode': 'external',
+  'x-seamless-service-token': `Bearer ${mintServiceToken(API_SERVICE_TOKEN, EXTERNAL_DELIVERY_SUBJECT)}`,
 } as const;
 
 const runId = process.env.SEAMLESS_RUN_ID ?? String(Date.now());
