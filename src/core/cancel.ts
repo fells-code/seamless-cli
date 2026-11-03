@@ -27,9 +27,11 @@ export function isCancelled(err: unknown): boolean {
 // Casting that result to its value type (the pattern this replaces) turned the
 // symbol into a TypeError somewhere further down, which surfaced as a crash
 // mid-scaffold instead of a clean exit. Every prompt result goes through here.
-export function orCancel<T>(value: T | symbol): T {
+// Clack 1.8 types the cancel value as a `unique symbol`, which TypeScript infers
+// into `T` itself, so the symbol is excluded from the result type explicitly.
+export function orCancel<T>(value: T | symbol): Exclude<T, symbol> {
   if (isCancel(value)) {
     throw new CancelledError();
   }
-  return value as T;
+  return value as Exclude<T, symbol>;
 }
