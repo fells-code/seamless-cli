@@ -52,11 +52,15 @@ jobs:
       - name: Version or publish
         uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          version: npm run version-packages
-          publish: npm run release:stable
-          title: 'chore: version packages'
-          commit: 'chore: version packages'
-          createGithubReleases: true
+          # v2 of the action renamed every input and ignores unknown ones, so the
+          # old names would leave the version PR titled "Version Packages".
+          version-script: npm run version-packages
+          publish-script: npm run release:stable
+          pr-title: 'chore: version packages'
+          commit-message: 'chore: version packages'
+          create-github-releases: true
+          # v2 no longer reads GITHUB_TOKEN from the environment.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
