@@ -27,6 +27,7 @@ const SERVICE = "seamless-cli";
 const LOOPBACK_PROFILE = "provider-e2e-loopback";
 const DEVICE_PROFILE = "provider-e2e-device";
 const EMAIL_PROFILE = "provider-e2e-email";
+const ADVERTISED_PROFILE = "provider-e2e-advertised";
 const EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange";
 const SUBJECT_TYPE = "urn:ietf:params:oauth:token-type:access_token";
 const REFRESH_TYPE = "urn:ietf:params:oauth:token-type:refresh_token";
@@ -110,6 +111,7 @@ describe.skipIf(!DIR)("seamless profile login through the OpenID Provider", () =
   let keyring: typeof import("@napi-rs/keyring");
   let totpSecret = "";
   let userId = "";
+  let advertises = false;
   const email = `cli+${Date.now()}@clilogin.localhost`;
   const shots = (name: string) => path.join(DIR as string, ".generated", "cli-e2e", `${name}.png`);
 
@@ -204,6 +206,22 @@ describe.skipIf(!DIR)("seamless profile login through the OpenID Provider", () =
     const run = cli(args, opts);
     const code = await finished(run);
     return { code, output: run.output() };
+  }
+
+  // Answers false on an API older than oidc_cli_client_id, whose patch schema refuses the key.
+  async function advertise(id: string | null): Promise<boolean> {
+    const res = await api("PATCH", "/system-config/admin", {
+      token: ownerToken,
+      body: { oidc_cli_client_id: id },
+    });
+    if (res.status >= 300 && res.status !== 400) {
+      throw new Error(`PATCH /system-config/admin: ${res.status} ${JSON.stringify(res.json)}`);
+    }
+    return res.status < 300;
+  }
+
+  async function publicConfig(): Promise<{ oidcProvider?: unknown }> {
+    return (await fetch(`${instance()}/system-config/public`)).json() as Promise<{ oidcProvider?: unknown }>;
   }
 
   const account = (profile: string) => `${profile}::${instance()}`;
@@ -342,6 +360,7 @@ describe.skipIf(!DIR)("seamless profile login through the OpenID Provider", () =
       },
     });
     clientId = created.application.id;
+    advertises = await advertise(null);
 
     const issuer = new URL(recipe.issuer);
     const spki = await new Promise<string>((resolve, reject) => {
@@ -387,7 +406,7 @@ describe.skipIf(!DIR)("seamless profile login through the OpenID Provider", () =
   afterAll(async () => {
     if (!DIR) return;
     await browser?.close();
-    for (const profile of [LOOPBACK_PROFILE, DEVICE_PROFILE, EMAIL_PROFILE]) {
+    for (const profile of [LOOPBACK_PROFILE, DEVICE_PROFILE, EMAIL_PROFILE, ADVERTISED_PROFILE]) {
       try {
         new keyring.Entry(SERVICE, account(profile)).deletePassword();
       } catch {
@@ -419,6 +438,10 @@ describe.skipIf(!DIR)("seamless profile login through the OpenID Provider", () =
     });
     expect(res.status, JSON.stringify(res.json)).toBe(400);
   }, 60_000);
+
+  it("an instance that does not advertise a provider says nothing about one", async () => {
+    expect((await publicConfig()).oidcProvider).toBeUndefined();
+  });
 
   it("falls back to the email code on a profile with no provider", async () => {
     await ran(["profile", "add", EMAIL_PROFILE, "--instance-url", instance()]);
@@ -512,6 +535,45 @@ describe.skipIf(!DIR)("seamless profile login through the OpenID Provider", () =
     const confirmation = await confirmSignIn("live-session");
     expect(confirmation).toContain(email);
     expect(await finished(run)).toBe(0);
+  }, 60_000);
+
+  it("a profile with no flags discovers the advertised provider and signs in", async (ctx) => {
+    if (!advertises) ctx.skip();
+    expect(await advertise(clientId)).toBe(true);
+    expect((await publicConfig()).oidcProvider).toEqual({
+      issuer: recipe.issuer,
+      cliClientId: clientId,
+    });
+
+    await ran(["profile", "add", ADVERTISED_PROFILE, "--instance-url", instance()]);
+    const run = cli(["profile", "login", ADVERTISED_PROFILE]);
+    const authorize = await nextAuthorizeUrl();
+    expect(authorize.origin).toBe(recipe.issuer);
+    expect(authorize.searchParams.get("client_id")).toBe(clientId);
+    await page.goto(authorize.href);
+    await confirmSignIn("advertised");
+    expect(await finished(run), run.output()).toBe(0);
+    expect(stored(ADVERTISED_PROFILE).signIn).toBe("loopback");
+
+    const config = JSON.parse(fs.readFileSync(path.join(scratch, "seamless", "config.json"), "utf8"));
+    expect(config.profiles[ADVERTISED_PROFILE]).toMatchObject({
+      oidcIssuer: recipe.issuer,
+      oidcClientId: clientId,
+    });
+  }, 60_000);
+
+  it("a saved issuer is not downgraded when the advertisement disappears", async (ctx) => {
+    if (!advertises) ctx.skip();
+    expect(await advertise(null)).toBe(true);
+    expect((await publicConfig()).oidcProvider).toBeUndefined();
+
+    const run = cli(["profile", "login", ADVERTISED_PROFILE]);
+    const authorize = await nextAuthorizeUrl();
+    expect(authorize.origin).toBe(recipe.issuer);
+    await page.goto(authorize.href);
+    await confirmSignIn("advertisement-gone");
+    expect(await finished(run), run.output()).toBe(0);
+    expect(run.output()).not.toMatch(/a code is on its way/);
   }, 60_000);
 
   it("grants the account admin, so admin commands have something to refuse", async () => {
@@ -651,6 +713,40 @@ describe.skipIf(!DIR)("seamless profile login through the OpenID Provider", () =
     expect(code, run.output()).toBe(0);
     expect(takeUrls()).toEqual([]);
   }, 120_000);
+
+  it("clients create and update set session exchange, and need a step-up like any admin write", async () => {
+    // Runs on the step-up the last test left. TOTP attempts are limited per account, so this
+    // spends none: a client of its own, because turning this off revokes the sessions exchanged
+    // through a client, which would include the one running this command.
+    const created = await ran(
+      ["clients", "create", `Other CLI ${Date.now()}`, "--public", "--first-party",
+        "--auth-method", "none", "--redirect-uri", "http://127.0.0.1/callback",
+        "--session-exchange", "--profile", LOOPBACK_PROFILE, "--json"],
+    );
+    expect(created.code, created.output).toBe(0);
+    const other = JSON.parse(created.output).application;
+    expect(other.sessionExchangeEnabled).toBe(true);
+
+    const off = await ran(["clients", "update", other.id, "--no-session-exchange", "--profile", LOOPBACK_PROFILE]);
+    expect(off.code, off.output).toBe(0);
+    expect(off.output).toMatch(/session exchange: off/);
+
+    const on = await ran(["clients", "update", other.id, "--session-exchange", "--profile", LOOPBACK_PROFILE]);
+    expect(on.output).toMatch(/session exchange: on/);
+
+    const shown = await ran(["clients", "get", other.id, "--profile", LOOPBACK_PROFILE]);
+    expect(shown.output).toMatch(/session exchange: on/);
+
+    const ineligible = await ran(["clients", "create", "Web", "--redirect-uri", "https://a.example.com/cb",
+      "--session-exchange", "--profile", LOOPBACK_PROFILE]);
+    expect(ineligible.code).not.toBe(0);
+    expect(ineligible.output).toContain("sessionExchangeEnabled");
+
+    await dropStepUp(LOOPBACK_PROFILE);
+    const refused = await ran(["clients", "update", other.id, "--no-session-exchange", "--profile", LOOPBACK_PROFILE]);
+    expect(refused.code).not.toBe(0);
+    expect(refused.output).toMatch(/SEAMLESS_TOTP_CODE/);
+  }, 90_000);
 
   it("a device session asks for TOTP on admin reads, org commands and config, with SEAMLESS_TOTP_CODE or a prompt", async () => {
     await deviceSignIn("device-totp");
