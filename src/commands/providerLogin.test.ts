@@ -20,6 +20,7 @@ vi.mock("../core/providerSignIn.js", async (importOriginal) => {
   return {
     ...actual,
     discoverProvider: vi.fn(),
+    readAdvertisedProvider: vi.fn(),
     signInWithLoopback: vi.fn(),
     signInWithDevice: vi.fn(),
     exchangeForSession: vi.fn(),
@@ -33,6 +34,7 @@ import { loadConfig, upsertProfile } from "../core/config.js";
 import { promptLogin } from "../core/interactiveLogin.js";
 import {
   accountKey,
+  KEYCHAIN_REQUIRED_MESSAGE,
   KeychainUnavailableError,
   setBackendForTesting,
   type KeychainBackend,
@@ -41,6 +43,7 @@ import {
   discoverProvider,
   exchangeForSession,
   ProviderSignInError,
+  readAdvertisedProvider,
   signInWithDevice,
   signInWithLoopback,
   type ProviderMetadata,
@@ -96,6 +99,7 @@ beforeEach(() => {
   vi.mocked(outro).mockClear();
   vi.mocked(promptLogin).mockReset();
   vi.mocked(discoverProvider).mockReset().mockResolvedValue(metadata);
+  vi.mocked(readAdvertisedProvider).mockReset().mockResolvedValue(undefined);
   vi.mocked(signInWithLoopback)
     .mockReset()
     .mockResolvedValue({ accessToken: "subject", sub: "user-1" });
@@ -212,14 +216,16 @@ describe("loginToInstance through the OpenID Provider", () => {
 
   it("ends the new session when the keychain cannot hold it", async () => {
     upsertProfile(configured);
+    // Passes the preflight, then fails: a keychain can lock during a sign-in.
     setBackendForTesting({
-      get: () => null,
-      set: () => {
-        throw new KeychainUnavailableError();
+      ...backend,
+      set: (acct, secret) => {
+        if (acct === account) throw new KeychainUnavailableError();
+        backend.set(acct, secret);
       },
-      delete: () => false,
     });
     await expect(loginToInstance({ profileName: "prod" })).rejects.toThrow("exit:1");
+    expect(vi.mocked(outro).mock.calls.at(-1)?.[0]).toContain("needs an OS keychain");
     const [url, init] = vi.mocked(fetch).mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`${INSTANCE}/logout`);
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer fp-access");
@@ -348,3 +354,206 @@ describe("refused combinations", () => {
     expect(logged).toContain("https");
   });
 });
+
+describe("the instance's advertisement", () => {
+  const advertised = { issuer: ISSUER, cliClientId: "advertised-client" };
+  const bare = { name: "prod", instanceUrl: INSTANCE };
+
+  it("is used when neither flags nor the profile name a provider", async () => {
+    upsertProfile(bare);
+    vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+    await loginToInstance({ profileName: "prod" });
+    expect(readAdvertisedProvider).toHaveBeenCalledWith(INSTANCE);
+    expect(discoverProvider).toHaveBeenCalledWith(ISSUER);
+    expect(signInWithLoopback).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "advertised-client" }),
+    );
+    expect(promptLogin).not.toHaveBeenCalled();
+  });
+
+  it("is saved to the profile only after a successful sign-in", async () => {
+    upsertProfile(bare);
+    vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+    vi.mocked(signInWithLoopback).mockRejectedValueOnce(new ProviderSignInError("nope"));
+    await expect(loginToInstance({ profileName: "prod" })).rejects.toThrow("exit:1");
+    expect(loadConfig().profiles.prod?.oidcIssuer).toBeUndefined();
+
+    await loginToInstance({ profileName: "prod" });
+    expect(loadConfig().profiles.prod).toMatchObject({
+      oidcIssuer: ISSUER,
+      oidcClientId: "advertised-client",
+    });
+  });
+
+  it("works with --device", async () => {
+    upsertProfile(bare);
+    vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+    await loginToInstance({ profileName: "prod", device: true });
+    expect(signInWithDevice).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "advertised-client" }),
+    );
+  });
+
+  it("no advertisement and no configured issuer means the email code", async () => {
+    upsertProfile(bare);
+    vi.mocked(promptLogin).mockResolvedValue({
+      tokens: { accessToken: "ea", refreshToken: "er" },
+      identity: { identifierType: "email" },
+      channel: "email",
+      identifier: "o@example.com",
+    });
+    await loginToInstance({ profileName: "prod" });
+    expect(promptLogin).toHaveBeenCalled();
+    expect(discoverProvider).not.toHaveBeenCalled();
+  });
+
+  it("flags win over the profile and the advertisement", async () => {
+    upsertProfile({ ...bare, oidcIssuer: "https://saved.example.com", oidcClientId: "saved" });
+    vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+    await loginToInstance({
+      profileName: "prod",
+      oidcIssuer: "https://flag.example.com",
+      clientId: "flag",
+    });
+    expect(discoverProvider).toHaveBeenCalledWith("https://flag.example.com");
+    expect(signInWithLoopback).toHaveBeenCalledWith(expect.objectContaining({ clientId: "flag" }));
+  });
+
+  it("the profile wins over the advertisement, without asking", async () => {
+    upsertProfile({ ...bare, oidcIssuer: "https://saved.example.com", oidcClientId: "saved" });
+    vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+    await loginToInstance({ profileName: "prod" });
+    expect(readAdvertisedProvider).not.toHaveBeenCalled();
+    expect(discoverProvider).toHaveBeenCalledWith("https://saved.example.com");
+    expect(signInWithLoopback).toHaveBeenCalledWith(expect.objectContaining({ clientId: "saved" }));
+  });
+
+  it("a later response without the advertisement does not downgrade a saved issuer", async () => {
+    upsertProfile(bare);
+    vi.mocked(readAdvertisedProvider).mockResolvedValueOnce(advertised);
+    await loginToInstance({ profileName: "prod" });
+
+    vi.mocked(readAdvertisedProvider).mockResolvedValue(undefined);
+    vi.mocked(signInWithLoopback).mockClear();
+    await loginToInstance({ profileName: "prod" });
+
+    expect(signInWithLoopback).toHaveBeenCalledTimes(1);
+    expect(promptLogin).not.toHaveBeenCalled();
+  });
+
+  it("a saved issuer with no client id and no advertisement stops rather than using the email code", async () => {
+    upsertProfile({ ...bare, oidcIssuer: ISSUER });
+    await expect(loginToInstance({ profileName: "prod" })).rejects.toThrow("exit:1");
+    expect(promptLogin).not.toHaveBeenCalled();
+    expect(logged).toContain("--client-id");
+  });
+
+  it("fills a missing client id only from an advertisement for the same issuer", async () => {
+    upsertProfile({ ...bare, oidcIssuer: `${ISSUER}/` });
+    vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+    await loginToInstance({ profileName: "prod" });
+    expect(signInWithLoopback).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "advertised-client" }),
+    );
+  });
+
+  it("does not take a client id from an advertisement for another issuer", async () => {
+    upsertProfile({ ...bare, oidcIssuer: "https://saved.example.com" });
+    vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+    await expect(loginToInstance({ profileName: "prod" })).rejects.toThrow("exit:1");
+    expect(signInWithLoopback).not.toHaveBeenCalled();
+    expect(logged).toContain("--client-id");
+  });
+
+  it("fills a missing issuer when only a client id is configured, keeping that client id", async () => {
+    upsertProfile({ ...bare, oidcClientId: "saved" });
+    vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+    await loginToInstance({ profileName: "prod" });
+    expect(discoverProvider).toHaveBeenCalledWith(ISSUER);
+    expect(signInWithLoopback).toHaveBeenCalledWith(expect.objectContaining({ clientId: "saved" }));
+  });
+
+  it("an advertised issuer that cannot be read stops, naming --email-code", async () => {
+    upsertProfile(bare);
+    vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+    vi.mocked(discoverProvider).mockRejectedValue(new ProviderSignInError("Could not read"));
+    await expect(loginToInstance({ profileName: "prod" })).rejects.toThrow("exit:1");
+    expect(promptLogin).not.toHaveBeenCalled();
+    expect(vi.mocked(outro).mock.calls.at(-1)?.[0]).toContain("--email-code");
+  });
+
+  it("an advertised issuer that is not https stops, and does not sign in", async () => {
+    upsertProfile(bare);
+    vi.mocked(readAdvertisedProvider).mockResolvedValue({
+      issuer: "http://auth.example.com",
+      cliClientId: "c",
+    });
+    await expect(loginToInstance({ profileName: "prod" })).rejects.toThrow("exit:1");
+    expect(promptLogin).not.toHaveBeenCalled();
+    expect(signInWithLoopback).not.toHaveBeenCalled();
+    expect(logged).toContain("https");
+  });
+
+  it.each([
+    ["--email-code", { emailCode: true }],
+    ["--local", { local: true }],
+  ])("is not read with %s", async (_flag, flags) => {
+    upsertProfile({ name: "prod", instanceUrl: "http://localhost:5312" });
+    vi.mocked(promptLogin).mockResolvedValue({
+      tokens: { accessToken: "ea", refreshToken: "er" },
+      identity: { identifierType: "email" },
+      channel: "email",
+      identifier: "o@example.com",
+    });
+    await loginToInstance({ profileName: "prod", ...flags });
+    expect(readAdvertisedProvider).not.toHaveBeenCalled();
+  });
+});
+
+describe("the keychain preflight", () => {
+  const noKeychain: KeychainBackend = {
+    get: () => null,
+    set: () => {
+      throw new KeychainUnavailableError();
+    },
+    delete: () => false,
+  };
+
+  it.each([
+    ["the browser", {}],
+    ["--device", { device: true }],
+  ])("stops %s before the provider is asked for anything", async (_name, flags) => {
+    upsertProfile(configured);
+    setBackendForTesting(noKeychain);
+    await expect(loginToInstance({ profileName: "prod", ...flags })).rejects.toThrow("exit:1");
+    expect(vi.mocked(outro).mock.calls.at(-1)?.[0]).toContain(KEYCHAIN_REQUIRED_MESSAGE);
+    expect(discoverProvider).not.toHaveBeenCalled();
+    expect(signInWithLoopback).not.toHaveBeenCalled();
+    expect(signInWithDevice).not.toHaveBeenCalled();
+    expect(exchangeForSession).not.toHaveBeenCalled();
+  });
+
+  it("stops the email code before a code is sent", async () => {
+    upsertProfile({ name: "prod", instanceUrl: INSTANCE });
+    setBackendForTesting(noKeychain);
+    await expect(loginToInstance({ profileName: "prod" })).rejects.toThrow("exit:1");
+    expect(promptLogin).not.toHaveBeenCalled();
+    expect(vi.mocked(outro).mock.calls.at(-1)?.[0]).toContain(KEYCHAIN_REQUIRED_MESSAGE);
+    expect(logged).not.toContain("SEAMLESS_REFRESH_TOKEN");
+  });
+
+  it("does not read the advertisement first", async () => {
+    upsertProfile({ name: "prod", instanceUrl: INSTANCE });
+    setBackendForTesting(noKeychain);
+    await expect(loginToInstance({ profileName: "prod" })).rejects.toThrow("exit:1");
+    expect(readAdvertisedProvider).not.toHaveBeenCalled();
+  });
+
+  it("leaves stored tokens alone", async () => {
+    upsertProfile(configured);
+    backend.store.set(account, JSON.stringify({ accessToken: "a", refreshToken: "r" }));
+    await loginToInstance({ profileName: "prod" });
+    expect([...backend.store.keys()]).toEqual([account]);
+  });
+});
+

@@ -242,8 +242,9 @@ describe("loginToInstance", () => {
       loginToInstance({ identifier: "dev@example.com" }),
     ).rejects.toThrow("exit:1");
     expect(outro).toHaveBeenCalledWith(
-      expect.stringContaining("No OS keychain is available"),
+      expect.stringContaining("needs an OS keychain"),
     );
+    expect(text).not.toHaveBeenCalled();
   });
 
   it("propagates unexpected errors", async () => {

@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import {
   builtInResource,
   discoverProvider,
+  readAdvertisedProvider,
   exchangeForSession,
   normalizeIssuer,
   PROVIDER_SCOPE,
@@ -118,6 +119,68 @@ describe("normalizeIssuer", () => {
 describe("builtInResource", () => {
   it("is the issuer with /seamless", () => {
     expect(builtInResource(ISSUER)).toBe(RESOURCE);
+  });
+});
+
+describe("readAdvertisedProvider", () => {
+  const stubPublic = (answer: () => Response) => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => answer());
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  };
+
+  it("reads oidcProvider from the instance's public config", async () => {
+    const fetchMock = stubPublic(() =>
+      json({
+        loginMethods: ["passkey"],
+        oidcProvider: { issuer: ISSUER, cliClientId: CLIENT_ID },
+      }),
+    );
+    await expect(readAdvertisedProvider(INSTANCE)).resolves.toEqual({
+      issuer: ISSUER,
+      cliClientId: CLIENT_ID,
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${INSTANCE}/system-config/public`);
+  });
+
+  it("is undefined on an older API, which omits it", async () => {
+    stubPublic(() => json({ loginMethods: ["passkey"], recoveryCodes: true }));
+    await expect(readAdvertisedProvider(INSTANCE)).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["a string", { oidcProvider: "https://auth.example.com" }],
+    ["null", { oidcProvider: null }],
+    ["no client id", { oidcProvider: { issuer: ISSUER } }],
+    ["no issuer", { oidcProvider: { cliClientId: CLIENT_ID } }],
+    ["an empty client id", { oidcProvider: { issuer: ISSUER, cliClientId: "" } }],
+  ])("is undefined for a malformed advertisement: %s", async (_name, body) => {
+    stubPublic(() => json(body));
+    await expect(readAdvertisedProvider(INSTANCE)).resolves.toBeUndefined();
+  });
+
+  it("keeps fields it does not know", async () => {
+    stubPublic(() =>
+      json({ oidcProvider: { issuer: ISSUER, cliClientId: CLIENT_ID, extra: 1 }, other: 2 }),
+    );
+    await expect(readAdvertisedProvider(INSTANCE)).resolves.toMatchObject({ issuer: ISSUER });
+  });
+
+  it("is undefined when the instance answers an error", async () => {
+    stubPublic(() => json({ error: "nope" }, 500));
+    await expect(readAdvertisedProvider(INSTANCE)).resolves.toBeUndefined();
+  });
+
+  it("is undefined when the body is not JSON", async () => {
+    stubPublic(() => new Response("<html>"));
+    await expect(readAdvertisedProvider(INSTANCE)).resolves.toBeUndefined();
+  });
+
+  it("is undefined when the instance cannot be reached, for the sign-in to report", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    }));
+    await expect(readAdvertisedProvider(INSTANCE)).resolves.toBeUndefined();
   });
 });
 

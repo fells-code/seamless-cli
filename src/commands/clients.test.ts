@@ -19,6 +19,7 @@ import {
 } from "../core/admin.js";
 import { apiApplication, apiResource, RESOURCE_ID } from "../core/admin.fixtures.js";
 import { runClients } from "./clients.js";
+import { COMMAND_HELP } from "./helpTopics.js";
 
 vi.mock("@clack/prompts", () => ({
   confirm: vi.fn(),
@@ -644,3 +645,83 @@ describe("clients delete", () => {
     expect(errors()).toContain("Usage: seamless clients delete <id>");
   });
 });
+
+describe("clients: session exchange", () => {
+  const nativePublic = [
+    "--public",
+    "--first-party",
+    "--auth-method",
+    "none",
+    "--redirect-uri",
+    "http://127.0.0.1/callback",
+  ];
+
+  beforeEach(() => {
+    vi.mocked(createApplication).mockReset();
+    vi.mocked(updateApplication).mockReset();
+  });
+
+  it("update --session-exchange turns it on", async () => {
+    vi.mocked(updateApplication).mockResolvedValue(
+      apiApplication({ sessionExchangeEnabled: true }),
+    );
+    await runClients(["update", "client_docs", "--session-exchange"]);
+    expect(vi.mocked(updateApplication).mock.calls[0][2]).toEqual({
+      sessionExchangeEnabled: true,
+    });
+  });
+
+  it("update --no-session-exchange turns it off", async () => {
+    vi.mocked(updateApplication).mockResolvedValue(
+      apiApplication({ sessionExchangeEnabled: false }),
+    );
+    await runClients(["update", "client_docs", "--no-session-exchange"]);
+    expect(vi.mocked(updateApplication).mock.calls[0][2]).toEqual({
+      sessionExchangeEnabled: false,
+    });
+  });
+
+  it("an update without the flag does not send it", async () => {
+    vi.mocked(updateApplication).mockResolvedValue(apiApplication());
+    await runClients(["update", "client_docs", "--name", "Docs"]);
+    expect(vi.mocked(updateApplication).mock.calls[0][2]).toEqual({ name: "Docs" });
+  });
+
+  it("create --session-exchange sends it for a first-party public native client", async () => {
+    vi.mocked(createApplication).mockResolvedValue({
+      application: apiApplication({ sessionExchangeEnabled: true }),
+    });
+    await runClients(["create", "CLI", ...nativePublic, "--session-exchange"]);
+    expect(vi.mocked(createApplication).mock.calls[0][1]).toMatchObject({
+      clientType: "public",
+      sessionExchangeEnabled: true,
+    });
+  });
+
+  it("create refuses it on a client that is not eligible, before asking the instance", async () => {
+    await expect(
+      runClients(["create", "Web", "--redirect-uri", "https://a.example.com/cb", "--session-exchange"]),
+    ).rejects.toBeInstanceOf(ExitError);
+    expect(errorSpy.mock.calls.join()).toContain("sessionExchangeEnabled");
+    expect(createApplication).not.toHaveBeenCalled();
+  });
+
+  it("shows the setting", async () => {
+    vi.mocked(getApplication).mockResolvedValue(apiApplication({ sessionExchangeEnabled: true }));
+    await runClients(["get", "client_docs"]);
+    const out = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(out).toMatch(/session exchange:\s+on/);
+  });
+
+  it("shows off for an API that does not send it", async () => {
+    vi.mocked(getApplication).mockResolvedValue(apiApplication());
+    await runClients(["get", "client_docs"]);
+    const out = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(out).toMatch(/session exchange:\s+off/);
+  });
+
+  it("is documented in the help", () => {
+    expect(JSON.stringify(COMMAND_HELP.find((topic) => topic.name === "clients"))).toContain("--session-exchange | --no-session-exchange");
+  });
+});
+
