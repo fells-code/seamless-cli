@@ -12,12 +12,15 @@ import {
   type TokenBundle,
 } from "./keychain.js";
 import { apiRequest, joinUrl, type ApiResponse } from "./http.js";
+import { endSession } from "./providerSignIn.js";
+import { sessionStepUp } from "./providerStepUp.js";
 import {
-  authenticatorAppStepUp,
   isFactorRejection,
   isStepUpRequired,
   type StepUpHandler,
+  type StepUpSession,
 } from "./stepUp.js";
+import { tokensFromAuthResponse } from "./tokenResponse.js";
 
 export class ReauthRequiredError extends Error {
   constructor(message: string) {
@@ -37,29 +40,7 @@ export interface AuthClient {
   ): Promise<ApiResponse<T>>;
 }
 
-export function tokensFromAuthResponse(
-  data: Record<string, unknown> | null,
-): TokenBundle | null {
-  if (!data) return null;
-
-  const accessToken = typeof data.token === "string" ? data.token : undefined;
-  const refreshToken =
-    typeof data.refreshToken === "string" ? data.refreshToken : undefined;
-  if (!accessToken || !refreshToken) return null;
-
-  const now = Date.now();
-  const ttl = typeof data.ttl === "number" ? data.ttl : undefined;
-  const refreshTtl =
-    typeof data.refreshTtl === "number" ? data.refreshTtl : undefined;
-
-  return {
-    accessToken,
-    refreshToken,
-    accessTokenExpiresAt: ttl !== undefined ? now + ttl * 1000 : undefined,
-    refreshTokenExpiresAt:
-      refreshTtl !== undefined ? now + refreshTtl * 1000 : undefined,
-  };
-}
+export { tokensFromAuthResponse };
 
 /**
  * Reads a `/refresh` response, keeping the current refresh token when the instance
@@ -101,6 +82,7 @@ export function tokensFromRefreshResponse(
           rotated
           ? undefined
           : current.refreshTokenExpiresAt,
+    ...(current.signIn ? { signIn: current.signIn } : {}),
   };
 }
 
@@ -123,7 +105,7 @@ export async function createAuthClient(
       label: `profile "${profile.name}"`,
       reauthCommand: `seamless profile login ${profile.name}`,
     },
-    opts.stepUp ?? authenticatorAppStepUp(),
+    opts.stepUp ?? sessionStepUp(),
   );
 }
 
@@ -172,6 +154,7 @@ async function createClientForProfile(
     session.refreshToken = next.refreshToken;
     session.accessTokenExpiresAt = next.accessTokenExpiresAt;
     session.refreshTokenExpiresAt = next.refreshTokenExpiresAt;
+    session.signIn = next.signIn;
     if (headless) return;
     try {
       await saveTokens(profile, next);
@@ -231,10 +214,19 @@ async function createClientForProfile(
     return inFlight;
   };
 
+  const stepUpSession: StepUpSession = {
+    signIn: () => session.signIn,
+    replace: async (next) => {
+      const previous = session.accessToken;
+      await persist(next);
+      await endSession(profile.instanceUrl, previous);
+    },
+  };
+
   let stepUpInFlight: Promise<void> | null = null;
   const runStepUp = (handler: StepUpHandler): Promise<void> => {
     if (!stepUpInFlight) {
-      stepUpInFlight = handler(client).finally(() => {
+      stepUpInFlight = handler(buildClient(send), stepUpSession).finally(() => {
         stepUpInFlight = null;
       });
     }
@@ -291,10 +283,14 @@ async function createClientForProfile(
     return send<T>(path, init);
   };
 
-  const client: AuthClient = {
+  // The step-up handler gets one built on `send`: a refusal of its own calls goes back to
+  // it, where going through authedFetch would wait on the step-up that is making the call.
+  const buildClient = (
+    fetcher: <T>(path: string, init: RequestInit) => Promise<ApiResponse<T>>,
+  ): AuthClient => ({
     profile,
-    request: authedFetch,
-    get: (path, init = {}) => authedFetch(path, { ...init, method: "GET" }),
+    request: (path, init = {}) => fetcher(path, init),
+    get: (path, init = {}) => fetcher(path, { ...init, method: "GET" }),
     post: (path, body, init = {}) => {
       const headers: Record<string, string> = {
         ...(init.headers as Record<string, string> | undefined),
@@ -304,13 +300,14 @@ async function createClientForProfile(
         headers["Content-Type"] = "application/json";
         bodyInit = JSON.stringify(body);
       }
-      return authedFetch(path, {
+      return fetcher(path, {
         ...init,
         method: "POST",
         headers,
         body: bodyInit,
       });
     },
-  };
-  return client;
+  });
+
+  return buildClient(authedFetch);
 }

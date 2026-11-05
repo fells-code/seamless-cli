@@ -7,6 +7,11 @@ export interface TokenBundle {
   refreshToken: string;
   accessTokenExpiresAt?: number;
   refreshTokenExpiresAt?: number;
+  /**
+   * Set when the session came from the OpenID Provider. It only picks which step-up to
+   * offer; the instance decides what a session may do.
+   */
+  signIn?: "loopback" | "device";
 }
 
 export class KeychainUnavailableError extends Error {

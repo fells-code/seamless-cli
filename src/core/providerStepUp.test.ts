@@ -54,8 +54,8 @@ function response(status: number, data: unknown): ApiResponse<unknown> {
   return { ok: status < 300, status, data, headers: new Headers() };
 }
 
-const enrolled = response(200, { enabled: true });
-const notEnrolled = response(200, { enabled: false });
+const enrolled = response(200, { enabled: true, verifiedAt: null, lastUsedAt: null });
+const notEnrolled = response(200, { enabled: false, verifiedAt: null, lastUsedAt: null });
 const verified = response(200, { message: "Success", fresh: true });
 
 function fakeClient(status: ApiResponse<unknown> = enrolled) {

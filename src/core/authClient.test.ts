@@ -607,7 +607,10 @@ describe("step-up on admin writes", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(stepUp).toHaveBeenCalledWith(client);
+    expect(stepUp).toHaveBeenCalledWith(
+      expect.objectContaining({ profile: client.profile }),
+      expect.objectContaining({ signIn: expect.any(Function) }),
+    );
     expect(calls).toHaveLength(2);
     expect(calls[1].init.method).toBe("DELETE");
     expect(calls[1].init.body).toBe(JSON.stringify({ userId: "u1" }));

@@ -11,6 +11,8 @@ export interface Profile {
   sub?: string;
   email?: string;
   identifierType?: IdentifierType;
+  oidcIssuer?: string;
+  oidcClientId?: string;
 }
 
 export interface SeamlessConfig {
@@ -63,6 +65,8 @@ function coerceProfile(name: string, value: unknown): Profile | undefined {
   if (raw.identifierType === "email" || raw.identifierType === "phone") {
     profile.identifierType = raw.identifierType;
   }
+  if (typeof raw.oidcIssuer === "string") profile.oidcIssuer = raw.oidcIssuer;
+  if (typeof raw.oidcClientId === "string") profile.oidcClientId = raw.oidcClientId;
   return profile;
 }
 
