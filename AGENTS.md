@@ -216,6 +216,9 @@ Templates are not in this repo — they live in the `seamless-templates` monorep
   ([src/core/providerSignIn.ts](src/core/providerSignIn.ts)) makes one request, whatever happens. A
   second presentation revokes the session the first one created, so a lost response means signing in
   again. The request body is strict: an extra field answers `invalid_request`.
+- **The provider e2e is gated.** [src/commands/providerLogin.e2e.test.ts](src/commands/providerLogin.e2e.test.ts)
+  drives the real CLI, the real keychain and Chromium against a running provider recipe, and skips
+  unless `SEAMLESS_PROVIDER_E2E_DIR` is set, so CI skips it. Its header has the command.
 - **Shared test fixtures** live in `src/**/*.fixtures.ts` (for example
   [src/core/admin.fixtures.ts](src/core/admin.fixtures.ts)). That suffix is excluded from the build
   and from coverage; a `*.test.ts` helper would instead run as an empty test file.
