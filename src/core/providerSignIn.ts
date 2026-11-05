@@ -132,6 +132,35 @@ export async function discoverProvider(issuer: string): Promise<ProviderMetadata
   };
 }
 
+// Local until the types package has it. Older APIs omit the field, and anything unreadable
+// reads as absent: an instance that offers no provider keeps the email code.
+const AdvertisementSchema = z
+  .object({
+    oidcProvider: z
+      .object({ issuer: z.string().min(1), cliClientId: z.string().min(1) })
+      .loose(),
+  })
+  .loose();
+
+export interface AdvertisedProvider {
+  issuer: string;
+  cliClientId: string;
+}
+
+/** What the instance says about its provider. Never reason to stop: see loginToInstance. */
+export async function readAdvertisedProvider(
+  instanceUrl: string,
+): Promise<AdvertisedProvider | undefined> {
+  try {
+    const res = await apiRequest<unknown>(joinUrl(instanceUrl, "/system-config/public"));
+    if (!res.ok) return undefined;
+    const provider = AdvertisementSchema.safeParse(res.data).data?.oidcProvider;
+    return provider && { issuer: provider.issuer, cliClientId: provider.cliClientId };
+  } catch {
+    return undefined;
+  }
+}
+
 function randomToken(): string {
   return randomBytes(32).toString("base64url");
 }

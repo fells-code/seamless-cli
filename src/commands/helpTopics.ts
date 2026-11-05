@@ -330,7 +330,7 @@ profile login [name] [identifier] [--identifier <email>] [--local]
               [--device] [--email-code] [--oidc-issuer <url>] [--client-id <id>]
   • Log in to that instance so users, config, org, and sessions can run
   • Defaults to the active profile, and does not change which one is active
-  • With a provider on the profile, opens your browser to sign in with a passkey
+  • With a provider saved or advertised, opens your browser to sign in with a passkey
   • --device signs in from another device, for a machine with no browser
   • With no provider, or with --email-code, signs in with an email code
 
@@ -817,6 +817,10 @@ Flags for create and update
   --first-party | --third-party     first-party clients skip consent
   --device-flow | --no-device-flow  first-party clients only
   --notices | --no-notices          lets the client send account notices
+  --session-exchange | --no-session-exchange
+                                    lets a first-party public native client
+                                    sign in the CLI. Turning it off revokes
+                                    the sessions it exchanged for
   --pkce | --no-pkce                PKCE is required by default. Only a
                                     confidential client can turn it off
   --nonce | --no-nonce              the nonce is required by default. It can

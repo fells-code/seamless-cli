@@ -7,7 +7,12 @@ import {
   upsertProfile,
   type Profile,
 } from "../core/config.js";
-import { KeychainUnavailableError, saveTokens } from "../core/keychain.js";
+import {
+  assertKeychainUsable,
+  KEYCHAIN_REQUIRED_MESSAGE,
+  KeychainUnavailableError,
+  saveTokens,
+} from "../core/keychain.js";
 import { promptLogin } from "../core/interactiveLogin.js";
 import { LoginError } from "../core/loginFlow.js";
 import {
@@ -16,6 +21,7 @@ import {
   exchangeForSession,
   normalizeIssuer,
   ProviderSignInError,
+  readAdvertisedProvider,
   signInWithDevice,
   signInWithLoopback,
 } from "../core/providerSignIn.js";
@@ -96,6 +102,49 @@ async function loginThroughProvider(
   );
 }
 
+// Flags, then what the profile saved, then what the instance advertises. A saved issuer
+// never needs the advertisement, so a later response without it cannot downgrade the
+// profile. With no issuer anywhere the instance has no provider this CLI can use, which is
+// the one case that reaches the email code: the advertisement comes over the same TLS as
+// the rest of the instance, so a missing field says no more than the instance itself could.
+async function resolveProvider(
+  profile: Profile,
+  opts: InstanceLoginOptions,
+): Promise<{ issuer?: string; clientId?: string }> {
+  let issuer = opts.oidcIssuer ?? profile.oidcIssuer;
+  let clientId = opts.clientId ?? profile.oidcClientId;
+
+  try {
+    if (issuer) issuer = normalizeIssuer(issuer);
+    if (!issuer || !clientId) {
+      const advertised = await readAdvertisedProvider(profile.instanceUrl);
+      if (advertised) {
+        const advertisedIssuer = normalizeIssuer(advertised.issuer);
+        // A client id belongs to one provider, so it comes along only for that one.
+        if (!issuer || issuer === advertisedIssuer) {
+          issuer = advertisedIssuer;
+          clientId ??= advertised.cliClientId;
+        }
+      }
+    }
+  } catch (err) {
+    if (!(err instanceof ProviderSignInError)) throw err;
+    refuse(`${err.message} To sign in with an email code instead, pass --email-code.`);
+  }
+
+  if (issuer && !clientId) {
+    refuse(
+      "This profile has an OpenID Provider issuer but no client id. Pass --client-id <id>, or --email-code to sign in with an email code.",
+    );
+  }
+  if (clientId && !issuer) {
+    refuse(
+      "This profile has a client id but no OpenID Provider issuer. Pass --oidc-issuer <url>, or --email-code to sign in with an email code.",
+    );
+  }
+  return { issuer, clientId };
+}
+
 // Signs in to an auth instance a developer administers, which is what authorizes
 // the /admin routes behind `users`, `config`, `org`, and `sessions`. Distinct
 // from the portal session: that account lives on the control plane, this one
@@ -126,29 +175,19 @@ export async function loginToInstance(
     refuse(`--device cannot be combined with ${opts.local ? "--local" : "--email-code"}.`);
   }
 
-  const emailOnly = opts.emailCode || opts.local;
-  let issuer: string | undefined;
-  const clientId = opts.clientId ?? profile.oidcClientId;
-  if (!emailOnly) {
-    const configuredIssuer = opts.oidcIssuer ?? profile.oidcIssuer;
-    if (configuredIssuer && !clientId) {
-      refuse(
-        "This profile has an OpenID Provider issuer but no client id. Pass --client-id <id>, or --email-code to sign in with an email code.",
-      );
-    }
-    if (clientId && !configuredIssuer) {
-      refuse(
-        "This profile has a client id but no OpenID Provider issuer. Pass --oidc-issuer <url>, or --email-code to sign in with an email code.",
-      );
-    }
-    try {
-      issuer = configuredIssuer ? normalizeIssuer(configuredIssuer) : undefined;
-    } catch (err) {
-      refuse((err as Error).message);
-    }
+  intro(`Log in to ${kleur.bold(profile.name)} (${profile.instanceUrl})`);
+
+  try {
+    await assertKeychainUsable();
+  } catch (err) {
+    if (!(err instanceof KeychainUnavailableError)) throw err;
+    outro(kleur.red(err.message));
+    process.exit(1);
   }
 
-  intro(`Log in to ${kleur.bold(profile.name)} (${profile.instanceUrl})`);
+  const provider =
+    opts.emailCode || opts.local ? {} : await resolveProvider(profile, opts);
+  const { issuer, clientId } = provider;
 
   if (issuer && clientId) {
     if (opts.identifier) {
@@ -159,7 +198,11 @@ export async function loginToInstance(
     try {
       await loginThroughProvider(profile, issuer, clientId, opts.device ?? false);
     } catch (err) {
-      if (err instanceof ProviderSignInError || err instanceof KeychainUnavailableError) {
+      if (err instanceof KeychainUnavailableError) {
+        outro(kleur.red(KEYCHAIN_REQUIRED_MESSAGE));
+        process.exit(1);
+      }
+      if (err instanceof ProviderSignInError) {
         outro(kleur.red(err.message));
         process.exit(1);
       }
@@ -208,7 +251,11 @@ export async function loginToInstance(
       ),
     );
   } catch (err) {
-    if (err instanceof LoginError || err instanceof KeychainUnavailableError) {
+    if (err instanceof KeychainUnavailableError) {
+      outro(kleur.red(KEYCHAIN_REQUIRED_MESSAGE));
+      process.exit(1);
+    }
+    if (err instanceof LoginError) {
       outro(kleur.red(err.message));
       process.exit(1);
     }

@@ -568,17 +568,19 @@ seamless profile login prod --identifier you@example.com
 ### Signing in through the OpenID Provider
 
 On an instance running the OpenID Provider (auth server v0.23 and the provider edge), `seamless
-profile login` signs in through your browser instead, which brings passkey sign-in to the CLI.
-Tell the profile where the provider is and which client to use, once. The instance does not
-advertise either yet, and they are saved after the first successful sign-in:
+profile login` signs in through your browser instead, which brings passkey sign-in to the CLI. An
+instance that advertises its provider in `GET /system-config/public` needs nothing more. For one
+that does not, tell the profile where the provider is and which client to use. Either way they are
+saved after the first successful sign-in. Flags win over what the profile saved, and that wins over
+what the instance advertises:
 
 ```bash
+seamless profile login prod            # the advertised provider, or what the profile saved
+seamless profile login prod --device   # from a machine with no browser
+
 seamless profile login prod \
   --oidc-issuer https://auth.example.com \
   --client-id <client id>
-
-seamless profile login prod            # afterwards
-seamless profile login prod --device   # from a machine with no browser
 seamless profile login prod --email-code   # the email code, on purpose
 ```
 
@@ -598,14 +600,24 @@ seamless profile login prod --email-code   # the email code, on purpose
 - **If an exchange fails, sign in again.** The CLI never retries one: the token works once, and
   presenting it a second time revokes the session the first one created. If you are told the token
   had already been used, your sign-in may have been intercepted, so check `seamless sessions`.
-- **A profile with no provider** uses the email code, with or without `--device`. A profile with a
-  provider that cannot be read stops and says so, rather than quietly using the weaker sign-in. Pass
-  `--email-code` if you want it.
+- **With no provider anywhere,** on the profile or advertised, you get the email code, with or
+  without `--device`. Once an issuer is known, one that cannot be read stops and says so, rather than
+  quietly using the weaker sign-in, and an instance that stops advertising does not change a profile
+  that saved one. Pass `--email-code` if you want it.
+- **Every sign-in checks the keychain first,** before a browser opens or a code is sent, so you are
+  never sent through an approval that could not end in a stored session. See
+  [Token storage](#token-storage-and-the-keychain).
 
 The client has to exist first. An admin registers a first-party public client with a loopback
-redirect (`http://127.0.0.1/callback`, on any port), even if you will only use `--device`, turns the
-device grant on for `--device` (`seamless clients create --device-flow`), and turns
-`sessionExchangeEnabled` on with `PATCH /admin/applications/:id`.
+redirect, even if you will only use `--device`, with the device grant on for `--device`:
+
+```bash
+seamless clients create "Seamless CLI" --public --first-party --auth-method none \
+  --redirect-uri http://127.0.0.1/callback --device-flow --session-exchange
+
+seamless clients update <id> --session-exchange      # on an existing client
+seamless clients update <id> --no-session-exchange   # revokes the sessions it exchanged for
+```
 
 `seamless profile login` does not change which profile is active, so a one-off command against
 another instance leaves your default alone.
@@ -830,6 +842,10 @@ never in a plaintext file:
 - macOS: Keychain
 - Windows: Credential Manager
 - Linux: Secret Service (libsecret, for example GNOME Keyring or KWallet)
+
+Signing in needs one of these, and the CLI checks before it starts. On a headless machine, install
+and unlock one, for example gnome-keyring in a D-Bus session, or sign in from a machine with a
+keychain. Tokens never go in a file instead.
 
 Tokens are keyed per profile (by name and instance URL) so multiple instances never collide, and
 they are removed when you log out or remove the profile. Access tokens are refreshed transparently:

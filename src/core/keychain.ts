@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import type { Profile } from "./config.js";
 
 const SERVICE = "seamless-cli";
@@ -14,9 +15,15 @@ export interface TokenBundle {
   signIn?: "loopback" | "device";
 }
 
+export const KEYCHAIN_REQUIRED_MESSAGE =
+  "Signing in needs an OS keychain to store the session, and this machine has none it can use. The CLI never keeps tokens in a file. On a headless machine, install and unlock one (for example gnome-keyring in a D-Bus session), or sign in from a machine with a keychain.";
+
+const PREFLIGHT_ACCOUNT = "__seamless_cli_keychain_preflight__";
+
 export class KeychainUnavailableError extends Error {
-  constructor(cause?: unknown) {
+  constructor(cause?: unknown, message?: string) {
     super(
+      message ??
       "No OS keychain is available. Set SEAMLESS_REFRESH_TOKEN to authenticate in a headless environment, or run on a machine with a keychain (macOS Keychain, Windows Credential Manager, or Linux Secret Service).",
     );
     this.name = "KeychainUnavailableError";
@@ -84,6 +91,25 @@ async function loadBackend(): Promise<KeychainBackend> {
 
 export function setBackendForTesting(fake: KeychainBackend | null): void {
   backend = fake;
+}
+
+/**
+ * Run before a sign-in, so nobody approves one that could not be stored. Writes as well as
+ * reads, because a locked keychain can answer a read. Uses its own entry, so a stored
+ * session is never at risk.
+ */
+export async function assertKeychainUsable(): Promise<void> {
+  try {
+    const b = await loadBackend();
+    const probe = randomBytes(16).toString("hex");
+    b.set(PREFLIGHT_ACCOUNT, probe);
+    const read = b.get(PREFLIGHT_ACCOUNT);
+    b.delete(PREFLIGHT_ACCOUNT);
+    if (read !== probe) throw new KeychainUnavailableError();
+  } catch (err) {
+    if (!(err instanceof KeychainUnavailableError)) throw err;
+    throw new KeychainUnavailableError(err, KEYCHAIN_REQUIRED_MESSAGE);
+  }
 }
 
 export async function saveTokens(
