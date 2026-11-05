@@ -151,6 +151,11 @@ export async function loginToInstance(
   intro(`Log in to ${kleur.bold(profile.name)} (${profile.instanceUrl})`);
 
   if (issuer && clientId) {
+    if (opts.identifier) {
+      console.log(
+        kleur.dim("The identifier applies to email codes, so it is not used here. You choose the account in the browser."),
+      );
+    }
     try {
       await loginThroughProvider(profile, issuer, clientId, opts.device ?? false);
     } catch (err) {

@@ -315,7 +315,10 @@ profile list
   • Show configured profiles; the active one is marked with *
 
 profile add <name> --instance-url <url> [--identifier-type email|phone]
+            [--oidc-issuer <url> --client-id <id>]
   • Create or update a profile (prompts interactively if flags are omitted)
+  • --oidc-issuer and --client-id name the instance's OpenID Provider and the
+    client this CLI signs in with
 
 profile use <name>
   • Switch the active profile for subsequent commands
@@ -324,8 +327,12 @@ profile remove <name>
   • Delete a profile
 
 profile login [name] [identifier] [--identifier <email>] [--local]
+              [--device] [--email-code] [--oidc-issuer <url>] [--client-id <id>]
   • Log in to that instance so users, config, org, and sessions can run
   • Defaults to the active profile, and does not change which one is active
+  • With a provider on the profile, opens your browser to sign in with a passkey
+  • --device signs in from another device, for a machine with no browser
+  • With no provider, or with --email-code, signs in with an email code
 
 The active profile can also be chosen per command with --profile <name> or
 the SEAMLESS_PROFILE environment variable.`,

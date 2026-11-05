@@ -208,6 +208,14 @@ Templates are not in this repo — they live in the `seamless-templates` monorep
   authenticator app code on the same session and retries the request once, so a new admin call
   needs nothing extra. Wrappers still map a 403 with `forbidden(res)`, which tells a missing
   step-up apart from a missing admin role.
+- **Step-up follows the sign-in.** `TokenBundle.signIn` records a session from the OpenID Provider
+  (`loopback` or `device`), and `sessionStepUp` ([src/core/providerStepUp.ts](src/core/providerStepUp.ts))
+  picks the step-up from it: a device session gets the authenticator app only, and never a passkey or
+  an enrollment. It only chooses what to offer; the instance decides what a session may do.
+- **Never send a subject token twice.** `exchangeForSession`
+  ([src/core/providerSignIn.ts](src/core/providerSignIn.ts)) makes one request, whatever happens. A
+  second presentation revokes the session the first one created, so a lost response means signing in
+  again. The request body is strict: an extra field answers `invalid_request`.
 - **Shared test fixtures** live in `src/**/*.fixtures.ts` (for example
   [src/core/admin.fixtures.ts](src/core/admin.fixtures.ts)). That suffix is excluded from the build
   and from coverage; a `*.test.ts` helper would instead run as an empty test file.

@@ -440,7 +440,7 @@ export async function signInWithDevice(opts: DeviceOptions): Promise<ProviderSub
   }
   const device = parsed.data;
 
-  say(`On any device with a browser, open:\n\n  ${device.verification_uri}\n`);
+  say(`On any device with a browser, open:\n\n  ${printable(device.verification_uri)}\n`);
   say(`and enter this code:\n\n  ${printable(device.user_code)}\n`);
   say("Only continue if you started this sign-in yourself. Waiting for approval...");
 

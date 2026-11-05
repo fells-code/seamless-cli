@@ -235,6 +235,13 @@ describe("loginToInstance through the OpenID Provider", () => {
     expect(vi.mocked(outro).mock.calls.at(-1)?.[0]).toContain("denied");
   });
 
+  it("says an identifier is not used", async () => {
+    upsertProfile(configured);
+    await loginToInstance({ profileName: "prod", identifier: "a@example.com" });
+    expect(logged).toMatch(/not used here/);
+    expect(promptLogin).not.toHaveBeenCalled();
+  });
+
   it("does not retry a failed exchange", async () => {
     upsertProfile(configured);
     vi.mocked(exchangeForSession).mockRejectedValue(new ProviderSignInError("sign in again"));

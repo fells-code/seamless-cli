@@ -551,8 +551,9 @@ does.
 
 ### Logging in
 
-Both logins use email OTP: you paste the code from your inbox, so nothing needs to be delivered to
-the CLI and no service token is required.
+`seamless login` and `seamless profile login` on a profile with no OpenID Provider use email OTP:
+you paste the code from your inbox, so nothing needs to be delivered to the CLI and no service token
+is required.
 
 ```bash
 # The portal, for managed work. Needs no profile.
@@ -563,6 +564,48 @@ seamless login you@example.com       # identifier as an argument
 seamless profile login prod          # defaults to the active profile
 seamless profile login prod --identifier you@example.com
 ```
+
+### Signing in through the OpenID Provider
+
+On an instance running the OpenID Provider (auth server v0.23 and the provider edge), `seamless
+profile login` signs in through your browser instead, which brings passkey sign-in to the CLI.
+Tell the profile where the provider is and which client to use, once. The instance does not
+advertise either yet, and they are saved after the first successful sign-in:
+
+```bash
+seamless profile login prod \
+  --oidc-issuer https://auth.example.com \
+  --client-id <client id>
+
+seamless profile login prod            # afterwards
+seamless profile login prod --device   # from a machine with no browser
+seamless profile login prod --email-code   # the email code, on purpose
+```
+
+- **In a browser,** the CLI listens on `127.0.0.1` on a random port for one redirect, for up to five
+  minutes, and opens your system browser (`BROWSER` overrides which). The page asks "Continue to
+  \<app\>?" and names your account, every time, because any program on your machine could have
+  started the sign-in. Continue only if you did.
+- **With `--device`,** the CLI prints a URL and a code. Open the URL on any device with a browser and
+  enter the code. Nothing has to reach back to the machine you are on, so this works over SSH. The
+  machine still needs a keychain to store the session in (see
+  [Token storage](#token-storage-and-the-keychain)).
+- **Either way,** the CLI exchanges the sign-in for a session of its own at `POST
+  /sessions/exchange`, stores that session in the OS keychain, and keeps no token from the provider.
+  `seamless logout` ends that session and leaves your browser signed in. When you sign out at the
+  provider, or the session the browser holds ends, the CLI's session ends too, and its `refreshTtl`
+  never outlasts it.
+- **If an exchange fails, sign in again.** The CLI never retries one: the token works once, and
+  presenting it a second time revokes the session the first one created. If you are told the token
+  had already been used, your sign-in may have been intercepted, so check `seamless sessions`.
+- **A profile with no provider** uses the email code, with or without `--device`. A profile with a
+  provider that cannot be read stops and says so, rather than quietly using the weaker sign-in. Pass
+  `--email-code` if you want it.
+
+The client has to exist first. An admin registers a first-party public client with a loopback
+redirect (`http://127.0.0.1/callback`, on any port), even if you will only use `--device`, turns the
+device grant on for `--device` (`seamless clients create --device-flow`), and turns
+`sessionExchangeEnabled` on with `PATCH /admin/applications/:id`.
 
 `seamless profile login` does not change which profile is active, so a one-off command against
 another instance leaves your default alone.
@@ -759,6 +802,23 @@ This action needs a fresh step-up on your session.
 
 Without a terminal, set `SEAMLESS_TOTP_CODE` to a current code. It is used for the first step-up of
 the run only: a code is single use, so a second one needs a terminal.
+
+A session from a browser sign-in can also step up with a passkey. The CLI asks which you want, signs
+in again in the browser, replaces its session with the new one, and ends the old one. An account with
+no authenticator app goes straight to the passkey.
+
+A session from `--device` has its own rules, because whoever approved the code in a browser may not
+be whoever holds this terminal:
+
+- It needs a step-up before reads too: everything under `users`, `config`, `clients`, `resources` and
+  `migrate`, every `org` command, and any change to how the account
+  signs in or recovers. `seamless whoami`, `seamless logout` and `seamless sessions`, including
+  `sessions revoke`, need none.
+- It steps up with the authenticator app only. No passkey is offered, since a terminal cannot run the
+  ceremony.
+- An account with no authenticator app cannot get one from here. Enroll one from a browser, then run
+  `seamless profile login --device` again.
+- A refresh clears the step-up, so it can ask again sooner than five minutes.
 
 ### Token storage and the keychain
 
