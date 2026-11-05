@@ -331,6 +331,8 @@ profile login [name] [identifier] [--identifier <email>] [--local]
   • Log in to that instance so users, config, org, and sessions can run
   • Defaults to the active profile, and does not change which one is active
   • With a provider saved or advertised, opens your browser to sign in with a passkey
+  • Asks first if an advertised provider is on another origin than the instance
+  • Reads an advertisement only over https or on this machine; elsewhere pass the flags
   • --device signs in from another device, for a machine with no browser
   • With no provider, or with --email-code, signs in with an email code
 

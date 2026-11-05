@@ -297,6 +297,26 @@ export function isLocalInstanceUrl(input: string): boolean {
   );
 }
 
+/**
+ * True only for this machine. Narrower than isLocalInstanceUrl, which also covers LAN
+ * addresses: plain http stays on the machine here, and is open to the network there.
+ */
+export function isLoopbackInstanceUrl(input: string): boolean {
+  let url: URL;
+  try {
+    url = new URL((input ?? "").trim());
+  } catch {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "[::1]" ||
+    ipv4Octets(host)?.[0] === 127
+  );
+}
+
 export function normalizeInstanceUrl(input: string): string {
   const trimmed = (input ?? "").trim();
   if (!trimmed) {

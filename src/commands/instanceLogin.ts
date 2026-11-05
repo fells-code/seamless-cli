@@ -1,9 +1,11 @@
-import { intro, outro, cancel } from "@clack/prompts";
+import { intro, outro, cancel, confirm } from "@clack/prompts";
 import kleur from "kleur";
 
+import { CancelledError, orCancel } from "../core/cancel.js";
 import {
   getActiveProfile,
   isLocalInstanceUrl,
+  isLoopbackInstanceUrl,
   upsertProfile,
   type Profile,
 } from "../core/config.js";
@@ -25,6 +27,7 @@ import {
   signInWithDevice,
   signInWithLoopback,
 } from "../core/providerSignIn.js";
+import { isInteractive } from "../core/tty.js";
 
 export interface InstanceLoginOptions {
   profileName?: string;
@@ -50,6 +53,8 @@ async function loginThroughProvider(
   clientId: string,
   device: boolean,
 ): Promise<void> {
+  console.log(`Signing in through ${issuer}.`);
+
   let metadata;
   try {
     metadata = await discoverProvider(issuer);
@@ -102,21 +107,47 @@ async function loginThroughProvider(
   );
 }
 
+// A token from the provider is spent at the instance, and nothing ties the two together
+// except this answer. An instance can advertise a real provider it has no part in, proxy the
+// real instance, and replay the token there, while every page the user sees is genuine. So an
+// advertised issuer on another origin is the user's to accept, once: the sign-in saves it.
+async function confirmAdvertisedIssuer(instanceUrl: string, issuer: string): Promise<void> {
+  if (new URL(issuer).origin === new URL(instanceUrl).origin) return;
+
+  if (!isInteractive()) {
+    refuse(
+      `${instanceUrl} says to sign in through ${issuer}, another site, and this run has no terminal to ask you. If you trust it, pass --oidc-issuer and --client-id.`,
+    );
+  }
+  const accepted = orCancel(
+    await confirm({
+      message: `${instanceUrl} says to sign in through ${issuer}, another site. Continue only if you expect this provider to serve this instance.`,
+      initialValue: false,
+    }),
+  );
+  if (accepted !== true) throw new CancelledError();
+}
+
 // Flags, then what the profile saved, then what the instance advertises. A saved issuer
 // never needs the advertisement, so a later response without it cannot downgrade the
 // profile. With no issuer anywhere the instance has no provider this CLI can use, which is
-// the one case that reaches the email code: the advertisement comes over the same TLS as
-// the rest of the instance, so a missing field says no more than the instance itself could.
+// the one case that reaches the email code: a missing field says no more than the instance
+// itself could. Over plain http anyone on the network can write the advertisement, and a
+// provider saved from it would outlast their time there, so it is read only over https or
+// on this machine.
 async function resolveProvider(
   profile: Profile,
   opts: InstanceLoginOptions,
 ): Promise<{ issuer?: string; clientId?: string }> {
   let issuer = opts.oidcIssuer ?? profile.oidcIssuer;
   let clientId = opts.clientId ?? profile.oidcClientId;
+  const issuerConfigured = Boolean(issuer);
+  const canReadAdvertisement =
+    profile.instanceUrl.startsWith("https://") || isLoopbackInstanceUrl(profile.instanceUrl);
 
   try {
     if (issuer) issuer = normalizeIssuer(issuer);
-    if (!issuer || !clientId) {
+    if ((!issuer || !clientId) && canReadAdvertisement) {
       const advertised = await readAdvertisedProvider(profile.instanceUrl);
       if (advertised) {
         const advertisedIssuer = normalizeIssuer(advertised.issuer);
@@ -132,6 +163,13 @@ async function resolveProvider(
     refuse(`${err.message} To sign in with an email code instead, pass --email-code.`);
   }
 
+  if (!issuer && !clientId && !canReadAdvertisement) {
+    console.log(
+      kleur.dim(
+        "This instance uses plain http, so a provider it advertises is not read. To sign in through one, pass --oidc-issuer and --client-id.",
+      ),
+    );
+  }
   if (issuer && !clientId) {
     refuse(
       "This profile has an OpenID Provider issuer but no client id. Pass --client-id <id>, or --email-code to sign in with an email code.",
@@ -141,6 +179,9 @@ async function resolveProvider(
     refuse(
       "This profile has a client id but no OpenID Provider issuer. Pass --oidc-issuer <url>, or --email-code to sign in with an email code.",
     );
+  }
+  if (issuer && clientId && !issuerConfigured) {
+    await confirmAdvertisedIssuer(profile.instanceUrl, issuer);
   }
   return { issuer, clientId };
 }

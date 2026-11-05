@@ -6,6 +6,8 @@
 
 The CLI reads the provider from `oidcProvider` on `GET /system-config/public` when the instance advertises it. On one that does not, pass `--oidc-issuer` and `--client-id` once, to `seamless profile login` or `seamless profile add`. Flags win over what the profile saved, and that wins over the advertisement, so an instance that stops advertising cannot downgrade a profile. With no provider anywhere the email code stays, and `--email-code` asks for it.
 
+Every provider sign-in prints the issuer it uses. The CLI asks before using an advertised issuer on another origin than the instance, and without a terminal it stops and asks for the flags. It reads the advertisement only over https or on loopback, so an instance on plain http needs the flags.
+
 Every sign-in now checks the OS keychain before it starts, including `seamless login` and the email code, and fails early on a machine with none, rather than after a browser approval or an emailed code.
 
 `seamless clients create` and `update` gain `--session-exchange` and `--no-session-exchange`, and `get` shows the setting.

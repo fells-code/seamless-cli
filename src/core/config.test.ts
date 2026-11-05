@@ -13,6 +13,7 @@ import {
   listProfiles,
   loadConfig,
   isLocalInstanceUrl,
+  isLoopbackInstanceUrl,
   normalizeInstanceUrl,
   PORTAL_PROFILE_NAME,
   removeProfile,
@@ -289,6 +290,31 @@ describe("normalizeInstanceUrl", () => {
     expect(() => normalizeInstanceUrl("ftp://auth.example.com")).toThrow(
       /must use http or https/,
     );
+  });
+});
+
+describe("isLoopbackInstanceUrl", () => {
+  it.each([
+    "http://localhost:5312",
+    "http://auth.localhost",
+    "http://127.0.0.1:5312",
+    "http://127.8.9.1",
+    "http://[::1]:5312",
+  ])("is true for %s", (url) => {
+    expect(isLoopbackInstanceUrl(url)).toBe(true);
+  });
+
+  it.each([
+    "http://auth.local",
+    "http://192.168.1.10",
+    "http://10.0.0.1",
+    "http://0.0.0.0",
+    "http://[::]",
+    "https://auth.example.com",
+    "http://127.0.0.1.example.com",
+    "not a url",
+  ])("is false for %s", (url) => {
+    expect(isLoopbackInstanceUrl(url)).toBe(false);
   });
 });
 

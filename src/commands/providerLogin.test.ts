@@ -12,6 +12,7 @@ vi.mock("@clack/prompts", () => {
     text: vi.fn(),
     isCancel: (value: unknown) => value === CANCEL,
     cancel: vi.fn(),
+    confirm: vi.fn(),
   };
 });
 
@@ -29,7 +30,8 @@ vi.mock("../core/providerSignIn.js", async (importOriginal) => {
 
 vi.mock("../core/interactiveLogin.js", () => ({ promptLogin: vi.fn() }));
 
-import { outro } from "@clack/prompts";
+import { confirm, outro } from "@clack/prompts";
+import { CancelledError } from "../core/cancel.js";
 import { loadConfig, upsertProfile } from "../core/config.js";
 import { promptLogin } from "../core/interactiveLogin.js";
 import {
@@ -97,6 +99,7 @@ beforeEach(() => {
   }) as never);
 
   vi.mocked(outro).mockClear();
+  vi.mocked(confirm).mockReset().mockResolvedValue(true);
   vi.mocked(promptLogin).mockReset();
   vi.mocked(discoverProvider).mockReset().mockResolvedValue(metadata);
   vi.mocked(readAdvertisedProvider).mockReset().mockResolvedValue(undefined);
@@ -492,6 +495,134 @@ describe("the instance's advertisement", () => {
     expect(promptLogin).not.toHaveBeenCalled();
     expect(signInWithLoopback).not.toHaveBeenCalled();
     expect(logged).toContain("https");
+  });
+
+  describe("an issuer on another origin", () => {
+    it("asks first, naming the instance and the issuer", async () => {
+      upsertProfile(bare);
+      vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+      await loginToInstance({ profileName: "prod" });
+      const { message } = vi.mocked(confirm).mock.calls[0][0];
+      expect(message).toContain(INSTANCE);
+      expect(message).toContain(ISSUER);
+      expect(signInWithLoopback).toHaveBeenCalled();
+    });
+
+    it("does not sign in or save it when the user declines", async () => {
+      upsertProfile(bare);
+      vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+      vi.mocked(confirm).mockResolvedValue(false);
+      await expect(loginToInstance({ profileName: "prod" })).rejects.toBeDefined();
+      expect(discoverProvider).not.toHaveBeenCalled();
+      expect(signInWithLoopback).not.toHaveBeenCalled();
+      expect(promptLogin).not.toHaveBeenCalled();
+      expect(loadConfig().profiles.prod.oidcIssuer).toBeUndefined();
+    });
+
+    it("does not sign in when the user interrupts the question", async () => {
+      const { CANCEL } = (await import("@clack/prompts")) as unknown as { CANCEL: symbol };
+      upsertProfile(bare);
+      vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+      vi.mocked(confirm).mockResolvedValue(CANCEL);
+      await expect(loginToInstance({ profileName: "prod" })).rejects.toBeInstanceOf(CancelledError);
+      expect(signInWithLoopback).not.toHaveBeenCalled();
+    });
+
+    it("reports declining as a cancellation", async () => {
+      upsertProfile(bare);
+      vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+      vi.mocked(confirm).mockResolvedValue(false);
+      await expect(loginToInstance({ profileName: "prod" })).rejects.toBeInstanceOf(CancelledError);
+    });
+
+    it("refuses without a terminal, naming the flags", async () => {
+      process.stdin.isTTY = false;
+      upsertProfile(bare);
+      vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+      await expect(loginToInstance({ profileName: "prod" })).rejects.toThrow("exit:1");
+      expect(confirm).not.toHaveBeenCalled();
+      expect(signInWithLoopback).not.toHaveBeenCalled();
+      expect(promptLogin).not.toHaveBeenCalled();
+      expect(logged).toContain("--oidc-issuer");
+      expect(logged).toContain(ISSUER);
+    });
+
+    it("does not ask again once the sign-in saved it", async () => {
+      upsertProfile(bare);
+      vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+      await loginToInstance({ profileName: "prod" });
+      vi.mocked(confirm).mockClear();
+      await loginToInstance({ profileName: "prod" });
+      expect(confirm).not.toHaveBeenCalled();
+    });
+  });
+
+  it("does not ask about an issuer on the instance's own origin", async () => {
+    const issuer = `${INSTANCE}/oidc`;
+    upsertProfile(bare);
+    vi.mocked(readAdvertisedProvider).mockResolvedValue({ issuer, cliClientId: "c" });
+    vi.mocked(discoverProvider).mockResolvedValue({ ...metadata, issuer });
+    await loginToInstance({ profileName: "prod" });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(signInWithLoopback).toHaveBeenCalled();
+  });
+
+  it("does not ask about an issuer the flags named", async () => {
+    upsertProfile(bare);
+    vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+    await loginToInstance({ profileName: "prod", oidcIssuer: ISSUER });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(signInWithLoopback).toHaveBeenCalled();
+  });
+
+  it("names the issuer before a sign-in, however it was chosen", async () => {
+    upsertProfile(configured);
+    await loginToInstance({ profileName: "prod" });
+    expect(logged).toContain(ISSUER);
+  });
+
+  describe("on an instance reached over plain http", () => {
+    const lan = { name: "prod", instanceUrl: "http://auth.local" };
+    const signedInByEmail = {
+      tokens: { accessToken: "ea", refreshToken: "er" },
+      identity: { identifierType: "email" as const },
+      channel: "email" as const,
+      identifier: "o@example.com",
+    };
+
+    it("is not read, and the email code says how to use a provider", async () => {
+      upsertProfile(lan);
+      vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+      vi.mocked(promptLogin).mockResolvedValue(signedInByEmail);
+      await loginToInstance({ profileName: "prod" });
+      expect(readAdvertisedProvider).not.toHaveBeenCalled();
+      expect(signInWithLoopback).not.toHaveBeenCalled();
+      expect(logged).toContain("--oidc-issuer");
+      expect(loadConfig().profiles.prod.oidcIssuer).toBeUndefined();
+    });
+
+    it("cannot supply the client id for a saved issuer", async () => {
+      upsertProfile({ ...lan, oidcIssuer: ISSUER });
+      vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+      await expect(loginToInstance({ profileName: "prod" })).rejects.toThrow("exit:1");
+      expect(readAdvertisedProvider).not.toHaveBeenCalled();
+      expect(logged).toContain("--client-id");
+    });
+
+    it("keeps working with both flags", async () => {
+      upsertProfile(lan);
+      await loginToInstance({ profileName: "prod", oidcIssuer: ISSUER, clientId: "c" });
+      expect(readAdvertisedProvider).not.toHaveBeenCalled();
+      expect(signInWithLoopback).toHaveBeenCalled();
+    });
+
+    it("is still read on a loopback instance", async () => {
+      upsertProfile({ name: "prod", instanceUrl: "http://localhost:5312" });
+      vi.mocked(readAdvertisedProvider).mockResolvedValue(advertised);
+      await loginToInstance({ profileName: "prod" });
+      expect(readAdvertisedProvider).toHaveBeenCalledWith("http://localhost:5312");
+      expect(signInWithLoopback).toHaveBeenCalled();
+    });
   });
 
   it.each([

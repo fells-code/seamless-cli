@@ -569,9 +569,10 @@ seamless profile login prod --identifier you@example.com
 
 On an instance running the OpenID Provider (auth server v0.23 and the provider edge), `seamless
 profile login` signs in through your browser instead, which brings passkey sign-in to the CLI. An
-instance that advertises its provider in `GET /system-config/public` needs nothing more. For one
-that does not, tell the profile where the provider is and which client to use. Either way they are
-saved after the first successful sign-in. Flags win over what the profile saved, and that wins over
+instance that advertises its provider in `GET /system-config/public` needs nothing more, apart from
+a question the first time if the provider is on another origin. For one that does not, tell the
+profile where the provider is and which client to use. Either way they are saved after the first
+successful sign-in. Flags win over what the profile saved, and that wins over
 what the instance advertises:
 
 ```bash
@@ -600,6 +601,13 @@ seamless profile login prod --email-code   # the email code, on purpose
 - **If an exchange fails, sign in again.** The CLI never retries one: the token works once, and
   presenting it a second time revokes the session the first one created. If you are told the token
   had already been used, your sign-in may have been intercepted, so check `seamless sessions`.
+- **Check the issuer it names.** A sign-in prints the provider it uses. The first time an instance
+  advertises a provider on another origin, the CLI asks before using it, and without a terminal it
+  stops and asks for `--oidc-issuer` and `--client-id`. The sign-in pages are the provider's own, so
+  they look right even when the instance you pointed the CLI at is not the one you meant.
+- **An advertisement is read only over https or on this machine.** On plain http, such as a LAN
+  address or a `.local` name, anyone on the network could write it, so pass `--oidc-issuer` and
+  `--client-id` there.
 - **With no provider anywhere,** on the profile or advertised, you get the email code, with or
   without `--device`. Once an issuer is known, one that cannot be read stops and says so, rather than
   quietly using the weaker sign-in, and an instance that stops advertising does not change a profile

@@ -546,7 +546,10 @@ describe.skipIf(!DIR)("seamless profile login through the OpenID Provider", () =
     });
 
     await ran(["profile", "add", ADVERTISED_PROFILE, "--instance-url", instance()]);
-    const run = cli(["profile", "login", ADVERTISED_PROFILE]);
+    const run = cli(["profile", "login", ADVERTISED_PROFILE], { pty: true });
+    await until("the question about the advertised issuer", () => run.output().includes("another site"));
+    expect(run.output()).toContain(recipe.issuer);
+    run.send("y");
     const authorize = await nextAuthorizeUrl();
     expect(authorize.origin).toBe(recipe.issuer);
     expect(authorize.searchParams.get("client_id")).toBe(clientId);
