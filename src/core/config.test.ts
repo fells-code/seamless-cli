@@ -333,3 +333,21 @@ describe("isLocalInstanceUrl", () => {
     expect(isLocalInstanceUrl("http://100.64.0.1")).toBe(false);
   });
 });
+
+describe("provider settings", () => {
+  it("round-trips the issuer and client id", () => {
+    upsertProfile({
+      name: "prod",
+      instanceUrl: "https://api.example.com",
+      oidcIssuer: "https://auth.example.com",
+      oidcClientId: "cli",
+    });
+    expect(loadConfig().profiles.prod).toEqual({
+      name: "prod",
+      instanceUrl: "https://api.example.com",
+      oidcIssuer: "https://auth.example.com",
+      oidcClientId: "cli",
+    });
+  });
+});
+

@@ -389,3 +389,70 @@ describe("profile add without a terminal", () => {
     );
   });
 });
+
+describe("provider settings on a profile", () => {
+  const INSTANCE = "https://api.example.com";
+
+  it("profile add saves --oidc-issuer and --client-id", async () => {
+    await runProfile([
+      "add",
+      "prod",
+      "--instance-url",
+      INSTANCE,
+      "--oidc-issuer",
+      "https://auth.example.com/",
+      "--client-id",
+      "cli",
+    ]);
+    expect(loadConfig().profiles.prod).toMatchObject({
+      oidcIssuer: "https://auth.example.com",
+      oidcClientId: "cli",
+    });
+  });
+
+  it("profile add refuses an issuer that is not https", async () => {
+    await expect(
+      runProfile(["add", "prod", "--instance-url", INSTANCE, "--oidc-issuer", "http://a.example.com"]),
+    ).rejects.toThrow("exit:1");
+  });
+
+  it("updating a profile keeps its provider settings", async () => {
+    upsertProfile({
+      name: "prod",
+      instanceUrl: INSTANCE,
+      oidcIssuer: "https://auth.example.com",
+      oidcClientId: "cli",
+    });
+    await runProfile(["add", "prod", "--instance-url", INSTANCE, "--identifier-type", "phone"]);
+    expect(loadConfig().profiles.prod).toMatchObject({
+      oidcIssuer: "https://auth.example.com",
+      oidcClientId: "cli",
+      identifierType: "phone",
+    });
+  });
+
+  it("pointing a profile at another instance drops its provider settings", async () => {
+    upsertProfile({
+      name: "prod",
+      instanceUrl: INSTANCE,
+      oidcIssuer: "https://auth.example.com",
+      oidcClientId: "cli",
+    });
+    await runProfile(["add", "prod", "--instance-url", "https://other.example.com"]);
+    const profile = loadConfig().profiles.prod;
+    expect(profile?.oidcIssuer).toBeUndefined();
+    expect(profile?.oidcClientId).toBeUndefined();
+  });
+
+  it("profile login does not read provider flags as the identifier", async () => {
+    upsertProfile({ name: "prod", instanceUrl: "http://localhost:5312" });
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new TypeError("offline");
+    }));
+    await expect(
+      runProfile(["login", "prod", "--email-code", "--identifier", "a@example.com"]),
+    ).rejects.toThrow("exit:1");
+    vi.unstubAllGlobals();
+  });
+});
+
