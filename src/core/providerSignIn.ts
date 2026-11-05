@@ -63,7 +63,7 @@ export function normalizeIssuer(value: string): string {
   try {
     url = new URL(value);
   } catch {
-    throw new ProviderSignInError(`"${value}" is not a valid issuer URL.`);
+    throw new ProviderSignInError(`"${printable(value)}" is not a valid issuer URL.`);
   }
   if (url.protocol !== "https:") {
     throw new ProviderSignInError(`The issuer must use https, not ${url.protocol}`);
@@ -71,7 +71,12 @@ export function normalizeIssuer(value: string): string {
   if (url.search || url.hash) {
     throw new ProviderSignInError("The issuer cannot have a query or a fragment.");
   }
-  return value.replace(/\/+$/, "");
+  // The issuer gets printed for the user to check, and these make a URL read as another site.
+  if (url.username || url.password) {
+    throw new ProviderSignInError("The issuer cannot have a username or a password.");
+  }
+  // The parsed form, because the input can carry control characters that URL escapes.
+  return url.href.replace(/\/+$/, "");
 }
 
 export function builtInResource(issuer: string): string {
@@ -113,7 +118,7 @@ export async function discoverProvider(issuer: string): Promise<ProviderMetadata
   const doc = parsed.data;
   if (doc.issuer !== issuer) {
     throw new ProviderSignInError(
-      `The discovery document at ${url} names issuer ${doc.issuer}, not ${issuer}.`,
+      `The discovery document at ${url} names issuer ${printable(doc.issuer)}, not ${issuer}.`,
     );
   }
   if (!doc.code_challenge_methods_supported?.includes("S256")) {
@@ -268,7 +273,14 @@ function listenForCallback(timeoutMs: number): Promise<CallbackListener> {
 
     let timer: NodeJS.Timeout | undefined;
     const server: Server = createServer((req, res) => {
-      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      // Thrown here it would be uncaught, and any local program could end the sign-in.
+      let url: URL;
+      try {
+        url = new URL(req.url ?? "/", "http://127.0.0.1");
+      } catch {
+        res.writeHead(400).end();
+        return;
+      }
       if (req.method !== "GET" || url.pathname !== CALLBACK_PATH) {
         res.writeHead(404).end();
         return;

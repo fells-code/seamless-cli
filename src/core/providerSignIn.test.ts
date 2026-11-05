@@ -1,3 +1,4 @@
+import { connect } from "net";
 import { createHash, generateKeyPairSync } from "crypto";
 import { exportJWK, SignJWT, type JWK } from "jose";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -114,6 +115,21 @@ describe("normalizeIssuer", () => {
   it("refuses something that is not a URL", () => {
     expect(() => normalizeIssuer("not a url")).toThrow(ProviderSignInError);
   });
+
+  it("refuses a username or a password, which can make a URL read as another site", () => {
+    expect(() => normalizeIssuer("https://auth.example.com@evil.example")).toThrow(ProviderSignInError);
+    expect(() => normalizeIssuer("https://a:b@evil.example")).toThrow(ProviderSignInError);
+  });
+
+  it("returns the parsed URL, so control characters cannot reach a terminal", () => {
+    expect(normalizeIssuer(`${ISSUER}/\x1b]0;pwn\x07`)).not.toMatch(/[\x00-\x1f]/);
+  });
+
+  it("does not print control characters from a value it refuses", () => {
+    expect(() => normalizeIssuer("not a url\x1b]0;pwn\x07")).toThrow(
+      expect.objectContaining({ message: expect.not.stringMatching(/[\x00-\x1f]/) }),
+    );
+  });
 });
 
 describe("builtInResource", () => {
@@ -207,6 +223,13 @@ describe("discoverProvider", () => {
   it("refuses a document naming another issuer", async () => {
     stubDiscovery({ ...discoveryDocument, issuer: "https://evil.example.com" });
     await expect(discoverProvider(ISSUER)).rejects.toThrow(/issuer/i);
+  });
+
+  it("does not print control characters from the issuer a document names", async () => {
+    stubDiscovery({ ...discoveryDocument, issuer: "https://other.example/\x1b]0;pwn\x07" });
+    await expect(discoverProvider(ISSUER)).rejects.toThrow(
+      expect.objectContaining({ message: expect.not.stringMatching(/[\x00-\x1f]/) }),
+    );
   });
 
   it("refuses an endpoint that is not https", async () => {
@@ -470,6 +493,39 @@ describe("signInWithLoopback", () => {
       },
     });
     expect(statuses).toEqual([404, 404, 200]);
+  });
+
+  it("answers a request target it cannot parse, and keeps waiting for the callback", async () => {
+    const token = tokenFromNonce();
+    stubProvider(() => token.respond());
+    const answers: string[] = [];
+    const raw = (port: string, target: string) =>
+      new Promise<string>((resolve, reject) => {
+        const socket = connect(Number(port), "127.0.0.1", () => {
+          socket.write(`GET ${target} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`);
+        });
+        let out = "";
+        socket.on("data", (d) => (out += d.toString()));
+        socket.on("end", () => resolve(out));
+        socket.on("error", reject);
+      });
+    await signInWithLoopback({
+      metadata,
+      clientId: CLIENT_ID,
+      say: () => {},
+      openBrowser: async (url) => {
+        const authorize = new URL(url);
+        token.setNonce(authorize.searchParams.get("nonce") as string);
+        const redirect = new URL(authorize.searchParams.get("redirect_uri") as string);
+        answers.push(await raw(redirect.port, "//"));
+        answers.push(await raw(redirect.port, "/\\"));
+        redirect.search = new URLSearchParams(approved(authorize)).toString();
+        await realFetch(redirect);
+        return true;
+      },
+    });
+    expect(answers[0]).toMatch(/^HTTP\/1\.1 400/);
+    expect(answers[1]).toMatch(/^HTTP\/1\.1 400/);
   });
 
   it("does not echo the callback's query into its page", async () => {
