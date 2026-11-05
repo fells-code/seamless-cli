@@ -20,7 +20,10 @@ import {
 import { isInteractive } from "./tty.js";
 
 const PASSKEY_ACR = "phr";
-const PASSKEY_MAX_AGE_SECONDS = 300;
+// Not the 300 the five minute window suggests. requireStepUp reads a step-up record, and the
+// hosted page only writes one when the request's requirements are unmet, so a browser that
+// signed in during the last 300 seconds would pass with no record and the retry would refuse.
+const PASSKEY_MAX_AGE_SECONDS = 0;
 
 export const DEVICE_STEP_UP_REQUIRED_MESSAGE = `This session was signed in with a device code, so this command needs a recent code from your authenticator app, even for a read. Run the command in an interactive terminal to enter one, or set ${TOTP_CODE_ENV} to a current code.`;
 
@@ -29,6 +32,9 @@ export const DEVICE_NO_AUTHENTICATOR_MESSAGE =
 
 const DEVICE_PROMPT =
   "This session was signed in with a device code, so this command needs a fresh code from your authenticator app, even for a read. A refresh also clears it, so you may be asked again.";
+
+export const SIGN_IN_NOT_STEP_UP_MESSAGE =
+  "You signed in, but your browser had no session, so the instance recorded a sign-in and not a step-up. Run the command again: your browser now has a session, and will ask you to confirm with your passkey.";
 
 const LOOPBACK_STEP_UP_REQUIRED_MESSAGE = `This action needs a recent step-up. Run the command in an interactive terminal to sign in again with a passkey or enter an authenticator app code, or set ${TOTP_CODE_ENV} to a current code.`;
 
@@ -69,6 +75,11 @@ async function passkeyStepUp(
       );
     }
     await session.replace({ ...exchanged.tokens, signIn: "loopback" });
+
+    const status = await client.get<{ fresh?: boolean }>("/step-up/status");
+    if (status.ok && status.data?.fresh === false) {
+      throw new StepUpError(SIGN_IN_NOT_STEP_UP_MESSAGE);
+    }
   } catch (err) {
     if (err instanceof ProviderSignInError) throw new StepUpError(err.message);
     throw err;

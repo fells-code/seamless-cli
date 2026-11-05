@@ -805,7 +805,9 @@ the run only: a code is single use, so a second one needs a terminal.
 
 A session from a browser sign-in can also step up with a passkey. The CLI asks which you want, signs
 in again in the browser, replaces its session with the new one, and ends the old one. An account with
-no authenticator app goes straight to the passkey.
+no authenticator app goes straight to the passkey. If your browser had no session at that moment, the
+instance counts that as a sign-in rather than a step-up, and the CLI says so: run the command again,
+and the browser asks you to confirm with your passkey.
 
 A session from `--device` has its own rules, because whoever approved the code in a browser may not
 be whoever holds this terminal:

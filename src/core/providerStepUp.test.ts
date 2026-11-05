@@ -30,11 +30,12 @@ import type { AuthClient } from "./authClient.js";
 import { CancelledError } from "./cancel.js";
 import type { Profile } from "./config.js";
 import type { ApiResponse } from "./http.js";
-import { exchangeForSession, signInWithLoopback } from "./providerSignIn.js";
+import { exchangeForSession, ProviderSignInError, signInWithLoopback } from "./providerSignIn.js";
 import {
   DEVICE_NO_AUTHENTICATOR_MESSAGE,
   DEVICE_STEP_UP_REQUIRED_MESSAGE,
   sessionStepUp,
+  SIGN_IN_NOT_STEP_UP_MESSAGE,
 } from "./providerStepUp.js";
 import { NO_AUTHENTICATOR_MESSAGE, StepUpError } from "./stepUp.js";
 import { isInteractive } from "./tty.js";
@@ -58,13 +59,16 @@ const enrolled = response(200, { enabled: true, verifiedAt: null, lastUsedAt: nu
 const notEnrolled = response(200, { enabled: false, verifiedAt: null, lastUsedAt: null });
 const verified = response(200, { message: "Success", fresh: true });
 
-function fakeClient(status: ApiResponse<unknown> = enrolled) {
+function fakeClient(
+  status: ApiResponse<unknown> = enrolled,
+  stepUpStatus: ApiResponse<unknown> = response(200, { fresh: true }),
+) {
   const calls: string[] = [];
   const client = {
     profile: provider,
     get: vi.fn(async (path: string) => {
       calls.push(`GET ${path}`);
-      return status;
+      return path === "/step-up/status" ? stepUpStatus : status;
     }),
     post: vi.fn(async (path: string) => {
       calls.push(`POST ${path}`);
@@ -182,7 +186,7 @@ describe("a loopback session", () => {
     await sessionStepUp({})(client, session);
 
     expect(signInWithLoopback).toHaveBeenCalledWith(
-      expect.objectContaining({ clientId: "cli-client", acrValues: "phr", maxAge: 300 }),
+      expect.objectContaining({ clientId: "cli-client", acrValues: "phr", maxAge: 0 }),
     );
     expect(exchangeForSession).toHaveBeenCalledWith(INSTANCE, "subject");
     expect(session.replaced).toEqual([
@@ -191,6 +195,27 @@ describe("a loopback session", () => {
     expect(calls).not.toContain("POST /totp/verify-mfa");
     // The old session is ended with its own token, by the session handle.
     expect(session.replaced).toHaveLength(1);
+  });
+
+  it("says so when the sign-in was not a step-up, which a browser with no session gives", async () => {
+    vi.mocked(select).mockResolvedValue("passkey");
+    const { client } = fakeClient(enrolled, response(200, { fresh: false }));
+    const session = fakeSession("loopback");
+    await expect(sessionStepUp({})(client, session)).rejects.toThrow(SIGN_IN_NOT_STEP_UP_MESSAGE);
+    expect(session.replaced).toHaveLength(1);
+  });
+
+  it("leaves the retry to report it when the status cannot be read", async () => {
+    vi.mocked(select).mockResolvedValue("passkey");
+    const { client } = fakeClient(enrolled, response(500, {}));
+    await expect(sessionStepUp({})(client, fakeSession("loopback"))).resolves.toBeUndefined();
+  });
+
+  it("reports a provider failure as a step-up failure", async () => {
+    vi.mocked(select).mockResolvedValue("passkey");
+    vi.mocked(signInWithLoopback).mockRejectedValueOnce(new ProviderSignInError("timed out"));
+    const { client } = fakeClient();
+    await expect(sessionStepUp({})(client, fakeSession("loopback"))).rejects.toThrow(StepUpError);
   });
 
   it("goes straight to the passkey when no authenticator is enrolled", async () => {
