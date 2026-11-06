@@ -35,6 +35,7 @@ everyone.
 | Contract | Ticket | What it holds an adapter to |
 | --- | --- | --- |
 | `content-type-gate` | fells-code/seamless-auth-api#558 | A body-less unsafe request to `/auth/*` without `Content-Type: application/json` or `x-seamless-auth-transport` answers `415 unsupported_media_type` |
+| `permission-guards` | fells-code/seamless-auth-server#218 | The `/api/permissions` routes guard by permission. Needs the auth API at v0.23 |
 
 ## The reference app
 
@@ -56,6 +57,10 @@ everyone.
 | `GET /` | Any 2xx. The harness waits on it before running |
 | `/auth/*` | The adapter |
 | `GET /api/me` | An app route behind the adapter's own guard. `200 { "id": "<user id>" }` for a valid session cookie or `Authorization: Bearer <access token>`, `401` otherwise |
+| `GET /api/permissions/any` | Pending `permission-guards`. Any of `conformance:read`, `conformance:other`. `200 { "id": "<user id>" }` when allowed |
+| `GET /api/permissions/all` | Pending `permission-guards`. All of `conformance:read`, `conformance:write` |
+| `GET /api/permissions/org` | Pending `permission-guards`. Organization scope, `conformance:org` |
+| `GET /api/permissions/org/:organizationId` | Pending `permission-guards`. Organization scope bound to the route, `conformance:org` |
 | `GET /__captured/:recipient` | The most recent message the adapter delivered to `recipient` (an email address or phone number): `{ "token": "<code or link token>", "magicLinkUrl"?: "..." }`, or `null` |
 
 `/__captured` is a test hook, never part of a real deployment. The adapter must ask the
@@ -103,6 +108,16 @@ session.
 **Guard.** `/api/me` answers `401` with no session, an altered access cookie, or the
 sign-in flow's ephemeral cookie presented as the access cookie, and the signed-in user's
 id with a valid one.
+
+**Permission guards** (pending `permission-guards`).
+- No session answers `401`. A session without the permission answers
+  `403 { "error": "insufficient_permission" }`, naming nothing.
+- Matching is exact: `conformance:write` does not satisfy `conformance:read`.
+- By default a permission counts from `permissions` or `org_permissions`. Organization scope
+  counts only `org_permissions` and needs an active organization. The bound form also needs the
+  route's organization id to equal `org_id`.
+- When a token carries `permissions_omitted: true`, the guard reads
+  `GET /users/me/permissions` with the caller's token and applies the same rules.
 
 **Request guards** (cookie transport).
 - A request with `Sec-Fetch-Site: cross-site` and any method but `GET`, `HEAD` or

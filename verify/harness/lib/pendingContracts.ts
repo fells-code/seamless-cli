@@ -10,6 +10,9 @@ export const PENDING_CONTRACTS = {
   // A body-less unsafe auth request needs a JSON content type or the transport
   // header, or it is refused with 415.
   'content-type-gate': 'fells-code/seamless-auth-api#558',
+  // requirePermission on the reference app's /api/permissions routes, which also needs the
+  // auth API at v0.23.
+  'permission-guards': 'fells-code/seamless-auth-server#218',
 } as const;
 
 export type PendingContract = keyof typeof PENDING_CONTRACTS;

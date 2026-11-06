@@ -1,7 +1,9 @@
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
-import createSeamlessAuthServer, { requireAuth } from "@seamless-auth/express";
+import createSeamlessAuthServer, * as seamless from "@seamless-auth/express";
+
+const { requireAuth, requirePermission } = seamless;
 
 // The adapter strips OTP/magic-link secrets before responding to the browser, so
 // the conformance harness can't read codes from responses. These handlers receive
@@ -64,6 +66,44 @@ app.get(
   }),
   (req, res) => res.json({ id: req.user.id }),
 );
+
+// The `permission-guards` pending contract. Only when the adapter has the guard, because a
+// released-mode run installs the published package, which may predate it. Becomes
+// unconditional once the contract leaves the pending list.
+if (requirePermission) {
+  const session = requireAuth({
+    cookieSecret: process.env.COOKIE_SIGNING_KEY,
+    authServerUrl: process.env.AUTH_SERVER_URL,
+    authServerIssuer: ISSUER,
+    audience: ISSUER,
+  });
+  const me = (req, res) => res.json({ id: req.user.id });
+
+  app.get(
+    "/api/permissions/any",
+    session,
+    requirePermission(["conformance:read", "conformance:other"]),
+    me,
+  );
+  app.get(
+    "/api/permissions/all",
+    session,
+    requirePermission(["conformance:read", "conformance:write"], { match: "all" }),
+    me,
+  );
+  app.get(
+    "/api/permissions/org",
+    session,
+    requirePermission("conformance:org", { organization: true }),
+    me,
+  );
+  app.get(
+    "/api/permissions/org/:organizationId",
+    session,
+    requirePermission("conformance:org", { organizationParam: "organizationId" }),
+    me,
+  );
+}
 
 app.use(
   "/auth",
