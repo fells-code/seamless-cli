@@ -55,6 +55,10 @@ jobs:
       # Layers the CI-only build cache over the base compose file. Read by
       # `seamless verify`; unset locally, where `type=gha` would be an error.
       SEAMLESS_VERIFY_COMPOSE_OVERRIDE: ${{ github.workspace }}/seamless-cli/verify/docker-compose.cache.yml
+      # Holds the Express and Fastify reference apps to the pending contract when they are
+      # built from source. The published packages may predate the guard, so a released run
+      # skips it. Remove once the contract leaves verify/harness/lib/pendingContracts.ts.
+      SEAMLESS_VERIFY_CONTRACTS: ${{ inputs.local && 'permission-guards' || '' }}
     steps:
       - name: Checkout seamless-cli
         uses: actions/checkout@v7
