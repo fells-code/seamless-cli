@@ -1,6 +1,8 @@
 import cors from "@fastify/cors";
 import Fastify from "fastify";
-import seamlessAuth, { requireAuth } from "@seamless-auth/fastify";
+import seamlessAuth, * as seamless from "@seamless-auth/fastify";
+
+const { requireAuth, requirePermission } = seamless;
 
 // The Fastify twin of adapter-app/server.mjs. Same routes, same env contract,
 // same capture transport: the point of this service is that a spec cannot tell
@@ -66,6 +68,37 @@ app.get(
   },
   async (req) => ({ id: req.user.id }),
 );
+
+// The `permission-guards` pending contract. Only when the adapter has the guard, because a
+// released-mode run installs the published package, which may predate it. Becomes
+// unconditional once the contract leaves the pending list.
+if (requirePermission) {
+  const session = requireAuth({
+    cookieSecret: process.env.COOKIE_SIGNING_KEY,
+    authServerUrl: process.env.AUTH_SERVER_URL,
+    authServerIssuer: ISSUER,
+    audience: ISSUER,
+  });
+  const me = async (req) => ({ id: req.user.id });
+  const guarded = (path, guard) => app.get(path, { preHandler: [session, guard] }, me);
+
+  guarded(
+    "/api/permissions/any",
+    requirePermission(["conformance:read", "conformance:other"]),
+  );
+  guarded(
+    "/api/permissions/all",
+    requirePermission(["conformance:read", "conformance:write"], { match: "all" }),
+  );
+  guarded(
+    "/api/permissions/org",
+    requirePermission("conformance:org", { organization: true }),
+  );
+  guarded(
+    "/api/permissions/org/:organizationId",
+    requirePermission("conformance:org", { organizationParam: "organizationId" }),
+  );
+}
 
 // Registered under a prefix, which is how the plugin scopes its cookie and origin
 // hooks. @fastify/cookie comes with the plugin, so it is not registered here.
