@@ -4,6 +4,7 @@ import kleur from "kleur";
 import type { AuthClient } from "./authClient.js";
 import { CancelledError } from "./cancel.js";
 import type { ApiResponse } from "./http.js";
+import type { TokenBundle } from "./keychain.js";
 import { PermissionError } from "./permissionError.js";
 import { isInteractive } from "./tty.js";
 
@@ -25,7 +26,20 @@ export class StepUpError extends PermissionError {
   }
 }
 
-export type StepUpHandler = (client: AuthClient) => Promise<void>;
+/** How the client's current session started, and a way to swap it for a stepped-up one. */
+export interface StepUpSession {
+  signIn(): TokenBundle["signIn"];
+  /** Stores the new session and ends the one it replaces. */
+  replace(next: TokenBundle): Promise<void>;
+}
+
+export type StepUpHandler = (client: AuthClient, session?: StepUpSession) => Promise<void>;
+
+export interface AuthenticatorAppCopy {
+  requiredMessage?: string;
+  noAuthenticatorMessage?: string;
+  prompt?: string;
+}
 
 function errorCode(data: unknown): string | undefined {
   if (data && typeof data === "object") {
@@ -84,14 +98,17 @@ function isWellFormed(code: string): boolean {
   return codeShape.safeParse(code).success;
 }
 
-async function requireEnrolledAuthenticator(client: AuthClient): Promise<void> {
+async function requireEnrolledAuthenticator(
+  client: AuthClient,
+  noAuthenticatorMessage: string,
+): Promise<void> {
   const res = await client.get<unknown>("/totp/status");
   // Only a definite "not enrolled" stops here. Anything else is left to the verify
   // call, which reports its own failures.
   if (!res.ok) return;
   const parsed = TotpStatusSchema.loose().safeParse(res.data);
   if (parsed.success && !parsed.data.enabled) {
-    throw new StepUpError(NO_AUTHENTICATOR_MESSAGE);
+    throw new StepUpError(noAuthenticatorMessage);
   }
 }
 
@@ -105,7 +122,11 @@ async function requireEnrolledAuthenticator(client: AuthClient): Promise<void> {
  */
 export function authenticatorAppStepUp(
   env: NodeJS.ProcessEnv = process.env,
+  copy: AuthenticatorAppCopy = {},
 ): StepUpHandler {
+  const requiredMessage = copy.requiredMessage ?? STEP_UP_REQUIRED_MESSAGE;
+  const noAuthenticatorMessage = copy.noAuthenticatorMessage ?? NO_AUTHENTICATOR_MESSAGE;
+  const prompt = copy.prompt ?? "This action needs a fresh step-up on your session.";
   let envCode = env[TOTP_CODE_ENV]?.trim() || undefined;
 
   const nextCode = async (
@@ -122,11 +143,11 @@ export function authenticatorAppStepUp(
       return { code, fromEnv: true };
     }
 
-    if (!isInteractive()) throw new StepUpError(STEP_UP_REQUIRED_MESSAGE);
+    if (!isInteractive()) throw new StepUpError(requiredMessage);
 
     if (attempt === 1) {
       process.stderr.write(
-        `${kleur.yellow("This action needs a fresh step-up on your session.")}\n`,
+        `${kleur.yellow(prompt)}\n`,
       );
     }
     const answer = await text({
@@ -147,7 +168,7 @@ export function authenticatorAppStepUp(
   };
 
   return async (client) => {
-    await requireEnrolledAuthenticator(client);
+    await requireEnrolledAuthenticator(client, noAuthenticatorMessage);
 
     for (let attempt = 1; ; attempt++) {
       const { code, fromEnv } = await nextCode(attempt);

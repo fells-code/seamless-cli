@@ -17,6 +17,7 @@ import {
 } from "./keychain.js";
 import {
   createAuthClient,
+  type AuthClient,
   createPortalClient,
   ReauthRequiredError,
   tokensFromAuthResponse,
@@ -606,7 +607,10 @@ describe("step-up on admin writes", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(stepUp).toHaveBeenCalledWith(client);
+    expect(stepUp).toHaveBeenCalledWith(
+      expect.objectContaining({ profile: client.profile }),
+      expect.objectContaining({ signIn: expect.any(Function) }),
+    );
     expect(calls).toHaveLength(2);
     expect(calls[1].init.method).toBe("DELETE");
     expect(calls[1].init.body).toBe(JSON.stringify({ userId: "u1" }));
@@ -741,5 +745,159 @@ describe("step-up on admin writes", () => {
 
     expect(res.status).toBe(403);
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe("sessions from the OpenID Provider", () => {
+  const stepUpRequired = () =>
+    new Response(JSON.stringify({ error: "step_up_required" }), { status: 403 });
+  const okBody = () => new Response(JSON.stringify({ ok: true }), { status: 200 });
+
+  function memory(): KeychainBackend & { store: Map<string, string> } {
+    const store = new Map<string, string>();
+    return {
+      store,
+      get: (account) => store.get(account) ?? null,
+      set: (account, secret) => {
+        store.set(account, secret);
+      },
+      delete: (account) => store.delete(account),
+    };
+  }
+
+  const PROFILE = { name: "prod", instanceUrl: "https://auth.example.com" };
+  const ACCOUNT = "prod::https://auth.example.com";
+  let configHome: string;
+
+  beforeEach(() => {
+    configHome = fs.mkdtempSync(path.join(os.tmpdir(), "seamless-auth-provider-"));
+    vi.stubEnv("XDG_CONFIG_HOME", configHome);
+    vi.stubEnv("SEAMLESS_REFRESH_TOKEN", "");
+    upsertProfile(PROFILE);
+  });
+
+  afterEach(() => {
+    setBackendForTesting(null);
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    fs.rmSync(configHome, { recursive: true, force: true });
+  });
+
+  it("keeps the sign-in kind through a refresh", async () => {
+    const backend = memory();
+    setBackendForTesting(backend);
+    backend.set(
+      ACCOUNT,
+      JSON.stringify({ accessToken: "old", refreshToken: "r1", signIn: "device" }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.endsWith("/refresh")) {
+          return new Response(
+            JSON.stringify({ token: "new", refreshToken: "r2", ttl: 60, refreshTtl: 100 }),
+          );
+        }
+        return fetchCount++ === 0 ? new Response("{}", { status: 401 }) : okBody();
+      }),
+    );
+    let fetchCount = 0;
+    const client = await createAuthClient({ profileFlag: "prod", stepUp: async () => {} });
+    await client.get("/users/me");
+    expect(JSON.parse(backend.store.get(ACCOUNT) as string).signIn).toBe("device");
+  });
+
+  it("asks again after a refresh dropped the step-up", async () => {
+    const backend = memory();
+    setBackendForTesting(backend);
+    backend.set(
+      ACCOUNT,
+      JSON.stringify({ accessToken: "a1", refreshToken: "r1", signIn: "device" }),
+    );
+    const steppedUp = new Set<string>();
+    const stepUp = vi.fn(async () => {
+      steppedUp.add(token());
+    });
+    let current = "a1";
+    const token = () => current;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        if (url.endsWith("/refresh")) {
+          current = "a2";
+          return new Response(JSON.stringify({ token: "a2", refreshToken: "r2" }));
+        }
+        const bearer = (init.headers as Record<string, string>).Authorization;
+        if (bearer !== `Bearer ${current}`) return new Response("{}", { status: 401 });
+        return steppedUp.has(current) ? okBody() : stepUpRequired();
+      }),
+    );
+
+    const client = await createAuthClient({ profileFlag: "prod", stepUp });
+    expect((await client.get("/admin/users")).status).toBe(200);
+    expect(stepUp).toHaveBeenCalledTimes(1);
+
+    current = "expired";
+    expect((await client.get("/admin/users")).status).toBe(200);
+    expect(stepUp).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not hang when the handler's own call is told to step up", async () => {
+    const backend = memory();
+    setBackendForTesting(backend);
+    backend.set(ACCOUNT, JSON.stringify({ accessToken: "a1", refreshToken: "r1" }));
+    vi.stubGlobal("fetch", vi.fn(async () => stepUpRequired()));
+
+    const stepUp = vi.fn(async (handlerClient: AuthClient) => {
+      const res = await handlerClient.get("/totp/status");
+      expect(res.status).toBe(403);
+    });
+    const client = await createAuthClient({ profileFlag: "prod", stepUp });
+    const res = await client.get("/admin/users");
+    expect(res.status).toBe(403);
+    expect(stepUp).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the handler the sign-in kind and a way to swap the session", async () => {
+    const backend = memory();
+    setBackendForTesting(backend);
+    backend.set(
+      ACCOUNT,
+      JSON.stringify({ accessToken: "a1", refreshToken: "r1", signIn: "loopback" }),
+    );
+    const seen: Array<string | null> = [];
+    let refused = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        seen.push(`${init.method} ${url} ${(init.headers as Record<string, string>).Authorization}`);
+        if (url.endsWith("/logout")) return new Response(null, { status: 200 });
+        if (!refused) {
+          refused = true;
+          return stepUpRequired();
+        }
+        return okBody();
+      }),
+    );
+
+    const client = await createAuthClient({
+      profileFlag: "prod",
+      stepUp: async (_c, session) => {
+        expect(session?.signIn()).toBe("loopback");
+        await session?.replace({ accessToken: "a2", refreshToken: "r2", signIn: "loopback" });
+      },
+    });
+    expect((await client.get("/admin/users")).status).toBe(200);
+
+    expect(JSON.parse(backend.store.get(ACCOUNT) as string)).toEqual({
+      accessToken: "a2",
+      refreshToken: "r2",
+      signIn: "loopback",
+    });
+    expect(seen).toEqual([
+      "GET https://auth.example.com/admin/users Bearer a1",
+      "DELETE https://auth.example.com/logout Bearer a1",
+      "GET https://auth.example.com/admin/users Bearer a2",
+    ]);
   });
 });

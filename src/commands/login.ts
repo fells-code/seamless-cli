@@ -9,7 +9,12 @@ import {
   PORTAL_PROFILE_NAME,
   savePortalSession,
 } from "../core/config.js";
-import { KeychainUnavailableError, saveTokens } from "../core/keychain.js";
+import {
+  assertKeychainUsable,
+  KEYCHAIN_REQUIRED_MESSAGE,
+  KeychainUnavailableError,
+  saveTokens,
+} from "../core/keychain.js";
 import { promptLogin } from "../core/interactiveLogin.js";
 import { LoginError } from "../core/loginFlow.js";
 import { loginToInstance } from "./instanceLogin.js";
@@ -64,6 +69,15 @@ async function loginToPortal(opts: {
   const existing = getPortalSession();
 
   intro(`Sign in to the ${kleur.bold("Seamless portal")} (${instanceUrl})`);
+
+  try {
+    await assertKeychainUsable();
+  } catch (err) {
+    if (!(err instanceof KeychainUnavailableError)) throw err;
+    outro(kleur.red(err.message));
+    process.exit(1);
+  }
+
   if (opts.local) {
     console.log(
       kleur.dim("Local delivery on: reading the OTP from the instance response."),
@@ -100,7 +114,11 @@ async function loginToPortal(opts: {
       ),
     );
   } catch (err) {
-    if (err instanceof LoginError || err instanceof KeychainUnavailableError) {
+    if (err instanceof KeychainUnavailableError) {
+      outro(kleur.red(KEYCHAIN_REQUIRED_MESSAGE));
+      process.exit(1);
+    }
+    if (err instanceof LoginError) {
       outro(kleur.red(err.message));
       process.exit(1);
     }

@@ -13,6 +13,7 @@ import {
   listProfiles,
   loadConfig,
   isLocalInstanceUrl,
+  isLoopbackInstanceUrl,
   normalizeInstanceUrl,
   PORTAL_PROFILE_NAME,
   removeProfile,
@@ -292,6 +293,31 @@ describe("normalizeInstanceUrl", () => {
   });
 });
 
+describe("isLoopbackInstanceUrl", () => {
+  it.each([
+    "http://localhost:5312",
+    "http://auth.localhost",
+    "http://127.0.0.1:5312",
+    "http://127.8.9.1",
+    "http://[::1]:5312",
+  ])("is true for %s", (url) => {
+    expect(isLoopbackInstanceUrl(url)).toBe(true);
+  });
+
+  it.each([
+    "http://auth.local",
+    "http://192.168.1.10",
+    "http://10.0.0.1",
+    "http://0.0.0.0",
+    "http://[::]",
+    "https://auth.example.com",
+    "http://127.0.0.1.example.com",
+    "not a url",
+  ])("is false for %s", (url) => {
+    expect(isLoopbackInstanceUrl(url)).toBe(false);
+  });
+});
+
 describe("isLocalInstanceUrl", () => {
   it.each([
     ["localhost", "http://localhost:5312"],
@@ -333,3 +359,21 @@ describe("isLocalInstanceUrl", () => {
     expect(isLocalInstanceUrl("http://100.64.0.1")).toBe(false);
   });
 });
+
+describe("provider settings", () => {
+  it("round-trips the issuer and client id", () => {
+    upsertProfile({
+      name: "prod",
+      instanceUrl: "https://api.example.com",
+      oidcIssuer: "https://auth.example.com",
+      oidcClientId: "cli",
+    });
+    expect(loadConfig().profiles.prod).toEqual({
+      name: "prod",
+      instanceUrl: "https://api.example.com",
+      oidcIssuer: "https://auth.example.com",
+      oidcClientId: "cli",
+    });
+  });
+});
+

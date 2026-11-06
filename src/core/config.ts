@@ -11,6 +11,8 @@ export interface Profile {
   sub?: string;
   email?: string;
   identifierType?: IdentifierType;
+  oidcIssuer?: string;
+  oidcClientId?: string;
 }
 
 export interface SeamlessConfig {
@@ -63,6 +65,8 @@ function coerceProfile(name: string, value: unknown): Profile | undefined {
   if (raw.identifierType === "email" || raw.identifierType === "phone") {
     profile.identifierType = raw.identifierType;
   }
+  if (typeof raw.oidcIssuer === "string") profile.oidcIssuer = raw.oidcIssuer;
+  if (typeof raw.oidcClientId === "string") profile.oidcClientId = raw.oidcClientId;
   return profile;
 }
 
@@ -290,6 +294,26 @@ export function isLocalInstanceUrl(input: string): boolean {
     host.endsWith(".local") ||
     isPrivateIpv4(host) ||
     isPrivateIpv6(host)
+  );
+}
+
+/**
+ * True only for this machine. Narrower than isLocalInstanceUrl, which also covers LAN
+ * addresses: plain http stays on the machine here, and is open to the network there.
+ */
+export function isLoopbackInstanceUrl(input: string): boolean {
+  let url: URL;
+  try {
+    url = new URL((input ?? "").trim());
+  } catch {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "[::1]" ||
+    ipv4Octets(host)?.[0] === 127
   );
 }
 

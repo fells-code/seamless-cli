@@ -81,6 +81,7 @@ export function apiApplication(
     grantTypes: ["authorization_code", "refresh_token"],
     deviceFlowEnabled: false,
     noticesEnabled: false,
+    sessionExchangeEnabled: false,
     pkceRequired: true,
     nonceRequired: true,
     jwks: null,

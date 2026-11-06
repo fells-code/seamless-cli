@@ -186,6 +186,9 @@ function readSettings(args: string[]): SettingsFlags {
   const notices = takeSwitch("notices", "no-notices");
   if (notices !== undefined) settings.noticesEnabled = notices;
 
+  const exchange = takeSwitch("session-exchange", "no-session-exchange");
+  if (exchange !== undefined) settings.sessionExchangeEnabled = exchange;
+
   const pkce = takeSwitch("pkce", "no-pkce");
   if (pkce !== undefined) settings.pkceRequired = pkce;
 
@@ -255,6 +258,7 @@ function printApplication(app: OidcApplication): void {
   const grants = [...app.grantTypes, ...(app.deviceFlowEnabled ? ["device_code"] : [])];
   console.log(`  grants:          ${grants.join(", ") || "none"}`);
   console.log(`  notices:         ${app.noticesEnabled ? "on" : "off"}`);
+  console.log(`  session exchange: ${app.sessionExchangeEnabled ? "on" : "off"}`);
   console.log(`  PKCE:            ${app.pkceRequired ? "required" : kleur.yellow("not required")}`);
   console.log(`  nonce:           ${app.nonceRequired ? "required" : kleur.yellow("not required")}`);
   if (app.backchannelLogoutUri) {

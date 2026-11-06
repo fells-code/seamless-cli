@@ -666,7 +666,8 @@ describe("runLogin: failure handling", () => {
     });
 
     await expect(runLogin([])).rejects.toThrow("exit:1");
-    expect(outro).toHaveBeenCalledWith(expect.stringContaining("No OS keychain is available"));
+    expect(outro).toHaveBeenCalledWith(expect.stringContaining("needs an OS keychain"));
+    expect(text).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 

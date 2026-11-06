@@ -14,6 +14,7 @@ import {
 } from "../core/config.js";
 import { deleteTokens, KeychainUnavailableError } from "../core/keychain.js";
 import { loginToInstance } from "./instanceLogin.js";
+import { normalizeIssuer } from "../core/providerSignIn.js";
 import { requireInteractive } from "../core/tty.js";
 
 export async function runProfile(args: string[]): Promise<void> {
@@ -69,7 +70,9 @@ function profileList(): void {
 async function profileAdd(rest: string[]): Promise<void> {
   const urlFlag = extractFlag(rest, "instance-url");
   const typeFlag = extractFlag(urlFlag.rest, "identifier-type");
-  let name = typeFlag.rest[0];
+  const issuerFlag = extractFlag(typeFlag.rest, "oidc-issuer");
+  const clientIdFlag = extractFlag(issuerFlag.rest, "client-id");
+  let name = clientIdFlag.rest[0];
   let instanceUrl = urlFlag.value;
 
   const parsedType = IdentifierTypeSchema.safeParse(typeFlag.value ?? "email");
@@ -80,6 +83,14 @@ async function profileAdd(rest: string[]): Promise<void> {
     process.exit(1);
   }
   const identifierType = parsedType.data;
+
+  let oidcIssuer: string | undefined;
+  try {
+    oidcIssuer = issuerFlag.value ? normalizeIssuer(issuerFlag.value) : undefined;
+  } catch (err) {
+    console.error(kleur.red((err as Error).message));
+    process.exit(1);
+  }
 
   intro("Add a Seamless profile");
 
@@ -140,12 +151,16 @@ async function profileAdd(rest: string[]): Promise<void> {
   }
 
   const existing = loadConfig().profiles[name];
+  // A provider belongs to one instance, so settings for the old URL do not carry over.
+  const sameInstance = existing?.instanceUrl === normalized;
   upsertProfile({
     name,
     instanceUrl: normalized,
     identifierType,
     sub: existing?.sub,
     email: existing?.email,
+    oidcIssuer: oidcIssuer ?? (sameInstance ? existing?.oidcIssuer : undefined),
+    oidcClientId: clientIdFlag.value ?? (sameInstance ? existing?.oidcClientId : undefined),
   });
 
   outro(kleur.green(`Profile "${name}" saved (${normalized})`));
@@ -155,14 +170,22 @@ async function profileAdd(rest: string[]): Promise<void> {
 // one-off admin command against another instance does not disturb the default.
 async function profileLogin(rest: string[]): Promise<void> {
   const local = rest.includes("--local");
-  const withoutLocal = rest.filter((a) => a !== "--local");
-  const idFlag = extractFlag(withoutLocal, "identifier");
-  const positional = idFlag.rest.filter((a) => !a.startsWith("-"));
+  const device = rest.includes("--device");
+  const emailCode = rest.includes("--email-code");
+  const switches = new Set(["--local", "--device", "--email-code"]);
+  const idFlag = extractFlag(rest.filter((a) => !switches.has(a)), "identifier");
+  const issuerFlag = extractFlag(idFlag.rest, "oidc-issuer");
+  const clientIdFlag = extractFlag(issuerFlag.rest, "client-id");
+  const positional = clientIdFlag.rest.filter((a) => !a.startsWith("-"));
 
   await loginToInstance({
     profileName: positional[0],
     identifier: idFlag.value ?? positional[1],
     local,
+    device,
+    emailCode,
+    oidcIssuer: issuerFlag.value,
+    clientId: clientIdFlag.value,
   });
 }
 

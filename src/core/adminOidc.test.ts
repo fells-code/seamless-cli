@@ -75,6 +75,12 @@ describe("OpenID Provider applications", () => {
     expect(calls[0]).toMatchObject({ method: "GET", path: "/admin/applications" });
   });
 
+  it("reads an application from an API older than session exchange as having it off", async () => {
+    const { sessionExchangeEnabled: _omitted, ...older } = apiApplication();
+    const { client } = always(200, { applications: [older] });
+    expect((await listApplications(client))[0].sessionExchangeEnabled).toBe(false);
+  });
+
   it("encodes the id in every application path", async () => {
     const app = apiApplication({ id: "a/b" });
     const { client, calls } = fakeClient(({ path }) =>
