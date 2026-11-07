@@ -57,7 +57,7 @@ guidance may extend them but must not contradict them.
 - Run from source: `npm run dev -- <command>` (`tsx`); or after building, `node dist/index.js <command>`
 - Commands: `init [name]`, `templates`, `check`, `verify [flags]`, `apps`,
   and the instance-management commands `profile`, `login`, `whoami`, `logout`,
-  `sessions`, `config`, `users`, `org` (all dispatched from `src/index.ts`)
+  `sessions`, `config`, `users`, `org`, `permissions`, `roles` (all dispatched from `src/index.ts`)
 
 The entry point is [src/index.ts](src/index.ts), which dispatches to a command module in
 `src/commands/`.
@@ -112,7 +112,7 @@ The entry point is [src/index.ts](src/index.ts), which dispatches to a command m
 - **verify** ([src/commands/verify.ts](src/commands/verify.ts)) runs the conformance harness (below).
 - **instance management** — `profile` (targets, plus `profile login`),
   `logout`/`whoami`, `sessions`, `config` (system config + OAuth providers),
-  `users`, and `org` all talk to a running instance and are authenticated by the
+  `users`, `org`, `permissions`, and `roles` all talk to a running instance and are authenticated by the
   stored session.
 - **help** — `seamless --help`, `seamless <command> -h/--help`, and `seamless help <command>` all
   render from the single registry in [src/commands/helpTopics.ts](src/commands/helpTopics.ts)

@@ -777,6 +777,63 @@ org members remove <orgId> <userId> [--force]
     ],
   },
   {
+    name: "permissions",
+    usage: ["seamless permissions <list|create|update|delete>"],
+    sections: [
+      {
+        heading: "permissions <list|create|update|delete>",
+        body: `The instance's permission catalogue (requires an admin role, and auth server
+v0.23 or later). Roles grant permissions; see seamless roles. Writes need a
+fresh step-up, as for org.
+
+permissions list [--json]
+permissions create <name> [--description <text>] [--json]
+  • A name is letters, digits and hyphens in colon-separated segments, such
+    as invoices:read. Names match exactly: invoices:write does not satisfy
+    invoices:read, and there are no wildcards
+permissions update <name> (--description <text> | --no-description) [--json]
+permissions delete <name> [--force]
+  • Refused while a role still grants it. The error names those roles
+
+--force
+  • Skips the confirmation on delete (--yes and -y are accepted aliases)`,
+      },
+    ],
+  },
+  {
+    name: "roles",
+    usage: ["seamless roles <list|set|create|update|delete>"],
+    sections: [
+      {
+        heading: "roles <list|set|create|update|delete>",
+        body: `Instance and organization roles and the permissions they grant (requires an
+admin role, and auth server v0.23 or later). Writes need a fresh step-up, as
+for org.
+
+Instance roles are the instance's available_roles (seamless config roles)
+and reach the access token as roles. Organization roles are a catalogue
+shared by every organization, held on a membership, and reach the token as
+org_roles. owner, admin and member are built in. A change reaches a holder
+on their next access token.
+
+roles list [--kind instance|organization] [--json]
+roles set <instance|organization> <role> (<permission>... | --none) [--force] [--json]
+  • Replaces everything the role grants. Every permission must exist
+  • Asks before taking a permission away, unless --force
+roles create <name> [--description <text>] [--permissions a,b] [--json]
+  • Creates an organization role
+roles update <name> (--description <text> | --no-description) [--json]
+roles delete <name> [--force]
+  • Deletes an organization role. Refused for a built-in role and for one
+    a membership still holds
+
+--force
+  • Skips the confirmation on set and delete (--yes and -y are accepted
+    aliases)`,
+      },
+    ],
+  },
+  {
     name: "clients",
     usage: [
       "seamless clients <list|get|create|update|rotate-secret|keys|resources|delete>",

@@ -3,6 +3,8 @@ import type {
   AdminCredential,
   AdminMembership,
   AdminOrganization,
+  AdminPermission,
+  AdminRole,
   AdminUser,
 } from "./admin.js";
 
@@ -109,6 +111,30 @@ export function apiResource(overrides: Partial<OidcResource> = {}): OidcResource
     accessTokenTtlSeconds: null,
     createdAt: CREATED,
     updatedAt: CREATED,
+    ...overrides,
+  };
+}
+
+export function apiPermission(
+  overrides: Partial<AdminPermission> = {},
+): AdminPermission {
+  return {
+    id: "p1",
+    name: "invoices:read",
+    description: null,
+    createdAt: CREATED,
+    updatedAt: CREATED,
+    ...overrides,
+  };
+}
+
+export function apiRole(overrides: Partial<AdminRole> = {}): AdminRole {
+  return {
+    name: "billing",
+    kind: "organization",
+    description: null,
+    builtIn: false,
+    permissions: [],
     ...overrides,
   };
 }
