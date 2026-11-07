@@ -16,10 +16,10 @@ export const SEAMLESS_AUTH_API_IMAGE_DIGEST =
 
 export const SEAMLESS_AUTH_API_IMAGE = `ghcr.io/fells-code/seamless-auth-api:${SEAMLESS_AUTH_API_VERSION}@${SEAMLESS_AUTH_API_IMAGE_DIGEST}`;
 
-export const SEAMLESS_AUTH_ADMIN_DASHBOARD_VERSION = "v0.12.0";
+export const SEAMLESS_AUTH_ADMIN_DASHBOARD_VERSION = "v0.13.0";
 
 export const SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE_DIGEST =
-  "sha256:6c82f2053687b26113b889c08b9b42e785580bb22e5502c6eb03c181378841aa";
+  "sha256:c6e4490d15e77f3c86d900f4a08c6ddf7f5f1da06613f6467ae325bf06a7ce97";
 
 export const SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE = `ghcr.io/fells-code/seamless-auth-admin-dashboard:${SEAMLESS_AUTH_ADMIN_DASHBOARD_VERSION}@${SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE_DIGEST}`;
 
@@ -33,7 +33,7 @@ export const SEAMLESS_AUTH_ADMIN_DASHBOARD_REPO =
 
 export const SEAMLESS_AUTH_ADMIN_DASHBOARD_REF = SEAMLESS_AUTH_ADMIN_DASHBOARD_VERSION;
 
-export const SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT = "c3020d2f24ab34c4657e0da06da23a0f4471a7cf";
+export const SEAMLESS_AUTH_ADMIN_DASHBOARD_COMMIT = "a331a4a879a689892491ef2a62a735b295b8852b";
 
 // The starter templates monorepo the CLI scaffolds from. The tag names the release;
 // the download is pinned to the commit it resolved to when bumped. Override with
