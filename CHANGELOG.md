@@ -1,5 +1,15 @@
 # seamless-cli
 
+## 0.29.0
+
+### Minor Changes
+
+- 2eb878e: Add `seamless permissions` and `seamless roles` to manage the permission catalogue, organization roles, and the permissions each instance or organization role grants. `roles set` replaces a role's whole mapping and asks before taking a permission away. Every command takes `--json`. They need auth server v0.23 or later, and an older instance gets a message saying so.
+
+### Patch Changes
+
+- 5c60a5f: `seamless init` scaffolds admin dashboard v0.13.0, which adds the Roles page for permissions and organization roles, pinned to the commit and image digest its tag names.
+
 ## 0.28.0
 
 ### Minor Changes
