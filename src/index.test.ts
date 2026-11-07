@@ -19,6 +19,8 @@ vi.mock("./commands/sessions.js", () => ({ runSessions: vi.fn() }));
 vi.mock("./commands/config.js", () => ({ runConfig: vi.fn() }));
 vi.mock("./commands/users.js", () => ({ runUsers: vi.fn() }));
 vi.mock("./commands/org.js", () => ({ runOrg: vi.fn() }));
+vi.mock("./commands/permissions.js", () => ({ runPermissions: vi.fn() }));
+vi.mock("./commands/roles.js", () => ({ runRoles: vi.fn() }));
 vi.mock("./commands/apps.js", () => ({ runApps: vi.fn() }));
 vi.mock("./commands/templates.js", () => ({ runTemplates: vi.fn() }));
 
@@ -248,6 +250,8 @@ describe("index dispatcher", () => {
     ["config", "./commands/config.js", "runConfig"],
     ["users", "./commands/users.js", "runUsers"],
     ["org", "./commands/org.js", "runOrg"],
+    ["permissions", "./commands/permissions.js", "runPermissions"],
+    ["roles", "./commands/roles.js", "runRoles"],
     ["apps", "./commands/apps.js", "runApps"],
     ["templates", "./commands/templates.js", "runTemplates"],
   ])("dispatches %s with the remaining args", async (cmd, modPath, fnName) => {

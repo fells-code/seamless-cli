@@ -15,10 +15,18 @@ import {
   OidcResourceResponseSchema,
   OrganizationMembershipSchema,
   OrganizationSchema,
+  PermissionEnvelopeResponseSchema,
+  PermissionListResponseSchema,
+  PermissionSchema,
+  RoleDefinitionSchema,
+  RoleEnvelopeResponseSchema,
+  RoleListResponseSchema,
   SessionSchema,
   UsersListResponseSchema,
   type AddOrganizationMemberRequest,
   type CreateOrganizationRequest,
+  type CreateOrganizationRoleRequest,
+  type CreatePermissionRequest,
   type DeviceReplacementRecoveryRequest,
   type DeviceReplacementRecoveryResponse,
   type OidcApplication,
@@ -32,8 +40,11 @@ import {
   type OidcResource,
   type OidcResourceCreateRequest,
   type OidcResourceUpdateRequest,
+  type RoleKind,
   type UpdateOrganizationMemberRequest,
   type UpdateOrganizationRequest,
+  type UpdateOrganizationRoleRequest,
+  type UpdatePermissionRequest,
 } from "@seamless-auth/types";
 import { z } from "zod";
 import type { AuthClient } from "./authClient.js";
@@ -537,4 +548,182 @@ export async function deleteResource(client: AuthClient, id: string): Promise<vo
   const res = await call(client, "DELETE", resourcePath(id));
   notFound(res, "resource", id);
   if (!res.ok) throw apiError(res, "Could not delete resource");
+}
+
+// Permissions and roles (auth API v0.23)
+
+const AdminPermissionSchema = PermissionSchema.loose();
+const AdminRoleSchema = RoleDefinitionSchema.loose();
+
+const PermissionListSchema = PermissionListResponseSchema.extend({
+  permissions: z.array(AdminPermissionSchema),
+}).loose();
+
+const RoleListSchema = RoleListResponseSchema.extend({
+  roles: z.array(AdminRoleSchema),
+}).loose();
+
+const PermissionEnvelopeSchema = PermissionEnvelopeResponseSchema.extend({
+  permission: AdminPermissionSchema,
+});
+
+const RoleEnvelopeSchema = RoleEnvelopeResponseSchema.extend({
+  role: AdminRoleSchema,
+});
+
+export type AdminPermission = z.infer<typeof AdminPermissionSchema>;
+export type AdminRole = z.infer<typeof AdminRoleSchema>;
+export type PermissionList = z.infer<typeof PermissionListSchema>;
+
+export const PERMISSIONS_UNSUPPORTED_MESSAGE =
+  "This instance has no permission catalogue. Permissions and organization roles need Seamless Auth API v0.23 or later.";
+
+// An instance from before v0.23 has none of these routes, so it answers with the
+// app's catch-all 404 (`{ error: "Not Found" }`). A missing permission or role on
+// v0.23 is a 404 too, but it names what was missing, which is how the two differ.
+function unsupported(res: ApiResponse<unknown>, anyNotFound = false): void {
+  if (res.status !== 404) return;
+  if (anyNotFound || apiMessage(res.data) === "Not Found") {
+    throw new AdminApiError(PERMISSIONS_UNSUPPORTED_MESSAGE);
+  }
+}
+
+// A 400 or 409 from these routes can carry `details` naming what is in the way:
+// the roles still granting a permission, the permissions that do not exist, or
+// how many memberships still hold a role.
+function conflictDetail(data: unknown): string | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const details = (data as Record<string, unknown>).details;
+  if (!details || typeof details !== "object") return undefined;
+
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(details as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      const names = value.map((item) => {
+        if (item && typeof item === "object") {
+          const role = item as Record<string, unknown>;
+          return `${String(role.kind)} role ${String(role.name)}`;
+        }
+        return String(item);
+      });
+      parts.push(`${key}: ${names.join(", ")}`);
+    } else if (key === "holders" && typeof value === "number") {
+      parts.push(`held by ${value} membership${value === 1 ? "" : "s"}`);
+    } else {
+      parts.push(`${key}: ${String(value)}`);
+    }
+  }
+  return parts.length ? parts.join("; ") : undefined;
+}
+
+function permissionsError(res: ApiResponse<unknown>, summary: string): AdminApiError {
+  const error = apiError(res, summary);
+  const detail = conflictDetail(res.data);
+  return detail
+    ? new AdminApiError(`${error.message.replace(/\.$/, "")}, ${detail}.`)
+    : error;
+}
+
+function permissionPath(name: string): string {
+  return `/admin/permissions/${encodeURIComponent(name)}`;
+}
+
+function organizationRolePath(name: string): string {
+  return `/admin/organization-roles/${encodeURIComponent(name)}`;
+}
+
+export async function listPermissions(client: AuthClient): Promise<PermissionList> {
+  const res = await call<unknown>(client, "GET", "/admin/permissions");
+  unsupported(res, true);
+  if (!res.ok) throw apiError(res, "Could not list permissions");
+  return parse(PermissionListSchema, res.data, "a permission list");
+}
+
+export async function createPermission(
+  client: AuthClient,
+  body: CreatePermissionRequest,
+): Promise<AdminPermission> {
+  const res = await call<unknown>(client, "POST", "/admin/permissions", body);
+  unsupported(res, true);
+  if (res.status === 409) {
+    throw apiError(res, `A permission named ${body.name} already exists`);
+  }
+  if (!res.ok) throw permissionsError(res, "Could not create permission");
+  return parse(PermissionEnvelopeSchema, res.data, "a permission").permission;
+}
+
+export async function updatePermission(
+  client: AuthClient,
+  name: string,
+  body: UpdatePermissionRequest,
+): Promise<AdminPermission> {
+  const res = await call<unknown>(client, "PATCH", permissionPath(name), body);
+  unsupported(res);
+  if (res.status === 404) throw apiError(res, `No permission named ${name}`);
+  if (!res.ok) throw permissionsError(res, "Could not update permission");
+  return parse(PermissionEnvelopeSchema, res.data, "a permission").permission;
+}
+
+export async function deletePermission(client: AuthClient, name: string): Promise<void> {
+  const res = await call(client, "DELETE", permissionPath(name));
+  unsupported(res);
+  if (res.status === 404) throw apiError(res, `No permission named ${name}`);
+  if (!res.ok) throw permissionsError(res, `Could not delete permission ${name}`);
+}
+
+export async function listRoles(client: AuthClient): Promise<AdminRole[]> {
+  const res = await call<unknown>(client, "GET", "/admin/roles");
+  unsupported(res, true);
+  if (!res.ok) throw apiError(res, "Could not list roles");
+  return parse(RoleListSchema, res.data, "a role list").roles;
+}
+
+export async function setRolePermissions(
+  client: AuthClient,
+  kind: RoleKind,
+  role: string,
+  permissions: string[],
+): Promise<AdminRole> {
+  const res = await call<unknown>(
+    client,
+    "PUT",
+    `/admin/roles/${encodeURIComponent(kind)}/${encodeURIComponent(role)}/permissions`,
+    { permissions },
+  );
+  unsupported(res);
+  if (res.status === 404) throw apiError(res, `No ${kind} role named ${role}`);
+  if (!res.ok) throw permissionsError(res, `Could not set the permissions of ${role}`);
+  return parse(RoleEnvelopeSchema, res.data, "a role").role;
+}
+
+export async function createOrganizationRole(
+  client: AuthClient,
+  body: CreateOrganizationRoleRequest,
+): Promise<AdminRole> {
+  const res = await call<unknown>(client, "POST", "/admin/organization-roles", body);
+  unsupported(res, true);
+  if (!res.ok) throw permissionsError(res, "Could not create organization role");
+  return parse(RoleEnvelopeSchema, res.data, "a role").role;
+}
+
+export async function updateOrganizationRole(
+  client: AuthClient,
+  name: string,
+  body: UpdateOrganizationRoleRequest,
+): Promise<AdminRole> {
+  const res = await call<unknown>(client, "PATCH", organizationRolePath(name), body);
+  unsupported(res);
+  if (res.status === 404) throw apiError(res, `No organization role named ${name}`);
+  if (!res.ok) throw permissionsError(res, "Could not update organization role");
+  return parse(RoleEnvelopeSchema, res.data, "a role").role;
+}
+
+export async function deleteOrganizationRole(
+  client: AuthClient,
+  name: string,
+): Promise<void> {
+  const res = await call(client, "DELETE", organizationRolePath(name));
+  unsupported(res);
+  if (res.status === 404) throw apiError(res, `No organization role named ${name}`);
+  if (!res.ok) throw permissionsError(res, `Could not delete organization role ${name}`);
 }

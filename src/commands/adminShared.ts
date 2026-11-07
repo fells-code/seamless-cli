@@ -1,4 +1,5 @@
 import kleur from "kleur";
+import type { z } from "zod";
 import { ReauthRequiredError } from "../core/authClient.js";
 import { AdminApiError, PermissionError } from "../core/admin.js";
 import { extractFlag } from "../core/args.js";
@@ -16,6 +17,31 @@ export function reportAdminError(err: unknown): never {
     process.exit(1);
   }
   throw err;
+}
+
+export function fail(message: string): never {
+  console.error(kleur.red(message));
+  process.exit(1);
+}
+
+/** The arguments that are not flags, once every flag with a value is extracted. */
+export function positionals(args: string[]): string[] {
+  return args.filter((arg) => !arg.startsWith("-"));
+}
+
+/** Checks input against the request schema the API uses, so a bad value fails before the round trip. */
+export function validate<T>(schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value);
+  if (result.success) return result.data;
+
+  fail(
+    result.error.issues
+      .map((issue) => {
+        const where = issue.path.join(".");
+        return where ? `${where}: ${issue.message}` : issue.message;
+      })
+      .join("\n"),
+  );
 }
 
 export function parseList(value?: string): string[] | undefined {

@@ -770,6 +770,28 @@ the step social engineering aims at, so the instance records how their identity 
 `--proofing` is `in_person` or `remote_exception`, `--evidence-ref` is a ticket or case number for
 the audit trail (never personal data), and `--approver` names who approved a remote exception.
 
+### Admin: permissions and roles
+
+Define what roles can do (requires an admin role and auth server v0.23 or later; an older instance
+gets a message saying so). Permissions are a catalogue of exact names such as `invoices:read`.
+Instance roles are the instance's `available_roles`; organization roles are shared by every
+organization, with `owner`, `admin` and `member` built in.
+
+```bash
+seamless permissions create invoices:read --description "Read invoices"
+seamless permissions list
+seamless permissions delete invoices:read                 # confirms; refused while a role grants it
+
+seamless roles create billing --permissions invoices:read  # an organization role
+seamless roles set organization billing invoices:read invoices:write
+seamless roles set instance support --none                # confirms before taking any away
+seamless roles list --kind organization --json
+seamless roles delete billing                             # confirms; refused while a member holds it
+```
+
+`roles set` replaces everything the role grants. A change reaches a holder on their next access
+token.
+
 ### Admin: OpenID Provider clients and resources
 
 Register the OIDC clients that sign users in through the OpenID Provider, and the APIs
@@ -804,7 +826,7 @@ weaker than registered keys and need `allow_client_secrets` on the instance.
 From auth server v0.20, every admin write needs a fresh step-up on the session: `config set`,
 `config apply`, `config oauth-providers add|update|refresh|remove`, `config hosted-ui set|reset`, `users delete`,
 `users prepare-device-replacement`, the `org` and `org members` writes, the `clients` and
-`resources` writes, and `migrate`. When the
+`resources` writes, the `permissions` and `roles` writes, and `migrate`. When the
 instance asks for one, the CLI prompts for the code from your authenticator app, verifies it on the
 same session (`POST /totp/verify-mfa`), and retries the write once.
 
