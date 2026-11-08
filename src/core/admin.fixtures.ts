@@ -1,6 +1,12 @@
 import type { OidcApplication, OidcResource } from "@seamless-auth/types";
 import type {
+  AdminAuditSink,
+  AdminClaimSource,
   AdminCredential,
+  AdminDelivery,
+  AdminInvocation,
+  AdminLoginHook,
+  AdminWebhook,
   AdminMembership,
   AdminOrganization,
   AdminPermission,
@@ -135,6 +141,105 @@ export function apiRole(overrides: Partial<AdminRole> = {}): AdminRole {
     description: null,
     builtIn: false,
     permissions: [],
+    ...overrides,
+  };
+}
+
+export const WEBHOOK_ID = "0f8e3c1a-5b2d-4c7e-9a10-1b2c3d4e5f60";
+export const DELIVERY_ID = "7a6b5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d";
+export const SINK_ID = "3c2b1a09-8f7e-4d6c-9b5a-493827161504";
+export const SECRET = `whsec_${"A".repeat(43)}=`;
+
+export function apiWebhook(overrides: Partial<AdminWebhook> = {}): AdminWebhook {
+  return {
+    id: WEBHOOK_ID,
+    url: "https://hooks.example.com/seamless",
+    description: null,
+    eventTypes: ["user.created"],
+    enabled: true,
+    disabledReason: null,
+    version: 1,
+    previousSecretExpiresAt: null,
+    createdAt: CREATED,
+    updatedAt: CREATED,
+    ...overrides,
+  };
+}
+
+export function apiDelivery(overrides: Partial<AdminDelivery> = {}): AdminDelivery {
+  return {
+    id: DELIVERY_ID,
+    endpointId: WEBHOOK_ID,
+    eventType: "user.created",
+    status: "failed",
+    attempts: 2,
+    nextAttemptAt: CREATED,
+    lastAttemptAt: CREATED,
+    lastStatusCode: 500,
+    lastFailure: "http_status",
+    createdAt: CREATED,
+    ...overrides,
+  };
+}
+
+export function apiLoginHook(overrides: Partial<AdminLoginHook> = {}): AdminLoginHook {
+  return {
+    trigger: "post_login",
+    url: "https://hooks.example.com/login",
+    timeoutMs: 2000,
+    failureMode: "closed",
+    enabled: true,
+    previousSecretExpiresAt: null,
+    createdAt: CREATED,
+    updatedAt: CREATED,
+    ...overrides,
+  };
+}
+
+export function apiInvocation(overrides: Partial<AdminInvocation> = {}): AdminInvocation {
+  return {
+    id: "i1",
+    trigger: "post_login",
+    userId: "u1",
+    outcome: "allowed",
+    failure: null,
+    statusCode: 200,
+    durationMs: 42,
+    createdAt: CREATED,
+    ...overrides,
+  };
+}
+
+export function apiClaimSource(overrides: Partial<AdminClaimSource> = {}): AdminClaimSource {
+  return {
+    sourceKind: "organization_role",
+    sourceName: "billing",
+    claims: { tier: "gold" },
+    updatedAt: CREATED,
+    ...overrides,
+  };
+}
+
+export function apiAuditSink(overrides: Partial<AdminAuditSink> = {}): AdminAuditSink {
+  return {
+    id: SINK_ID,
+    name: "datadog",
+    enabled: true,
+    settings: {
+      kind: "otlp",
+      endpoint: "https://otlp.example.com",
+      headersFromEnv: { "DD-API-KEY": "DD_AUDIT_SINK_SECRET" },
+      serviceName: "seamless-auth",
+    },
+    status: {
+      cursorSeq: 10,
+      lagEvents: 0,
+      lastDeliveredAt: CREATED,
+      lastFailure: null,
+      lastFailureAt: null,
+    },
+    createdAt: CREATED,
+    updatedAt: CREATED,
     ...overrides,
   };
 }

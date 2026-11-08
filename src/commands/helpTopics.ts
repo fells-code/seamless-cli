@@ -834,6 +834,163 @@ roles delete <name> [--force]
     ],
   },
   {
+    name: "webhooks",
+    usage: [
+      "seamless webhooks <list|get|create|update|enable|disable|delete|rotate-secret|test|deliveries|delivery|redeliver>",
+    ],
+    sections: [
+      {
+        heading: "webhooks <subcommand>",
+        body: `Signed, retried webhooks (requires an admin role, and auth server v0.23 or
+later). Writes, test and redeliver need a fresh step-up, as for org.
+
+Calls are signed with the Standard Webhooks scheme (webhook-id,
+webhook-timestamp, webhook-signature). Delivery is at least once and
+unordered: dedupe on webhook-id.
+
+webhooks list [--json]
+webhooks get <id> [--json]
+webhooks create <url> --events <type,...> [--description <text>] [--disabled] [--json]
+  • Prints the signing secret once. It cannot be read back
+  • Event types: user.created, user.deleted, user.signed_in, user.recovered,
+    session.revoked, credential.added, credential.removed,
+    organization.member_added, organization.member_updated,
+    organization.member_removed
+webhooks update <id> [--url <url>] [--events <type,...>] [--description <text> | --no-description] [--json]
+  • --events replaces the subscription
+webhooks enable <id> [--json]
+webhooks disable <id> [--json]
+  • Enabling clears why it was disabled (gone, failing or manual)
+webhooks delete <id> [--force]
+  • Also deletes its delivery history
+webhooks rotate-secret <id> [--force] [--json]
+  • Prints the new secret once. The previous one keeps signing beside it
+    for 24 hours. Asks first when a rotation is already in progress, since
+    rotating again stops the older secret at once
+webhooks test <id> [--json]
+  • Sends webhook.test now. Exits 1 when the endpoint does not take it
+webhooks deliveries [--endpoint <id>] [--status <status>] [--event <type>] [--limit <n>] [--cursor <cursor>] [--json]
+  • Newest first, kept for 30 days. --status is pending, succeeded,
+    failed (will retry) or dead (every retry failed)
+  • --json prints { deliveries, nextCursor }. Pass nextCursor back as
+    --cursor for the next page
+webhooks delivery <deliveryId> [--json]
+  • One delivery and the event it carries
+webhooks redeliver <deliveryId> [--json]
+  • One attempt now, with the same webhook-id and body
+
+--force
+  • Skips the confirmation (--yes and -y are accepted aliases)`,
+      },
+    ],
+  },
+  {
+    name: "hooks",
+    usage: ["seamless hooks <list|get|set|delete|rotate-secret|test|invocations>"],
+    sections: [
+      {
+        heading: "hooks <subcommand>",
+        body: `Login hooks: signed calls the instance makes during sign-in (requires an
+admin role, and auth server v0.23 or later). Writes and test need a fresh
+step-up, as for org. One hook per trigger:
+
+  post_login  runs once the factor is proven, before the session exists.
+              It allows or denies
+  pre_token   runs when a token is minted for a new session and on
+              organization switch. It may add claims or deny
+
+Break-glass sign-in and recovery never call a hook.
+
+hooks list [--json]
+hooks get <trigger> [--json]
+hooks set <trigger> [--url <url>] [--timeout <ms>] [--failure-mode open|closed] [--enable | --disable] [--json]
+  • Creates the hook, or changes only the settings given
+  • A new hook needs --url, and defaults to a 2000 ms timeout, closed,
+    and enabled. Prints the signing secret once, when it creates the hook
+  • closed fails the sign-in when the hook is down, slow or answers
+    badly; open lets it continue without the hook
+  • --timeout is 100 to 5000 ms
+hooks delete <trigger> [--force]
+hooks rotate-secret <trigger> [--force] [--json]
+  • As for webhooks rotate-secret
+hooks test <trigger> [--json]
+  • One signed call with a placeholder user. Exits 1 when it fails
+hooks invocations <trigger> [--outcome <outcome>] [--limit <n>] [--json]
+  • Newest first, kept for 30 days. --outcome is allowed, denied,
+    failed_open or failed_closed
+
+--force
+  • Skips the confirmation (--yes and -y are accepted aliases)`,
+      },
+    ],
+  },
+  {
+    name: "claims",
+    usage: ["seamless claims <list|get|set|delete>"],
+    sections: [
+      {
+        heading: "claims <list|get|set|delete>",
+        body: `Static custom claims added to access tokens (requires an admin role, and
+auth server v0.23 or later). Writes need a fresh step-up, as for org.
+
+A source is instance_role, organization_role or oidc_client, and a name: the
+role name or the client id. Instance and organization role claims reach
+first-party tokens; client claims reach that client's OpenID Provider
+tokens. A later source wins for the same name: instance role, organization
+role, client, then the pre_token hook.
+
+claims list [--json]
+claims get <kind> <name> [--json]
+claims set <kind> <name> (<json> | --file <path>) [--force] [--json]
+  • Replaces the whole set, such as '{"tier":"gold"}'. Asks before
+    removing a claim, unless --force
+  • Names are lower case letters, digits and underscores. Reserved names
+    (sub, roles, email and the like, and seamless_ or org_ prefixes) are
+    refused, as are values nested deeper than 3 levels
+  • A token holds 1 KiB of custom claims, permissions and organization
+    roles together. Over that, permissions are left out first
+claims delete <kind> <name> [--force]
+
+--force
+  • Skips the confirmation (--yes and -y are accepted aliases)`,
+      },
+    ],
+  },
+  {
+    name: "audit-sinks",
+    usage: ["seamless audit-sinks <list|get|create|update|delete|test>"],
+    sections: [
+      {
+        heading: "audit-sinks <list|get|create|update|delete|test>",
+        body: `Stream the audit log to a SIEM (requires an admin role, and auth server
+v0.23 or later). Writes and test need a fresh step-up, as for org. Each
+record carries the hash chain, so it verifies downstream like an export.
+
+audit-sinks list [--json]
+  • With how many events each sink is behind
+audit-sinks get <id> [--json]
+audit-sinks create <name> --kind otlp --endpoint <url> [--header Name=ENV_VAR]... [--service-name <name>]
+audit-sinks create <name> --kind syslog --host <host> [--port <n>] [--transport tls|tcp] [--app-name <name>] [--facility <n>] [--tls-ca-env <VAR>] [--tls-client-cert-env <VAR>] [--tls-client-key-env <VAR>]
+  • Both also take [--start-after-seq <n>] [--disabled] [--json]
+  • otlp posts OTLP/HTTP JSON to <endpoint>/v1/logs. syslog is RFC 5424
+    over TLS; tcp only outside production
+  • Credentials are never stored: name env vars on the auth server that
+    end in _AUDIT_SINK_SECRET
+  • Starts after the newest event, or replays from --start-after-seq
+audit-sinks update <id> [--name <name>] [--enable | --disable] [settings] [--json]
+  • Settings flags are laid over the current ones. --header replaces
+    every header. A different --kind starts the settings from scratch
+  • The cursor is kept, so a sink turned back on resumes where it stopped
+audit-sinks delete <id> [--force]
+audit-sinks test <id> [--json]
+  • Sends one record marked as a test. Exits 1 when it fails
+
+--force
+  • Skips the confirmation on delete (--yes and -y are accepted aliases)`,
+      },
+    ],
+  },
+  {
     name: "clients",
     usage: [
       "seamless clients <list|get|create|update|rotate-secret|keys|resources|delete>",

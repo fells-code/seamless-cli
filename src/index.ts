@@ -20,6 +20,10 @@ import { runPermissions } from "./commands/permissions.js";
 import { runClients } from "./commands/clients.js";
 import { runResources } from "./commands/resources.js";
 import { runRoles } from "./commands/roles.js";
+import { runWebhooks } from "./commands/webhooks.js";
+import { runHooks } from "./commands/hooks.js";
+import { runClaims } from "./commands/claims.js";
+import { runAuditSinks } from "./commands/auditSinks.js";
 import { runApps } from "./commands/apps.js";
 import { runMigrate } from "./commands/migrate.js";
 import { runTemplates } from "./commands/templates.js";
@@ -145,6 +149,26 @@ async function main() {
 
   if (command === "roles") {
     await runRoles(args.slice(1));
+    return;
+  }
+
+  if (command === "webhooks") {
+    await runWebhooks(args.slice(1));
+    return;
+  }
+
+  if (command === "hooks") {
+    await runHooks(args.slice(1));
+    return;
+  }
+
+  if (command === "claims") {
+    await runClaims(args.slice(1));
+    return;
+  }
+
+  if (command === "audit-sinks") {
+    await runAuditSinks(args.slice(1));
     return;
   }
 

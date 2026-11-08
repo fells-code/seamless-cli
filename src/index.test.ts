@@ -21,6 +21,10 @@ vi.mock("./commands/users.js", () => ({ runUsers: vi.fn() }));
 vi.mock("./commands/org.js", () => ({ runOrg: vi.fn() }));
 vi.mock("./commands/permissions.js", () => ({ runPermissions: vi.fn() }));
 vi.mock("./commands/roles.js", () => ({ runRoles: vi.fn() }));
+vi.mock("./commands/webhooks.js", () => ({ runWebhooks: vi.fn() }));
+vi.mock("./commands/hooks.js", () => ({ runHooks: vi.fn() }));
+vi.mock("./commands/claims.js", () => ({ runClaims: vi.fn() }));
+vi.mock("./commands/auditSinks.js", () => ({ runAuditSinks: vi.fn() }));
 vi.mock("./commands/apps.js", () => ({ runApps: vi.fn() }));
 vi.mock("./commands/templates.js", () => ({ runTemplates: vi.fn() }));
 
@@ -252,6 +256,10 @@ describe("index dispatcher", () => {
     ["org", "./commands/org.js", "runOrg"],
     ["permissions", "./commands/permissions.js", "runPermissions"],
     ["roles", "./commands/roles.js", "runRoles"],
+    ["webhooks", "./commands/webhooks.js", "runWebhooks"],
+    ["hooks", "./commands/hooks.js", "runHooks"],
+    ["claims", "./commands/claims.js", "runClaims"],
+    ["audit-sinks", "./commands/auditSinks.js", "runAuditSinks"],
     ["apps", "./commands/apps.js", "runApps"],
     ["templates", "./commands/templates.js", "runTemplates"],
   ])("dispatches %s with the remaining args", async (cmd, modPath, fnName) => {

@@ -1,7 +1,11 @@
 import kleur from "kleur";
 import type { z } from "zod";
 import { ReauthRequiredError } from "../core/authClient.js";
-import { AdminApiError, PermissionError } from "../core/admin.js";
+import {
+  AdminApiError,
+  PermissionError,
+  type CalloutTestResult,
+} from "../core/admin.js";
 import { extractFlag } from "../core/args.js";
 
 const DEFAULT_LIMIT = 50;
@@ -44,6 +48,46 @@ export function validate<T>(schema: z.ZodType<T>, value: unknown): T {
   );
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The id positional of a command, which the API takes only as a UUID. */
+export function idArg(rest: string[], usage: string, what: string): string {
+  const id = positionals(rest)[0];
+  if (!id) fail(usage);
+  if (!UUID.test(id)) fail(`${id} is not a valid ${what} id. Ids are UUIDs; list them to find one.`);
+  return id;
+}
+
+export function printSigningSecret(secret: string): void {
+  console.log(kleur.yellow("Signing secret (shown once, store it now):"));
+  console.log(secret);
+}
+
+/**
+ * Prints a test call's result. A failed test exits 1, with or without --json, so a
+ * script can tell the destination is not taking calls.
+ */
+export function reportTestResult(result: CalloutTestResult, json: boolean, what: string): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else if (result.ok) {
+    console.log(
+      kleur.green(
+        `${what} succeeded (${result.statusCode ?? "no status"}, ${result.durationMs} ms).`,
+      ),
+    );
+  } else {
+    console.error(
+      kleur.red(
+        `${what} failed: ${result.failure ?? "unknown"}${
+          result.statusCode !== null ? ` (${result.statusCode})` : ""
+        }, after ${result.durationMs} ms.`,
+      ),
+    );
+  }
+  if (!result.ok) process.exit(1);
+}
+
 export function parseList(value?: string): string[] | undefined {
   if (value === undefined) return undefined;
   return value
@@ -79,6 +123,15 @@ function pageNumber(
   }
 
   return value;
+}
+
+/** Reads `--limit` off a list command that pages by cursor rather than offset. */
+export function parseLimit(args: string[]): { limit: number; rest: string[] } {
+  const limitFlag = extractFlag(args, "limit");
+  return {
+    limit: pageNumber(limitFlag.value, "limit", DEFAULT_LIMIT, { min: 1, max: LIMIT_MAX }),
+    rest: limitFlag.rest,
+  };
 }
 
 /** Reads `--limit` and `--offset` off a list command, and the arguments left over. */
