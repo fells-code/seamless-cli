@@ -175,6 +175,10 @@ seamless org members remove "$org_id" "$grace_id" --force >/dev/null
 members | jq -e --arg g "$grace_id" 'any(.[]; .userId == $g) | not' >/dev/null ||
   fail "members remove left the member in place."
 seamless org members add "$org_id" --email grace@example.com --roles member >/dev/null
+# Since auth server v0.23 a membership can only hold a role from the catalogue.
+seamless roles create billing --description "Manages billing" >/dev/null
+seamless roles list --kind organization --json | jq -e 'any(.[]; .name == "billing")' >/dev/null ||
+  fail "roles create did not add billing to the organization role catalogue."
 seamless org members update "$org_id" "$grace_id" --roles member,billing >/dev/null
 members | jq -e --arg g "$grace_id" \
   'any(.[]; .userId == $g and (.roles | sort) == ["billing", "member"])' >/dev/null ||
