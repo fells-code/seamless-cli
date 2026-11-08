@@ -333,4 +333,29 @@ describe("audit-sinks delete and test", () => {
     await exits(["test", SINK_ID, "--json"]);
     expect(lastJson()).toMatchObject({ ok: false, failure: "connection_failed" });
   });
+
+  it("names a sink whose settings cannot be used, such as an unset secret env var", async () => {
+    vi.mocked(testAuditSink).mockResolvedValue({
+      ok: false,
+      failure: "misconfigured",
+      statusCode: null,
+      durationMs: 0,
+    });
+    await exits(["test", SINK_ID]);
+    expect(errors()).toContain("Test record failed: misconfigured, after 0 ms.");
+
+    vi.mocked(listAuditSinks).mockResolvedValue([
+      apiAuditSink({
+        status: {
+          cursorSeq: null,
+          lagEvents: 4,
+          lastDeliveredAt: null,
+          lastFailure: "misconfigured",
+          lastFailureAt: "2026-07-13T11:00:00.000Z",
+        },
+      }),
+    ]);
+    await runAuditSinks(["list"]);
+    expect(logs()).toContain("failing: misconfigured at 2026-07-13T11:00:00.000Z");
+  });
 });
