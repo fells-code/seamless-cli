@@ -792,6 +792,37 @@ seamless roles delete billing                             # confirms; refused wh
 `roles set` replaces everything the role grants. A change reaches a holder on their next access
 token.
 
+### Admin: webhooks, login hooks, custom claims and audit sinks
+
+These need an admin role and auth server v0.23 or later; an older instance gets a message saying
+so. Webhook and login hook calls are signed with the Standard Webhooks scheme, and each signing
+secret is printed once, when it is issued.
+
+```bash
+seamless webhooks create https://example.com/hooks/seamless --events user.created,user.deleted
+seamless webhooks list
+seamless webhooks test <id>                               # exits 1 when the endpoint refuses it
+seamless webhooks deliveries --status dead --json         # pass nextCursor back as --cursor
+seamless webhooks redeliver <deliveryId>
+seamless webhooks rotate-secret <id>                      # the old secret signs for 24 more hours
+seamless webhooks disable <id>
+
+seamless hooks set post_login --url https://example.com/hooks/login --failure-mode open
+seamless hooks set pre_token --disable                    # changes only what a flag names
+seamless hooks invocations post_login --outcome denied
+
+seamless claims set organization_role billing '{"tier":"gold"}'   # replaces the set; confirms removals
+seamless claims list
+
+seamless audit-sinks create datadog --kind otlp --endpoint https://otlp.example.com \
+  --header DD-API-KEY=DD_AUDIT_SINK_SECRET
+seamless audit-sinks test <id>
+```
+
+A login hook fails closed by default: while it is down, the sign-ins it runs on fail. Break-glass
+sign-in and recovery never call a hook. Audit sink credentials are never stored: a sink names env
+vars on the auth server that end in `_AUDIT_SINK_SECRET`.
+
 ### Admin: OpenID Provider clients and resources
 
 Register the OIDC clients that sign users in through the OpenID Provider, and the APIs
@@ -826,7 +857,8 @@ weaker than registered keys and need `allow_client_secrets` on the instance.
 From auth server v0.20, every admin write needs a fresh step-up on the session: `config set`,
 `config apply`, `config oauth-providers add|update|refresh|remove`, `config hosted-ui set|reset`, `users delete`,
 `users prepare-device-replacement`, the `org` and `org members` writes, the `clients` and
-`resources` writes, the `permissions` and `roles` writes, and `migrate`. When the
+`resources` writes, the `permissions` and `roles` writes, the `webhooks`, `hooks`, `claims` and
+`audit-sinks` writes (including `test` and `redeliver`), and `migrate`. When the
 instance asks for one, the CLI prompts for the code from your authenticator app, verifies it on the
 same session (`POST /totp/verify-mfa`), and retries the write once.
 
