@@ -1,5 +1,12 @@
 # seamless-cli
 
+## 0.30.0
+
+### Minor Changes
+
+- 7b2d4ea: Add `seamless webhooks`, `seamless hooks`, `seamless claims` and `seamless audit-sinks` to manage signed webhooks and their deliveries, `post_login` and `pre_token` login hooks, static custom claims, and audit log streaming to OTLP and syslog (syslog needs auth server v0.23.1, which v0.23.0 refuses). Signing secrets are printed once, when they are issued. `hooks set` and `audit-sinks update` change only the settings a flag names, and `claims set` asks before removing a claim. Every command takes `--json`. They need auth server v0.23 or later, and an older instance gets a message saying so.
+- 612b37b: New projects scaffold Seamless Auth API v0.23.0, the admin dashboard v0.14.0 and the starter templates v0.22.0, so a fresh project has roles and permissions in its tokens, the starters' permission guard demo, and the console's Roles and Integrations pages. Existing projects keep the images they were scaffolded with.
+
 ## 0.29.0
 
 ### Minor Changes
