@@ -514,6 +514,15 @@ describe("audit sinks", () => {
     expect(await message(testAuditSink(client, SINK_ID))).toBe(expected);
   });
 
+  it("passes on the refusal of a syslog sink by auth server v0.23.0", async () => {
+    const refusal =
+      "Syslog audit sinks are not available in this release; they arrive in Seamless Auth 0.23.1. Use an OTLP sink until then.";
+    const { client } = fakeClient(() => response(400, { error: refusal }));
+    expect(
+      await message(createAuditSink(client, { name: "a", settings: syslog, enabled: true })),
+    ).toBe(`Could not create audit sink (400: ${refusal.slice(0, -1)}).`);
+  });
+
   it("reports any other failure on every sink route", async () => {
     const { client } = fakeClient(() => response(500, null));
     expect(await message(listAuditSinks(client))).toBe("Could not list audit sinks (500).");
