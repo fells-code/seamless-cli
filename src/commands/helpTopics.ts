@@ -974,6 +974,8 @@ audit-sinks create <name> --kind syslog --host <host> [--port <n>] [--transport 
   • Both also take [--start-after-seq <n>] [--disabled] [--json]
   • otlp posts OTLP/HTTP JSON to <endpoint>/v1/logs. syslog is RFC 5424
     over TLS; tcp only outside production
+  • syslog needs auth server v0.23.1 or later. v0.23.0 refuses it until
+    its records carry the registered structured data ID
   • Credentials are never stored: name env vars on the auth server that
     end in _AUDIT_SINK_SECRET
   • Starts after the newest event, or replays from --start-after-seq
