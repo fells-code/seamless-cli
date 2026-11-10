@@ -49,12 +49,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for name in seamless-db seamless-auth api web; do
-  if docker ps -a --format '{{.Names}}' | grep -qx "$name"; then
-    fail "a container named '$name' already exists. The generated compose pins that name."
-  fi
-done
-
 PHASES=()
 phase_start=0
 start_phase() {

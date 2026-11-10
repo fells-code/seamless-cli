@@ -64,12 +64,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for name in seamless-db seamless-auth; do
-  if docker ps -a --format '{{.Names}}' | grep -qx "$name"; then
-    fail "a container named '$name' already exists. The generated compose pins that name, so this cannot run beside it."
-  fi
-done
-
 echo "==> Scaffolding into $APP_DIR"
 cd "$WORKDIR"
 # Retried for the same reason as scaffold-smoke.sh: init downloads from GitHub, and a

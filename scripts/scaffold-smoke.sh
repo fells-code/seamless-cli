@@ -48,18 +48,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# The generated compose pins container_name, so a leftover from another stack wedges
-# this with a raw Docker conflict. Say what is wrong instead, and never remove
-# containers this script did not create: on a developer's machine they are their work.
-for name in seamless-db seamless-auth; do
-  if docker ps -a --format '{{.Names}}' | grep -qx "$name"; then
-    echo "FAIL: a container named '$name' already exists." >&2
-    echo "      The generated compose pins that name, so this cannot run beside it." >&2
-    echo "      Stop it first, or run this on a machine without a Seamless stack up." >&2
-    exit 1
-  fi
-done
-
 echo "==> Scaffolding into $APP_DIR"
 cd "$WORKDIR"
 # `init` downloads the template registry, the templates archive, and the auth

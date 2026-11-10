@@ -297,14 +297,13 @@ describe("generateDockerCompose", () => {
     );
 
     expect(compose).toContain(`image: ${POSTGRES_IMAGE}`);
-    expect(compose).toContain("container_name: seamless-db");
     expect(compose).toContain("build:\n      context: ./auth");
     expect(compose).toContain("env_file:\n      - ./auth/.env");
     expect(compose).toContain("DB_HOST: db");
     expect(compose).toContain("ISSUER: http://auth:5312");
     expect(compose).not.toContain("existing-token");
     expect(compose).toContain("JWKS_KID: existing-kid");
-    expect(compose).toContain("container_name: web");
+    expect(compose).toContain("\n  web:\n    build: ./web");
     expect(compose).toContain(`image: ${SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE}`);
     expect(compose).not.toContain("build: ./admin");
     expect(compose).toContain("volumes:\n  pgdata:");
@@ -379,7 +378,7 @@ describe("generateDockerCompose", () => {
       path.join(tmpDir, "docker-compose.yml"),
       "utf-8",
     );
-    expect(compose).not.toContain("container_name: admin");
+    expect(compose).not.toContain("\n  admin:");
     expect(compose).toContain("UI_ORIGINS: http://localhost:5173\n");
   });
 
@@ -395,7 +394,7 @@ describe("generateDockerCompose", () => {
       path.join(tmpDir, "docker-compose.yml"),
       "utf-8",
     );
-    expect(compose).not.toContain("container_name: admin");
+    expect(compose).not.toContain("\n  admin:");
   });
 
   it("builds a source-mode admin service and keeps 5174 in the api CORS origins", async () => {
@@ -410,8 +409,7 @@ describe("generateDockerCompose", () => {
       path.join(tmpDir, "docker-compose.yml"),
       "utf-8",
     );
-    expect(compose).toContain("container_name: admin");
-    expect(compose).toContain("build: ./admin");
+    expect(compose).toContain("\n  admin:\n    build: ./admin");
     expect(compose).not.toContain("AUTH_MODE");
     expect(compose).toContain("- ./admin:/app");
     expect(compose).toContain('- "127.0.0.1:5174:8080"');
@@ -519,6 +517,55 @@ describe("generateDockerCompose", () => {
     if (process.platform !== "win32") {
       expect(fs.statSync(envPath).mode & 0o777).toBe(0o600);
     }
+  });
+});
+
+// Two scaffolds under one directory name (everyone who follows the quickstart
+// twice has two "my-app" projects) used to be one Compose project: the second
+// reused the first one's built images, which then crashed against the new
+// templates, and its database volume.
+describe("generateDockerCompose project name", () => {
+  function scaffold(dir: string): string {
+    fs.mkdirSync(dir, { recursive: true });
+    writeAuthEnvFixture(dir, "SEAMLESS_JWKS_ACTIVE_KID");
+    return dir;
+  }
+
+  async function composeIn(dir: string): Promise<string> {
+    await generateDockerCompose(dir, { authMode: "local", adminMode: "api" });
+    return fs.readFileSync(path.join(dir, "docker-compose.yml"), "utf-8");
+  }
+
+  it("names the project after the directory plus a random suffix", async () => {
+    const compose = await composeIn(scaffold(path.join(tmpDir, "My App")));
+
+    expect(compose).toMatch(/^name: my-app-[0-9a-f]{6}$/m);
+  });
+
+  it("gives two scaffolds with the same directory name different projects", async () => {
+    const first = await composeIn(scaffold(path.join(tmpDir, "one", "my-app")));
+    const second = await composeIn(scaffold(path.join(tmpDir, "two", "my-app")));
+
+    const name = (compose: string) => /^name: (\S+)$/m.exec(compose)?.[1];
+    expect(name(first)).toMatch(/^my-app-/);
+    expect(name(second)).toMatch(/^my-app-/);
+    expect(name(first)).not.toBe(name(second));
+  });
+
+  it("keeps the name an earlier run wrote, so a re-run keeps its volumes", async () => {
+    const dir = scaffold(path.join(tmpDir, "rerun"));
+    const first = await composeIn(dir);
+    const second = await composeIn(dir);
+
+    expect(/^name: (\S+)$/m.exec(second)?.[1]).toBe(
+      /^name: (\S+)$/m.exec(first)?.[1],
+    );
+  });
+
+  it("names no containers, so two projects can run side by side", async () => {
+    const compose = await composeIn(scaffold(path.join(tmpDir, "names")));
+
+    expect(compose).not.toContain("container_name");
   });
 });
 

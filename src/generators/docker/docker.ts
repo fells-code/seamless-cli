@@ -5,6 +5,10 @@ import { parseEnv, parseEnvString, writePrivateFile } from "../../core/env.js";
 import { generateLocalJwksKid } from "../../core/jwksKid.js";
 import { generateSecret } from "../../core/secrets.js";
 import {
+  existingComposeProjectName,
+  uniqueComposeProjectName,
+} from "../../core/composeName.js";
+import {
   buildOAuthAuthEnv,
   withLoginMethod,
   type CollectedOAuthProvider,
@@ -35,10 +39,13 @@ export async function generateDockerCompose(
     kid?: string;
   },
 ) {
-  const { compose, shared } = await buildCompose(options, root);
+  const composePath = path.join(root, "docker-compose.yml");
+  const projectName =
+    existingComposeProjectName(composePath) ?? uniqueComposeProjectName(root);
+  const { compose, shared } = await buildCompose(options, root, projectName);
 
   fs.writeFileSync(
-    path.join(root, "docker-compose.yml"),
+    composePath,
     compose.trim() + "\n",
   );
 
@@ -85,6 +92,7 @@ async function buildCompose(
     kid?: string;
   },
   root: string,
+  projectName: string,
 ) {
   const { authMode, adminMode, oauth, ownerEmail, fullStack, kid } = options;
 
@@ -121,6 +129,12 @@ async function buildCompose(
 # only. The auth server is configured to return OTP codes in the response for
 # local login, which would otherwise be an authentication bypass for anyone on
 # the same network. Drop the 127.0.0.1 prefix only if you know you want that.
+#
+# The project name keeps this stack's images, database and signing keys apart from
+# any other Seamless project on this machine, including an earlier one scaffolded
+# under the same directory name. Keep it unique if you change it.
+name: ${projectName}
+
 services:
 ${services.join("\n\n")}
 
@@ -135,7 +149,6 @@ function dbService() {
   return `
   db:
     image: ${POSTGRES_IMAGE}
-    container_name: seamless-db
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -174,7 +187,6 @@ async function authService(
     return {
       service: `
   auth:
-    container_name: seamless-auth
     build:
       context: ./auth
       dockerfile: Dockerfile.dev
@@ -229,7 +241,6 @@ function apiUiOrigins(adminMode: AdminMode): string {
 function apiService(shared: any, adminMode: AdminMode) {
   return `
   api:
-    container_name: api
     build: ./api
     ports:
       - "127.0.0.1:3000:3000"
@@ -255,7 +266,6 @@ function apiService(shared: any, adminMode: AdminMode) {
 function webService() {
   return `
   web:
-    container_name: web
     build: ./web
     ports:
       - "127.0.0.1:5173:8080"
@@ -283,7 +293,6 @@ function webService() {
 function fullStackWebService(shared: any) {
   return `
   web:
-    container_name: web
     build: ./web
     ports:
       - "127.0.0.1:5173:8080"
@@ -340,7 +349,6 @@ async function authServiceDocker(
     service: `
   auth:
     image: ${SEAMLESS_AUTH_API_IMAGE}
-    container_name: seamless-auth
     ports:
       - "127.0.0.1:5312:5312"
     env_file:
@@ -366,7 +374,6 @@ function adminService(mode: "image" | "source") {
   if (mode === "source") {
     return `
   admin:
-    container_name: admin
     build: ./admin
     ports:
       - "127.0.0.1:5174:8080"
@@ -383,7 +390,6 @@ function adminService(mode: "image" | "source") {
   return `
   admin:
     image: ${SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE}
-    container_name: admin
     ports:
       - "127.0.0.1:5174:8080"
     environment:

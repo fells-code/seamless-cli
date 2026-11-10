@@ -4,6 +4,10 @@ import path from "path";
 import { fetchEnvExample } from "../../core/fetch.js";
 import { formatValue, parseEnvString, writePrivateFile } from "../../core/env.js";
 import { ensureGitignore } from "../../core/gitignore.js";
+import {
+  composeSlug,
+  existingComposeProjectName,
+} from "../../core/composeName.js";
 import { POSTGRES_IMAGE, SEAMLESS_AUTH_API_IMAGE } from "../../core/images.js";
 import { buildAuthEnv } from "./docker.js";
 
@@ -22,36 +26,19 @@ export interface AuthStackOptions {
   ownerEmail?: string;
 }
 
-const COMPOSE_NAME_LINE = /^name:\s*["']?([a-z0-9][a-z0-9_-]*)["']?\s*$/m;
-
 /**
  * The Compose project name for a repository's stack: the repository directory's
- * name, reduced to what Compose accepts (lowercase letters, digits, dashes and
- * underscores, starting with a letter or digit), plus "-seamless".
+ * name, reduced to what Compose accepts, plus "-seamless".
  */
 export function composeProjectName(root: string): string {
-  const base = path
-    .basename(path.resolve(root))
-    .normalize("NFKD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/-{2,}/g, "-")
-    .replace(/^[^a-z0-9]+|[-_]+$/g, "");
-  return `${base || "app"}-seamless`;
-}
-
-// The name an earlier run wrote, so a re-run (or a hand edit) keeps its volumes.
-function existingProjectName(compose: string): string | undefined {
-  if (!fs.existsSync(compose)) return undefined;
-  return COMPOSE_NAME_LINE.exec(fs.readFileSync(compose, "utf-8"))?.[1];
+  return `${composeSlug(root)}-seamless`;
 }
 
 /**
  * Writes a local auth server and its Postgres into `<root>/seamless/`: a compose
  * file, the server's environment (secrets included) in seamless/.env, and a
  * .gitignore that keeps that file out of the repository. Unlike the `init` stack it
- * names no containers and publishes no Postgres port, because an existing project
+ * publishes no Postgres port, because an existing project
  * may run its own database, or another Seamless stack, on the same machine.
  *
  * The compose file names its project. Without that, Compose would name it after the
@@ -62,7 +49,7 @@ export async function generateAuthStack(root: string, options: AuthStackOptions)
   const dir = path.join(root, AUTH_STACK_DIR);
   const composePath = path.join(dir, "docker-compose.yml");
   const replacing = fs.existsSync(composePath);
-  const previousName = existingProjectName(composePath);
+  const previousName = existingComposeProjectName(composePath);
   const projectName = previousName ?? composeProjectName(root);
   fs.mkdirSync(dir, { recursive: true });
 

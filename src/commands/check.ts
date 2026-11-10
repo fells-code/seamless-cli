@@ -2,6 +2,12 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 
+import {
+  describePortConflict,
+  findPortConflicts,
+  stackPorts,
+} from "../core/ports.js";
+
 /**
  * Records results so `--strict` can exit on a failure.
  *
@@ -78,7 +84,8 @@ export async function runCheck(args: string[] = []) {
   } else {
     checkDocker(report);
     checkCompose(root, config, report);
-    checkContainers(config, report);
+    checkContainers(root, config, report);
+    await checkPorts(config, report);
     await checkHealth(config, report);
   }
 
@@ -144,14 +151,18 @@ function isFullStackProject(config: any): boolean {
   return config?.services?.web?.kind === "fullstack" && !config?.services?.api;
 }
 
-function checkContainers(config: any, report: Report) {
+function checkContainers(root: string, config: any, report: Report) {
   // The container that owns /auth: the api service, or the web app when it is
-  // its own backend.
+  // its own backend. Asked of this project's compose file, since the generated
+  // stack names no containers and another project's "api" would otherwise count.
   const backend = isFullStackProject(config) ? "web" : "api";
   try {
-    const output = execSync("docker ps --format '{{.Names}}'").toString();
+    const output = execSync("docker compose ps --services --status running", {
+      cwd: root,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).toString();
 
-    if (!output.includes(backend)) {
+    if (!output.split(/\r?\n/).includes(backend)) {
       report.fail(
         `${backend === "web" ? "Web" : "API"} container not running`,
         "Run: docker compose up\n",
@@ -160,7 +171,32 @@ function checkContainers(config: any, report: Report) {
       report.ok("Containers running");
     }
   } catch {
-    report.fail("Failed to check containers");
+    // `docker --version` above passes without a daemon, so this is where a
+    // stopped Docker shows up.
+    report.fail(
+      "Failed to check containers",
+      "Is Docker running? Start it, then run: docker compose up\n",
+    );
+  }
+}
+
+// The health checks below would pass against another program holding a port on
+// [::1], where a browser's localhost goes first, so look for one explicitly.
+async function checkPorts(config: any, report: Report) {
+  const conflicts = await findPortConflicts(
+    stackPorts({
+      fullStack: isFullStackProject(config),
+      adminMode: config?.services?.admin?.mode,
+    }),
+    { includeIpv4: false },
+  );
+  if (conflicts.length === 0) {
+    report.ok("No other program holds the stack's ports");
+    return;
+  }
+  for (const conflict of conflicts) {
+    const [what, remedy] = describePortConflict(conflict);
+    report.fail(what, remedy);
   }
 }
 
