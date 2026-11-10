@@ -39,6 +39,7 @@ import { ensureGitignore, SECRET_IGNORES } from "../core/gitignore.js";
 import { fetchActiveJwksKid, resolveLocalJwksKid } from "../core/jwksKid.js";
 
 import { CancelledError } from "../core/cancel.js";
+import { findPortConflicts } from "../core/ports.js";
 import { runCLI } from "./init.js";
 
 // Defensive: templates.ts transitively imports ../index.js (which runs main() at
@@ -93,6 +94,11 @@ vi.mock("../generators/config/config.js", () => ({
 }));
 vi.mock("../generators/agents/agents.js", () => ({
   generateAgentsFiles: vi.fn(),
+}));
+// Real probes would find whatever this machine happens to run on 5173 or 5432.
+vi.mock("../core/ports.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../core/ports.js")>()),
+  findPortConflicts: vi.fn(),
 }));
 vi.mock("../core/output.js", () => ({
   printManagedSuccessOutput: vi.fn(),
@@ -256,6 +262,7 @@ beforeEach(() => {
   vi.mocked(chooseScaffoldTarget).mockResolvedValue("managed");
   vi.mocked(getApplicationDatabase).mockResolvedValue(null);
   vi.mocked(confirmLocalFallback).mockResolvedValue(undefined);
+  vi.mocked(findPortConflicts).mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -533,6 +540,66 @@ describe("scaffoldLocal", () => {
       }),
     );
     expect(printSuccessOutput).toHaveBeenCalled();
+  });
+
+  // A Vite dev server on [::1]:5173 took http://localhost:5173 from the scaffolded
+  // web app, and nothing said so.
+  it("warns after scaffolding about every stack port another program holds", async () => {
+    vi.mocked(runProjectSetupPrompts).mockResolvedValue({
+      webTemplateId: "web-basic",
+      apiTemplateId: "api-express",
+      authMode: "docker",
+      adminMode: "api",
+      includeAdmin: true,
+      ownerEmail: "dev@example.com",
+    } as never);
+    vi.mocked(generateDockerCompose).mockResolvedValue({
+      apiToken: "docker-token",
+      kid: "docker-kid",
+    } as never);
+    vi.mocked(findPortConflicts).mockResolvedValue([
+      { port: 5173, service: "web", hosts: ["::1"] },
+      { port: 5432, service: "db", hosts: ["127.0.0.1"] },
+    ]);
+
+    await runCLI(undefined, []);
+
+    expect(findPortConflicts).toHaveBeenCalledWith(
+      [
+        { port: 5173, service: "web" },
+        { port: 3000, service: "api" },
+        { port: 5312, service: "auth" },
+        { port: 5432, service: "db" },
+      ],
+      { includeIpv4: true },
+    );
+    const out = logs.join("\n");
+    expect(out).toContain("Before docker compose up:");
+    expect(out).toContain("http://localhost:5173 opens that program");
+    expect(out).toContain("Port 5432 (db) is already in use");
+    expect(vi.mocked(printSuccessOutput).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(findPortConflicts).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("prints no port warning when every port is free", async () => {
+    vi.mocked(runProjectSetupPrompts).mockResolvedValue({
+      webTemplateId: "web-basic",
+      apiTemplateId: "api-express",
+      authMode: "docker",
+      adminMode: "api",
+      includeAdmin: true,
+      ownerEmail: "dev@example.com",
+    } as never);
+    vi.mocked(generateDockerCompose).mockResolvedValue({
+      apiToken: "docker-token",
+      kid: "docker-kid",
+    } as never);
+
+    await runCLI(undefined, []);
+
+    expect(findPortConflicts).toHaveBeenCalled();
+    expect(logs.join("\n")).not.toContain("Before docker compose up");
   });
 
   it("puts the app's service token in api/.env and git-ignores every .env", async () => {

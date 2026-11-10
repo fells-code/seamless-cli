@@ -23,6 +23,11 @@ import {
 } from "../core/output.js";
 import { generateSeamlessConfig } from "../generators/config/config.js";
 import {
+  describePortConflict,
+  findPortConflicts,
+  stackPorts,
+} from "../core/ports.js";
+import {
   generateAgentsFiles,
   type AgentsTemplate,
 } from "../generators/agents/agents.js";
@@ -682,6 +687,26 @@ async function scaffoldLocal(
   });
 
   printOAuthNextSteps(oauthProviders);
+
+  await warnOnPortConflicts(fullStack, answers.adminMode);
+}
+
+// Nothing is running yet, so anything on a port the stack publishes belongs to
+// another program. Warned rather than refused: the user can stop it before
+// docker compose up, and the scaffold itself is fine.
+async function warnOnPortConflicts(fullStack: boolean, adminMode: string) {
+  const conflicts = await findPortConflicts(
+    stackPorts({ fullStack, adminMode }),
+    { includeIpv4: true },
+  );
+  if (conflicts.length === 0) return;
+
+  console.log(kleur.yellow("Before docker compose up:\n"));
+  for (const conflict of conflicts) {
+    const [what, remedy] = describePortConflict(conflict);
+    console.log(kleur.yellow(`  • ${what}`));
+    console.log(kleur.yellow(`    ${remedy}\n`));
+  }
 }
 
 // Existing-project integration: wire the managed credentials into an already

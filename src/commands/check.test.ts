@@ -3,6 +3,7 @@ import fs from "fs";
 import { execSync } from "child_process";
 
 import { runCheck } from "./check.js";
+import { findPortConflicts } from "../core/ports.js";
 
 vi.mock("fs", () => {
   const fns = {
@@ -14,6 +15,11 @@ vi.mock("fs", () => {
 
 vi.mock("child_process", () => ({
   execSync: vi.fn(),
+}));
+
+vi.mock("../core/ports.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../core/ports.js")>()),
+  findPortConflicts: vi.fn(async () => []),
 }));
 
 const CONFIG = {
@@ -45,6 +51,8 @@ beforeEach(() => {
   vi.mocked(fs.existsSync).mockReset();
   vi.mocked(fs.readFileSync).mockReset();
   vi.mocked(execSync).mockReset();
+  vi.mocked(findPortConflicts).mockReset();
+  vi.mocked(findPortConflicts).mockResolvedValue([]);
   // Default global fetch to something the test overrides per-case.
   vi.stubGlobal("fetch", vi.fn());
 });
@@ -67,7 +75,7 @@ function errOutput(): string {
 function allPassing(): void {
   vi.mocked(fs.existsSync).mockReturnValue(true);
   vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(CONFIG) as never);
-  vi.mocked(execSync).mockReturnValue("seamless-api\nseamless-auth" as never);
+  vi.mocked(execSync).mockReturnValue("db\nauth\napi\nweb\n" as never);
   vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
 }
 
@@ -88,9 +96,9 @@ describe("runCheck", () => {
     // config present, web/api dirs present, compose file present.
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(CONFIG));
-    // docker --version and docker ps both succeed; containers include "api".
+    // docker --version and compose ps both succeed; the running services include "api".
     vi.mocked(execSync).mockImplementation((cmd: string) => {
-      if (String(cmd).includes("docker ps")) {
+      if (String(cmd).includes("compose ps")) {
         return Buffer.from("web\napi\nauth\n");
       }
       return Buffer.from("");
@@ -146,12 +154,12 @@ describe("runCheck", () => {
       return String(p).endsWith("seamless.config.json");
     });
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(CONFIG));
-    // docker --version throws (not installed); docker ps returns names without "api".
+    // docker --version throws (not installed); compose ps lists no "api" service.
     vi.mocked(execSync).mockImplementation((cmd: string) => {
       if (String(cmd).includes("docker --version")) {
         throw new Error("no docker");
       }
-      if (String(cmd).includes("docker ps")) {
+      if (String(cmd).includes("compose ps")) {
         return Buffer.from("web\nauth\n");
       }
       return Buffer.from("");
@@ -267,11 +275,11 @@ describe("runCheck", () => {
     expect(output()).not.toContain("Console");
   });
 
-  it("reports a container check failure when docker ps throws", async () => {
+  it("reports a container check failure when compose ps throws", async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(CONFIG));
     vi.mocked(execSync).mockImplementation((cmd: string) => {
-      if (String(cmd).includes("docker ps")) {
+      if (String(cmd).includes("compose ps")) {
         throw new Error("daemon down");
       }
       return Buffer.from("");
@@ -281,6 +289,63 @@ describe("runCheck", () => {
     await runCheck();
 
     expect(output()).toContain("Failed to check containers");
+    expect(output()).toContain("Is Docker running?");
+  });
+});
+
+describe("runCheck containers and ports", () => {
+  it("asks this project's compose file which services run, not every container", async () => {
+    allPassing();
+    // Another project's container named api must not count for this one.
+    vi.mocked(execSync).mockImplementation((cmd: string) => {
+      if (String(cmd).includes("compose ps")) return Buffer.from("db\nauth\n");
+      return Buffer.from("");
+    });
+
+    await runCheck();
+
+    const call = vi
+      .mocked(execSync)
+      .mock.calls.find(([cmd]) => String(cmd).includes("compose ps"));
+    expect(call?.[0]).toBe("docker compose ps --services --status running");
+    expect(call?.[1]).toMatchObject({ cwd: process.cwd() });
+    expect(output()).toContain("API container not running");
+  });
+
+  it("checks only [::1] while the stack runs, for the ports this project publishes", async () => {
+    allPassing();
+
+    await runCheck();
+
+    expect(findPortConflicts).toHaveBeenCalledWith(
+      [
+        { port: 5173, service: "web" },
+        { port: 3000, service: "api" },
+        { port: 5312, service: "auth" },
+        { port: 5432, service: "db" },
+        { port: 5174, service: "admin" },
+      ],
+      { includeIpv4: false },
+    );
+    expect(output()).toContain("No other program holds the stack's ports");
+  });
+
+  // The quickstart failure this guards: a Vite dev server on [::1]:5173 answered
+  // http://localhost:5173 while every health check passed.
+  it("fails when another program holds a stack port on [::1], and says how to find it", async () => {
+    allPassing();
+    vi.mocked(findPortConflicts).mockResolvedValue([
+      { port: 5173, service: "web", hosts: ["::1"] },
+    ]);
+
+    await expect(runCheck(["--strict"])).rejects.toThrow("process.exit(1)");
+
+    const out = output();
+    expect(out).toContain(
+      "✖ Port 5173 (web) is held on [::1] by another program. Browsers try [::1] first, so http://localhost:5173 opens that program instead of this project's web.",
+    );
+    expect(out).toContain("lsof -nP -iTCP:5173 -sTCP:LISTEN");
+    expect(errOutput()).toContain("1 check failed.");
   });
 });
 
@@ -355,7 +420,7 @@ describe("runCheck on a full-stack project", () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(FULL_STACK));
     vi.mocked(execSync).mockImplementation((cmd: string) =>
-      Buffer.from(String(cmd).includes("docker ps") ? "web\nseamless-auth\n" : ""),
+      Buffer.from(String(cmd).includes("compose ps") ? "web\nseamless-auth\n" : ""),
     );
     vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
 
@@ -374,7 +439,7 @@ describe("runCheck on a full-stack project", () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(FULL_STACK));
     vi.mocked(execSync).mockImplementation((cmd: string) =>
-      Buffer.from(String(cmd).includes("docker ps") ? "seamless-auth\n" : ""),
+      Buffer.from(String(cmd).includes("compose ps") ? "seamless-auth\n" : ""),
     );
     vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
 
