@@ -4,7 +4,7 @@ import { execSync } from "child_process";
 import fs from "fs";
 
 import { runCommand } from "../core/exec.js";
-import { runVerify } from "./verify.js";
+import { resolveApiDir, runVerify } from "./verify.js";
 
 // Every browser profile, as a clean, a log dump, or a teardown passes them.
 const ALL_PROFILES = [
@@ -692,6 +692,30 @@ describe("runVerify: setup failures (thrown before the run)", () => {
   it("aborts when the auth API source cannot be found", async () => {
     vi.mocked(fs.existsSync).mockImplementation((p: never) => !String(p).includes("/fake/api"));
     await expect(runVerify([])).rejects.toThrow(/seamless-auth-api/);
+  });
+
+  it("says what verify is for and points at check when the source is missing", async () => {
+    vi.mocked(fs.existsSync).mockImplementation((p: never) => !String(p).includes("/fake/api"));
+    await expect(runVerify([])).rejects.toThrow(/contributors[\s\S]*seamless check/);
+  });
+
+  it("names no npx cache path when run from an npm install", () => {
+    delete process.env.SEAMLESS_API_DIR;
+    const npxRoot = "/home/me/.npm/_npx/abc123/node_modules/seamless-cli";
+    expect(() => resolveApiDir(npxRoot)).toThrow(/^No seamless-auth-api source to build/);
+    expect(() => resolveApiDir(npxRoot)).not.toThrow(/_npx/);
+    expect(fs.existsSync).not.toHaveBeenCalled();
+  });
+
+  it("uses SEAMLESS_API_DIR even from an npm install", () => {
+    expect(resolveApiDir("/home/me/.npm/_npx/abc123/node_modules/seamless-cli")).toBe(
+      "/fake/api",
+    );
+  });
+
+  it("defaults to a sibling checkout for a linked CLI", () => {
+    delete process.env.SEAMLESS_API_DIR;
+    expect(resolveApiDir("/home/me/git/seamless-cli")).toBe("/home/me/git/seamless-auth-api");
   });
 
   it("aborts when the templates registry is missing", async () => {

@@ -59,15 +59,26 @@ function ensureDocker(): void {
   }
 }
 
+const API_SOURCE_HELP =
+  "  `seamless verify` is the conformance suite for Seamless contributors. It builds\n" +
+  "  the auth server from a clone of https://github.com/fells-code/seamless-auth-api:\n" +
+  "  clone it and set SEAMLESS_API_DIR to that folder.\n" +
+  "  To check a project made by `seamless init`, run: seamless check";
+
 // The auth API is built from local source. Defaults to a sibling checkout so a
-// linked CLI works without extra config; override with SEAMLESS_API_DIR.
-function resolveApiDir(): string {
-  const candidate =
-    process.env.SEAMLESS_API_DIR ?? path.resolve(REPO_ROOT, "..", "seamless-auth-api");
+// linked CLI works without extra config; override with SEAMLESS_API_DIR. An npm
+// install (npx, global) has no sibling worth guessing: it would sit in the package
+// cache, and naming that path only confuses someone who ran verify by mistake.
+export function resolveApiDir(cliRoot: string = REPO_ROOT): string {
+  const fromEnv = process.env.SEAMLESS_API_DIR;
+  const installedFromNpm = cliRoot.split(path.sep).includes("node_modules");
+  if (!fromEnv && installedFromNpm) {
+    throw new Error(`No seamless-auth-api source to build.\n${API_SOURCE_HELP}`);
+  }
+  const candidate = fromEnv ?? path.resolve(cliRoot, "..", "seamless-auth-api");
   if (!fs.existsSync(path.join(candidate, "package.json"))) {
     throw new Error(
-      `Could not find the seamless-auth-api source at ${candidate}.\n` +
-        "  Set SEAMLESS_API_DIR to its local checkout.",
+      `Could not find the seamless-auth-api source at ${candidate}.\n${API_SOURCE_HELP}`,
     );
   }
   return candidate;
