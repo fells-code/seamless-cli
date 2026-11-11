@@ -1,5 +1,13 @@
 # seamless-cli
 
+## 0.30.1
+
+### Patch Changes
+
+- 3525c5d: `seamless init` warns when another program already holds a port the local stack publishes (5173, 3000, 5312, 5432, and 5174 with a separate console), and `seamless check` fails on one. The stack publishes on 127.0.0.1 only, so a Vite dev server on `[::1]:5173` used to take `http://localhost:5173` in the browser while every check passed. Each warning says what the conflict breaks and how to find the program. `check` also asks the project's own compose file which services run, rather than matching container names across every running container.
+- 3525c5d: `seamless init` names each local stack's Compose project after its directory plus a random suffix, and no longer pins container names. A second project scaffolded under a name used before (such as the quickstart's `my-app`) used to share the first one's Compose project, so `docker compose up` ran the old project's built images, which crashed against the new starters (`does not provide an export named 'requirePermission'`), and reused its database. Two scaffolded projects can now also run side by side. Existing projects keep their compose file.
+- 18619ea: `seamless verify` run without a seamless-auth-api checkout now says it is a contributor tool, where to clone the API, and that `seamless check` is the command for a scaffolded project. From an npx or global install it no longer prints a path inside the npm cache, and `seamless verify --help` says the same up front.
+
 ## 0.30.0
 
 ### Minor Changes
