@@ -255,7 +255,10 @@ The code replaces any code sent before and expires in 5 minutes.
     sections: [
       {
         heading: "verify [--local] [--api-only] [--dev] [--filter=<flow>] [--keep-up]",
-        body: `Stand up the auth stack and run the conformance suite across the API and
+        body: `For Seamless contributors: to check a project made by init, use
+seamless check instead.
+
+Stand up the auth stack and run the conformance suite across the API and
 the cookie (adapter) paths. Requires Docker. Builds the auth server from
 a sibling seamless-auth-api checkout (override with SEAMLESS_API_DIR).
 
