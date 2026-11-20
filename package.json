@@ -1,6 +1,6 @@
 {
   "name": "seamless-cli",
-  "version": "0.30.2",
+  "version": "0.30.3",
   "description": "The CLI for Seamless Auth, open source passwordless auth",
   "keywords": [
     "seamless-auth",
