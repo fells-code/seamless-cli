@@ -12,6 +12,8 @@ const { requireAuth, requirePermission } = seamless;
 // on the host and reaches the API through a published port. See CONFORMANCE.md.
 const ISSUER = process.env.AUTH_SERVER_ISSUER ?? process.env.AUTH_SERVER_URL;
 
+const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://localhost:5173";
+
 const captured = new Map();
 const ok = (channel) => ({ accepted: true, provider: "capture", channel });
 
@@ -42,7 +44,7 @@ app.set("trust proxy", 1);
 // CORS must echo its origin and allow cookies. WEB_ORIGIN is the React app host.
 app.use(
   cors({
-    origin: process.env.WEB_ORIGIN ?? "http://localhost:5173",
+    origin: WEB_ORIGIN,
     credentials: true,
   }),
 );
@@ -115,6 +117,10 @@ app.use(
     authServerIssuer: ISSUER,
     audience: ISSUER,
     jwksKid: process.env.JWKS_KID,
+    // The contract pins SameSite=None, which is no longer the adapter default, and
+    // the React app is a different origin from this one, so it is named here.
+    cookieSameSite: "none",
+    allowedOrigins: [WEB_ORIGIN],
     messaging: { handlers, defaults: { appName: "Seamless Verify" } },
   }),
 );
