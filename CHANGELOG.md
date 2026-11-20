@@ -1,5 +1,11 @@
 # seamless-cli
 
+## 0.30.3
+
+### Patch Changes
+
+- 217d561: The verify reference apps now set `cookieSameSite: "none"` and name the React app in `allowedOrigins`, so they keep the conformance contract once the server adapters default to `SameSite=Lax` and refuse cross-origin requests without an allow-list.
+
 ## 0.30.2
 
 ### Patch Changes
