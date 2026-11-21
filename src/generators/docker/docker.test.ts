@@ -303,7 +303,11 @@ describe("generateDockerCompose", () => {
     expect(compose).toContain("ISSUER: http://auth:5312");
     expect(compose).not.toContain("existing-token");
     expect(compose).toContain("JWKS_KID: existing-kid");
-    expect(compose).toContain("\n  web:\n    build: ./web");
+    expect(compose).toContain(
+      "\n  api:\n    build:\n      context: ./api\n      target: dev\n",
+    );
+    // The SPA Dockerfiles end with their nginx stage, which is what runs here.
+    expect(compose).toContain("\n  web:\n    build: ./web\n");
     expect(compose).toContain(`image: ${SEAMLESS_AUTH_ADMIN_DASHBOARD_IMAGE}`);
     expect(compose).not.toContain("build: ./admin");
     expect(compose).toContain("volumes:\n  pgdata:");
@@ -700,6 +704,11 @@ describe("generateDockerCompose for a full-stack web app", () => {
     );
     const web = compose.slice(compose.indexOf("\n  web:"));
 
+    // The template's last stage is production; under the source bind mount only
+    // the dev stage starts.
+    expect(web).toContain(
+      "\n  web:\n    build:\n      context: ./web\n      target: dev\n",
+    );
     expect(compose).not.toContain("\n  api:");
     expect(compose).not.toContain("\n  admin:");
     expect(web).toContain("- ./web/.env");
