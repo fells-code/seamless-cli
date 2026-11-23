@@ -1,12 +1,14 @@
 # The verify harness builds this image with an `sdk` build context: verify/vue-vendor,
 # which holds local @seamless-auth/client and @seamless-auth/vue tarballs on a --local
 # run and nothing otherwise. Without them, the published @seamless-auth/vue is used.
+# The version is pinned rather than `latest`: the CI build cache keys this layer on the
+# command and its build args, so `latest` would keep serving the release it first resolved.
 FROM node:24-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY --from=sdk . /tmp/sdk/
-ARG SEAMLESS_VUE_VERSION=latest
+ARG SEAMLESS_VUE_VERSION=0.5.0
 RUN if ls /tmp/sdk/*.tgz >/dev/null 2>&1; then \
       npm install --no-save /tmp/sdk/*.tgz; \
     else \

@@ -12,13 +12,47 @@ import { expect, Page } from '@playwright/test';
 const capturePath = (recipient: string) =>
   `/api/verify-capture/${encodeURIComponent(recipient)}`;
 
-async function readCapture(page: Page, recipient: string): Promise<string | undefined> {
+async function readCaptureBody(
+  page: Page,
+  recipient: string,
+): Promise<{ token?: unknown; magicLinkUrl?: unknown } | null> {
   const { status, body } = await page.evaluate(async (path) => {
     const res = await fetch(path, { cache: 'no-store' });
     return { status: res.status, body: res.ok ? await res.json() : null };
   }, capturePath(recipient));
   expect(status, `capture readout -> ${status} (is SEAMLESS_VERIFY_CAPTURE set?)`).toBe(200);
+  return body;
+}
+
+async function readCapture(page: Page, recipient: string): Promise<string | undefined> {
+  const body = await readCaptureBody(page, recipient);
   return body?.token ? String(body.token) : undefined;
+}
+
+/**
+ * The magic link the starter captured for `recipient`, as a path on the app's origin
+ * (`/verify-magiclink?token=T#code=C`). Pass the token captured before the request as
+ * `previous` to wait for the new link.
+ */
+export async function readStarterMagicLink(
+  page: Page,
+  recipient: string,
+  previous?: string,
+): Promise<string> {
+  let link: string | undefined;
+  await expect
+    .poll(
+      async () => {
+        const body = await readCaptureBody(page, recipient);
+        if (!body?.magicLinkUrl || String(body.token) === previous) return false;
+        const url = new URL(String(body.magicLinkUrl));
+        link = `${url.pathname}${url.search}${url.hash}`;
+        return true;
+      },
+      { message: `a new magic link captured for ${recipient}`, timeout: 10_000 },
+    )
+    .toBe(true);
+  return link!;
 }
 
 /** The latest code the starter captured for `recipient`, or undefined if none yet. */

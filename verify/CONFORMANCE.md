@@ -61,7 +61,7 @@ everyone.
 | `GET /api/permissions/all` | Pending `permission-guards`. All of `conformance:read`, `conformance:write` |
 | `GET /api/permissions/org` | Pending `permission-guards`. Organization scope, `conformance:org` |
 | `GET /api/permissions/org/:organizationId` | Pending `permission-guards`. Organization scope bound to the route, `conformance:org` |
-| `GET /__captured/:recipient` | The most recent message the adapter delivered to `recipient` (an email address or phone number): `{ "token": "<code or link token>", "magicLinkUrl"?: "..." }`, or `null` |
+| `GET /__captured/:recipient` | The most recent message the adapter delivered to `recipient` (an email address or phone number): `{ "token": "<code or link token>", "magicLinkUrl"?: "..." }`, or `null`. For a magic link, `magicLinkUrl` is the whole delivered link, fragment included |
 
 `/__captured` is a test hook, never part of a real deployment. The adapter must ask the
 API for external delivery (`x-seamless-auth-delivery-mode: external`) and hand each
@@ -76,8 +76,23 @@ proxy" setting must not be used: it makes the client address caller-controlled.
 
 ## What the specs hold an adapter to
 
-**Flows** (cookie transport): email OTP signup and sign-in, magic link (`204` while
-pending, `200` once verified), OAuth against the mock provider, logout (`204`).
+**Flows** (cookie transport): email OTP signup and sign-in, magic link (below), OAuth
+against the mock provider, logout (`204`).
+
+**Magic link.** The delivered link is `<target>?token=T#code=C`. The token is a lookup
+handle in the query string, and the code is the proof, carried in the fragment so it
+never reaches a server, a `Referer` or an access log.
+- `GET /auth/magic-link/check` answers `204` until the link is confirmed, then `200`
+  with the session.
+- `GET /auth/magic-link/verify/:token` never signs in, even on the device that asked.
+  It answers `409 { "error": "confirmation_required", "message", "sameDevice",
+  "requestedFrom" }`, forwarded verbatim. `sameDevice` is `true` for the browser that
+  requested the link, which then confirms without asking.
+- `POST /auth/magic-link/verify/:token/confirm` with `{ "code": "C" }` consumes the link.
+  The adapter forwards the JSON body. A confirm without a code answers `400`, and a wrong
+  code answers `400` and spends the link, so the right code is refused after it.
+- With `magic_link_redirect_uris` empty, a requested `redirectUri` must be exactly
+  `<frontend_url or origin>/verify-magiclink`.
 
 The harness's cookie-transport requests carry `x-seamless-auth-transport: cookie`, as
 the official client's unsafe requests do, so a body-less `POST` or `DELETE` passes the
