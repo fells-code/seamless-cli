@@ -16,6 +16,37 @@ export function readCapturedCode(recipient: string, timeoutMs = 10_000): Promise
 }
 
 /**
+ * The magic link the adapter delivered to `recipient`, polling until present, as a
+ * path the page's baseURL resolves (`/verify-magiclink?token=T#code=C`). The fragment
+ * is kept: it carries the code the confirm needs.
+ */
+export async function readCapturedMagicLink(recipient: string, timeoutMs = 10_000): Promise<string> {
+  const ctx = await request.newContext();
+  try {
+    const url = `${ADAPTER_URL}/__captured/${encodeURIComponent(recipient)}`;
+    const deadline = Date.now() + timeoutMs;
+    let last = 'never set';
+    while (Date.now() < deadline) {
+      const res = await ctx.get(url);
+      if (res.ok()) {
+        const body = await res.json();
+        if (body?.magicLinkUrl) {
+          const link = new URL(String(body.magicLinkUrl));
+          return `${link.pathname}${link.search}${link.hash}`;
+        }
+        last = JSON.stringify(body);
+      } else {
+        last = `status ${res.status()}`;
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    throw new Error(`no captured magic link for ${recipient} within ${timeoutMs}ms (last: ${last})`);
+  } finally {
+    await ctx.dispose();
+  }
+}
+
+/**
  * Poll a capture readout (`{ token }`, or null until something was sent) until it
  * holds a code. The adapter and the full-stack starters each serve one. A readout
  * keeps the latest code per recipient, so pass `previous` to wait for a new one.

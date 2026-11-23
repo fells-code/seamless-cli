@@ -104,22 +104,59 @@ export async function login(ctx: APIRequestContext, identifier: string): Promise
   return body.token as string;
 }
 
-/** Request a magic link; returns the raw token + URL via external delivery. */
+export interface MagicLink {
+  /** Lookup handle from the query string. On its own it signs nobody in. */
+  token: string;
+  /** Proof from the fragment, which never reaches a server, a Referer or an access log. */
+  code: string;
+  url: string;
+}
+
+/** Split a delivered link, `<target>?token=T#code=C`, into its token and code. */
+export function parseMagicLink(magicLinkUrl: string): MagicLink {
+  const url = new URL(magicLinkUrl);
+  const token = url.searchParams.get('token');
+  const code = new URLSearchParams(url.hash.slice(1)).get('code');
+  expect(token, `the link carries ?token= (${magicLinkUrl})`).toBeTruthy();
+  expect(code, `the link carries #code= (${magicLinkUrl})`).toBeTruthy();
+  expect(url.searchParams.has('code'), 'the code stays out of the query string').toBe(false);
+  return { token: token!, code: code!, url: magicLinkUrl };
+}
+
+/** Request a magic link; returns the delivered link via external delivery. */
 export async function requestMagicLink(
   ctx: APIRequestContext,
   ephemeral: string,
-): Promise<{ token: string; magicLinkUrl: string }> {
+): Promise<MagicLink> {
   const res = await ctx.get('/magic-link', {
     headers: { ...bearer(ephemeral), ...EXTERNAL_DELIVERY },
   });
   expect(res.ok(), `magic-link request -> ${res.status()} ${await res.text()}`).toBeTruthy();
   const body = await res.json();
-  expect(body?.delivery?.token, 'external delivery returns the magic-link token').toBeTruthy();
-  return { token: body.delivery.token, magicLinkUrl: body.delivery.magicLinkUrl };
+  expect(body?.delivery?.magicLinkUrl, 'external delivery returns the magic link').toBeTruthy();
+  const link = parseMagicLink(body.delivery.magicLinkUrl);
+  expect(link.token, 'delivery.token is the token in the link').toBe(body.delivery.token);
+  return link;
 }
 
-export function verifyMagicLink(ctx: APIRequestContext, rawToken: string) {
-  return ctx.get(`/magic-link/verify/${rawToken}`);
+/** Open a link. It never signs in: it answers 409 confirmation_required. */
+export function verifyMagicLink(ctx: APIRequestContext, rawToken: string, ephemeral?: string) {
+  return ctx.get(`/magic-link/verify/${rawToken}`, {
+    headers: ephemeral ? bearer(ephemeral) : {},
+  });
+}
+
+/** Confirm a link with the code from its fragment. This is what consumes it. */
+export function confirmMagicLink(
+  ctx: APIRequestContext,
+  rawToken: string,
+  body: { code?: string },
+  ephemeral?: string,
+) {
+  return ctx.post(`/magic-link/verify/${rawToken}/confirm`, {
+    headers: ephemeral ? bearer(ephemeral) : {},
+    data: body,
+  });
 }
 
 export function pollMagicLink(ctx: APIRequestContext, ephemeral: string) {
