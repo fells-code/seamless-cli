@@ -238,10 +238,15 @@ function apiUiOrigins(adminMode: AdminMode): string {
   return web;
 }
 
+// The api and full-stack templates end with their production stage, so a plain
+// `docker build` never ships a dev server. These services bind-mount the source,
+// which would hide that image's compiled output, so they select the dev stage.
 function apiService(shared: any, adminMode: AdminMode) {
   return `
   api:
-    build: ./api
+    build:
+      context: ./api
+      target: dev
     ports:
       - "127.0.0.1:3000:3000"
     env_file:
@@ -293,7 +298,9 @@ function webService() {
 function fullStackWebService(shared: any) {
   return `
   web:
-    build: ./web
+    build:
+      context: ./web
+      target: dev
     ports:
       - "127.0.0.1:5173:8080"
     env_file:
