@@ -1,5 +1,14 @@
 # seamless-cli
 
+## 0.30.4
+
+### Patch Changes
+
+- 2db471c: The generated `docker-compose.yml` now builds the `api` service, and a full-stack `web` service, with `target: dev`. Starting with the templates release that makes the production `runtime` stage the default Docker build target, building without a target would produce the production image under the source bind mount, and the app would fail to start. The SPA `web` service keeps its default nginx stage.
+- 06f78f8: Depends on `@seamless-auth/types` 0.41.0.
+- 78dcd15: `seamless verify` holds the API and adapters to the magic link contract from seamless-auth-api v0.24. Opening a link answers `409 confirmation_required` with `sameDevice`, and only `POST /magic-link/verify/:token/confirm` with the `code` from the link's fragment signs in. New specs check that a confirm with no code or a wrong code is refused, that a wrong code spends the link, and that the adapter forwards the confirm body. The browser specs open the full delivered link and expect a 409 verify followed by a successful confirm. The Angular, Vue and Svelte reference apps are pinned to `@seamless-auth/angular` 0.6.0, `@seamless-auth/vue` 0.5.0 and `@seamless-auth/svelte` 0.5.0, which read the code and confirm on their own.
+- 06f78f8: `seamless verify` holds the API to the step-up and registration contract from seamless-auth-api v0.24. A step-up only accepts a factor enrolled before the session signed in, so the step-up spec and the owner admin helper sign in again after enrolling a factor and step that session up. Registering an address that already has a verified account is answered as an unclaimed sign-up, so the owner signs in through `/login` once the account exists, and the owner admin spec checks that the owner holds the admin role either way. Both work against earlier API releases too.
+
 ## 0.30.3
 
 ### Patch Changes
