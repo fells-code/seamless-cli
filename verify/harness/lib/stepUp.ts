@@ -44,12 +44,18 @@ export async function registerPasskey(
 
 /**
  * Freshens the owner session's step-up, which admin writes require. Uses one passkey
- * derived from OWNER_EMAIL, enrolled the first time it is needed.
+ * derived from OWNER_EMAIL, enrolled the first time it is needed. A step-up only accepts
+ * a factor enrolled before the session signed in, so enrolling it calls `signIn` for a
+ * new session and steps that one up. Returns the access token that was stepped up.
  */
-export async function stepUpOwner(ctx: APIRequestContext, accessToken: string): Promise<void> {
-  const begin = async () => {
+export async function stepUpOwner(
+  ctx: APIRequestContext,
+  accessToken: string,
+  signIn: () => Promise<string>,
+): Promise<string> {
+  const begin = async (token: string) => {
     const res = await ctx.post('/step-up/webauthn/start', {
-      headers: bearer(accessToken),
+      headers: bearer(token),
       data: {},
     });
     if (res.status() === 401) return null;
@@ -61,15 +67,17 @@ export async function stepUpOwner(ctx: APIRequestContext, accessToken: string): 
     return enrolled ? options : null;
   };
 
-  let options = await begin();
+  let token = accessToken;
+  let options = await begin(token);
   if (!options) {
-    await registerPasskey(ctx, accessToken, ownerAuthenticator);
-    options = await begin();
+    await registerPasskey(ctx, token, ownerAuthenticator);
+    token = await signIn();
+    options = await begin(token);
   }
   expect(options, 'step-up offers the owner passkey').toBeTruthy();
 
   const finish = await ctx.post('/step-up/webauthn/finish', {
-    headers: bearer(accessToken),
+    headers: bearer(token),
     data: {
       assertionResponse: ownerAuthenticator.authenticate({
         challenge: options.challenge,
@@ -79,4 +87,5 @@ export async function stepUpOwner(ctx: APIRequestContext, accessToken: string): 
     },
   });
   expect(finish.ok(), `step-up finish -> ${finish.status()} ${await finish.text()}`).toBeTruthy();
+  return token;
 }

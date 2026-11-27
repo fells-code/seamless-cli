@@ -4,9 +4,9 @@ import { APIRequestContext, expect } from '@playwright/test';
 
 import { MOCK_OIDC_ISSUER } from '../mock-oidc';
 import { MOCK_OIDC_PORT, OWNER_EMAIL } from './env';
-import { registerEmail, requestEmailOtp, verifyEmailOtp } from './flows';
+import { ownerAccessToken } from './flows';
 import { SoftwareAuthenticator } from './softwareAuthenticator';
-import { registerPasskey, stepUpOwner } from './stepUp';
+import { registerPasskey } from './stepUp';
 
 // Helpers for the migration cutover path (fells-code/seamless-auth-api#337): a legacy
 // OIDC provider that links imported users by their directory id, prompts them into
@@ -18,19 +18,9 @@ export function bearer(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
 
-/**
- * An admin access token, stepped up for admin writes. Only OWNER_EMAIL is granted admin at signup, so this signs
- * in as the owner; registering an address that already has an account continues
- * that account, so it works whether or not the owner spec has run first.
- */
+/** An admin access token, stepped up for admin writes. Only OWNER_EMAIL is admin at signup. */
 export async function ownerAdminToken(ctx: APIRequestContext): Promise<string> {
-  const ephemeral = await registerEmail(ctx, OWNER_EMAIL);
-  const code = await requestEmailOtp(ctx, ephemeral);
-  const res = await verifyEmailOtp(ctx, ephemeral, code);
-  expect(res.ok(), `owner sign-in -> ${res.status()} ${await res.text()}`).toBeTruthy();
-  const { token } = (await res.json()) as { token: string };
-  await stepUpOwner(ctx, token);
-  return token;
+  return ownerAccessToken(ctx, OWNER_EMAIL);
 }
 
 /** Adds an OIDC provider that verifies the mock's ID tokens and links on `oid`. */
