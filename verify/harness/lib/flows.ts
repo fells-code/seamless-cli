@@ -104,6 +104,22 @@ export async function login(ctx: APIRequestContext, identifier: string): Promise
   return body.token as string;
 }
 
+/** Send a login email OTP over the ephemeral token and verify it; returns the access token. */
+export async function verifyLoginEmailOtp(ctx: APIRequestContext, ephemeral: string): Promise<string> {
+  const sent = await ctx.get('/otp/generate-login-email-otp', {
+    headers: { ...bearer(ephemeral), ...EXTERNAL_DELIVERY },
+  });
+  expect(sent.ok(), `generate-login-email-otp -> ${sent.status()}`).toBeTruthy();
+  const code = (await sent.json())?.delivery?.token;
+  expect(code, 'external delivery returns the login OTP code').toBeTruthy();
+  const res = await ctx.post('/otp/verify-login-email-otp', {
+    headers: bearer(ephemeral),
+    data: { verificationToken: String(code) },
+  });
+  expect(res.ok(), `verify-login-email-otp -> ${res.status()} ${await res.text()}`).toBeTruthy();
+  return (await res.json()).token as string;
+}
+
 export interface MagicLink {
   /** Lookup handle from the query string. On its own it signs nobody in. */
   token: string;
@@ -206,14 +222,19 @@ export async function oauthLogin(
   return { token: body.token, refreshToken: body.refreshToken, sub: body.sub, email: body.email };
 }
 
+export interface OwnerSession {
+  token: string;
+  roles: string[];
+}
+
 /**
- * An access token for the tenant owner (OWNER_EMAIL, admin at signup), stepped up
- * for the admin API. Signs the owner in when the account exists (the api layer
- * usually registered it earlier in the run) and registers it otherwise. An unknown
- * identifier gets a decoy OTP send that delivers nothing, which is how the two
- * cases are told apart.
+ * Signs the tenant owner (OWNER_EMAIL, admin at signup) in, registering the account the
+ * first time. Registering an address that already has a verified account is answered as
+ * an unclaimed sign-up and sends nothing, so an existing owner goes through /login. An
+ * unknown identifier gets a decoy login OTP send that delivers nothing, which is how the
+ * two cases are told apart.
  */
-export async function ownerAccessToken(ctx: APIRequestContext, ownerEmail: string): Promise<string> {
+export async function ownerSession(ctx: APIRequestContext, ownerEmail: string): Promise<OwnerSession> {
   const ephemeral = await login(ctx, ownerEmail);
   const sent = await ctx.get('/otp/generate-login-email-otp', {
     headers: { ...bearer(ephemeral), ...EXTERNAL_DELIVERY },
@@ -227,14 +248,22 @@ export async function ownerAccessToken(ctx: APIRequestContext, ownerEmail: strin
       data: { verificationToken: String(code) },
     });
     expect(res.ok(), `verify-login-email-otp -> ${res.status()} ${await res.text()}`).toBeTruthy();
-    const { token } = (await res.json()) as { token: string };
-    await stepUpOwner(ctx, token);
-    return token;
+    const body = await res.json();
+    return { token: body.token, roles: body.roles ?? [] };
   }
 
-  const { token } = await registerAndVerifyEmail(ctx, ownerEmail);
-  await stepUpOwner(ctx, token);
-  return token;
+  const registered = await registerEmail(ctx, ownerEmail);
+  const registeredCode = await requestEmailOtp(ctx, registered);
+  const res = await verifyEmailOtp(ctx, registered, registeredCode);
+  expect(res.ok(), `verify-email-otp -> ${res.status()} ${await res.text()}`).toBeTruthy();
+  const body = await res.json();
+  return { token: body.token, roles: body.roles ?? [] };
+}
+
+/** An access token for the tenant owner, stepped up for the admin API. */
+export async function ownerAccessToken(ctx: APIRequestContext, ownerEmail: string): Promise<string> {
+  const signIn = async () => (await ownerSession(ctx, ownerEmail)).token;
+  return stepUpOwner(ctx, await signIn(), signIn);
 }
 
 /** Replace a user's roles through the admin API. */

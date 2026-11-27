@@ -1,24 +1,17 @@
 import { OWNER_EMAIL } from '../lib/env';
 import { expect, test } from '../lib/fixtures';
-import { registerEmail, requestEmailOtp, verifyEmailOtp } from '../lib/flows';
+import { ownerSession } from '../lib/flows';
 
 test.describe('owner admin (api)', () => {
-  // The owner address is fixed in the stack's OWNER_EMAIL before boot, so this
-  // spec registers that exact email rather than the actor fixture's random one.
-  test('registering the owner email grants the admin role at signup', async ({ actor }) => {
-    const ephemeral = await registerEmail(actor.ctx, OWNER_EMAIL);
-    const code = await requestEmailOtp(actor.ctx, ephemeral);
-
-    const res = await verifyEmailOtp(actor.ctx, ephemeral, code);
-    expect(res.ok(), `verify-email-otp -> ${res.status()} ${await res.text()}`).toBeTruthy();
-
-    const body = await res.json();
-    expect(body.token, 'session access token').toBeTruthy();
-
-    const roles = (body.roles ?? []) as string[];
+  // The owner address is fixed in the stack's OWNER_EMAIL before boot, so this spec
+  // uses that exact email rather than the actor fixture's random one. Another spec may
+  // have registered it already, so it signs in when the account exists.
+  test('the owner email is granted the admin role', async ({ actor }) => {
+    const { token, roles } = await ownerSession(actor.ctx, OWNER_EMAIL);
+    expect(token, 'session access token').toBeTruthy();
     expect(
       roles.includes('admin'),
-      `owner signup grants the admin role (got ${JSON.stringify(roles)})`,
+      `the owner holds the admin role (got ${JSON.stringify(roles)})`,
     ).toBeTruthy();
   });
 });

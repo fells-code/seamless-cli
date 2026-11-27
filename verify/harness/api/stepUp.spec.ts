@@ -1,21 +1,26 @@
 import { expect, test } from '../lib/fixtures';
-import { registerAndVerifyEmail } from '../lib/flows';
+import { login, registerAndVerifyEmail, verifyLoginEmailOtp } from '../lib/flows';
 import { totp } from '../lib/totp';
 
 test.describe('step-up (api)', () => {
   test('TOTP MFA freshens the session step-up status', async ({ actor }) => {
-    const { token } = await registerAndVerifyEmail(actor.ctx, actor.email);
-    const auth = { Authorization: `Bearer ${token}` };
+    const registered = await registerAndVerifyEmail(actor.ctx, actor.email);
+    const enrolling = { Authorization: `Bearer ${registered.token}` };
 
     // Enroll TOTP (enrollment alone must not satisfy step-up).
-    const start = await actor.ctx.post('/totp/enroll/start', { headers: auth, data: {} });
+    const start = await actor.ctx.post('/totp/enroll/start', { headers: enrolling, data: {} });
     expect(start.ok(), `enroll/start -> ${start.status()}`).toBeTruthy();
     const { secret } = await start.json();
     const enroll = await actor.ctx.post('/totp/enroll/verify', {
-      headers: auth,
+      headers: enrolling,
       data: { code: totp(secret) },
     });
     expect(enroll.ok(), `enroll/verify -> ${enroll.status()}`).toBeTruthy();
+
+    // A step-up only accepts a factor enrolled before the session signed in, so the
+    // TOTP proves the holder of the next session, not the one that added it.
+    const token = await verifyLoginEmailOtp(actor.ctx, await login(actor.ctx, actor.email));
+    const auth = { Authorization: `Bearer ${token}` };
 
     const before = await actor.ctx.get('/step-up/status', { headers: auth });
     expect(before.ok()).toBeTruthy();
